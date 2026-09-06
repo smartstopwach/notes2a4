@@ -94,3 +94,10 @@ Nothing is ever uploaded. There is no backend — your notes PDFs are personal, 
 ## Licence
 
 MIT © 2026 smartstopwach
+
+## Design system
+
+- Tokens centralised in `styles.css` `:root` — type (`Manrope` UI/display, `Instrument Serif` italic accents, both self-hosted woff2), spacing scale 4→96px, three radii, three elevation levels, one accent + one emphasis hue.
+- Hero stages are real CSS-3D (`perspective` + `preserve-3d` + per-layer `translateZ`), reacting to pointer proximity with a subtle tilt and a cursor light — see `enhance.js` (opt-in via `data-tilt`/`data-count`, fully disabled on touch and `prefers-reduced-motion`).
+- Motion language: enter = ease-out, exit = ease-in-out, progress = linear; UI ≤300 ms, complex reveals 400–700 ms. Icons are a single inline SVG set (no emoji).
+- `enhance.js` also owns the topbar scroll state, kinetic count-ups (400 → 200 / −75 %) and the toast layer; errors stay inline (`role="alert"`), skeletons shimmer while the engine paints.

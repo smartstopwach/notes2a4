@@ -7,7 +7,7 @@
 <meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
 <meta http-equiv="Cache-Control" content="no-cache">
-<link rel="stylesheet" href="styles.css?v=10">
+<link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body id="top">
 
@@ -29,7 +29,7 @@
     <a href="#faq">FAQ</a>
     <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener" class="nav-gh">GitHub</a>
   </nav>
-  <span class="privacy-chip" title="Your file never leaves this tab">🔒 <b>0% uploaded</b> — runs in your browser</span>
+  <span class="privacy-chip" title="Your file never leaves this tab"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg> <b>0% uploaded</b> — runs in your browser</span>
 </header>
 
 <main>
@@ -38,7 +38,7 @@
   <section class="hero">
     <div class="hero-copy reveal">
       <p class="kicker">for 16:9 class notes · whiteboard sheets · lecture-slide PDFs</p>
-      <h1>Your <span class="num" id="hundreds">400</span>-page notes.<br><span class="grad">Now <span id="halfs">200</span> printed pages.</span></h1>
+      <h1>Your <span class="num" id="hundreds" data-count="0:400" data-delay="250">400</span>-page notes.<br><span class="grad">Now <span id="halfs" data-count="400:200" data-delay="1250">200</span> <em class="seri">printed</em>&#160;pages.</span></h1>
       <p class="lead">Notes2A4 puts <b>one slide on top and one at the bottom</b> of a clean white A4 sheet —
         full width, zero cropping — and leaves the middle as open space for your own handwritten notes.
         A 400-page notebook becomes exactly 200 pages. Vector-perfect, nothing re-rasterised.</p>
@@ -55,8 +55,10 @@
       </ul>
     </div>
 
-    <div class="hero-anim" aria-hidden="true">
+    <div class="hero-anim" aria-hidden="true" data-tilt>
       <div class="anim-stage">
+        <div class="anim-copies"><i></i><i></i></div>
+        <div class="anim-floor"></div>
         <!-- left: a messy pile of 16:9 note pages -->
         <div class="anim-pile">
           <div class="mini ms1"><span>M = L T I</span></div>
@@ -71,7 +73,7 @@
         <!-- right: the A4 sheet that assembles itself -->
         <div class="anim-sheet">
           <div class="sheet-slide s-top"><span>Broteesor ABCs · full 11th</span></div>
-          <div class="sheet-gap">✍️ space for notes</div>
+          <div class="sheet-gap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 3.5 20.5 7 8.5 19 4 20l1-4.5z"/></svg> space for notes</div>
           <div class="sheet-slide s-bot"><span>MLT·CAT·LO · SI Units</span></div>
           <p class="sheet-label">A4 · 210 × 297 mm</p>
         </div>
@@ -139,7 +141,7 @@
       <p class="dz-title">Drop your notes PDF here</p>
       <p class="dz-hint">any length — 20, 200 or 400 pages · or</p>
       <button type="button" class="btn btn-primary" id="chooseBtn">Choose PDF</button>
-      <p class="dz-fine">🔒 No server, no account, no upload. Close the tab and everything is gone.</p>
+      <p class="dz-fine">No server, no account, no upload. Close the tab and everything is gone.</p>
       <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
       <p class="dz-error" id="fileError" role="alert" hidden></p>
     </div>
@@ -184,7 +186,7 @@
           <label class="sw"><input type="checkbox" id="optLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b> in the gap<em>for writing notes during revision</em></span></label>
           <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>e.g. “137 / 200” inside the gap</em></span></label>
           <label class="sw psRow"><input type="checkbox" id="optPrint"><span class="track"><span class="thumb"></span></span>
-            <span class="sw-t"><b>Print-Saver inversion ☾</b><em>dark board notes → printer-friendly: black → white paper · white text &amp; every colour → black ink</em></span></label>
+            <span class="sw-t"><b>Print-Saver inversion ◐</b><em>dark board notes → printer-friendly: black → white paper · white text &amp; every colour → black ink</em></span></label>
           <div class="ps-opts" id="psOpts" hidden>
             <div class="fld"><span class="lbl">Raster quality</span>
               <div class="seg" role="radiogroup" aria-label="Print DPI">
@@ -192,7 +194,7 @@
                 <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · 2×</span></label>
                 <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3× max</span></label>
               </div>
-              <small><b>HQ engine v2:</b> scans rendered at 1×/2×/3× native (your pick) with 2× supersample + area-average (SSAA), and an <b>ink-bias response curve</b> keeps inverted handwriting at full visual weight — no thin/broken strokes. Colours → solid black. (Text not selectable; uncheck for full vector.) The dpi setting sharpens typed/vector pages. (Text not selectable in this mode; uncheck for full vector.)</small>
+              <small><b>HQ engine v2:</b> scans rendered at 1×/2×/3× native (your pick) with 2× supersample + area-average (SSAA), and an <b>ink-bias response curve</b> keeps inverted handwriting at full visual weight — no thin/broken strokes. Colours → solid black. (Text not selectable; uncheck for full vector.)</small>
             </div>
             <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>invert only dark pages — already-white pages pass through untouched</em></span></label>
           </div>
@@ -208,8 +210,8 @@
       </div>
 
       <div class="run-row">
-        <button class="btn btn-primary btn-big" id="goBtn" type="button">⚡ Pack <span id="goIn">—</span> pages into <span id="goOut">—</span> sheets</button>
-        <div class="progress" id="progressBox" hidden>
+        <button class="btn btn-primary btn-big" id="goBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z" fill="currentColor" stroke="none"/></svg> Pack <span id="goIn">—</span> pages into <span id="goOut">—</span> sheets</button>
+        <div class="progress" id="progressBox" hidden aria-live="polite">
           <div class="pbar"><div class="pfill" id="pfill"></div></div>
           <span id="pstatus">starting…</span>
         </div>
@@ -222,13 +224,13 @@
           <div class="rs-sub" id="rsMeta">—</div>
         </div>
         <div class="res-btns">
-          <a class="btn btn-primary btn-big" id="dlBtn" href="#" download>⬇ Download packed PDF</a>
+          <a class="btn btn-primary btn-big" id="dlBtn" href="#" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5M4 20h16"/></svg> Download packed PDF</a>
           <a class="btn btn-ghost" id="openBtn" href="#" target="_blank" rel="noopener">Open &amp; check</a>
           <button class="btn btn-tiny" id="againBtn" type="button">Convert another file</button>
         </div>
         <div class="thumbs" id="thumbs" aria-label="Preview of packed sheets"></div>
         <details class="print-tips">
-          <summary>🖨 Printing tips</summary>
+          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5"/><rect x="3.5" y="8" width="17" height="8" rx="2"/><rect x="7" y="13" width="10" height="8" rx="1"/></svg> Printing tips</summary>
           <ul>
             <li>Print at <b>Actual size / 100%</b> (never “fit to page” — that re-scales and adds its own margins).</li>
             <li>Single-sided is fine: each sheet already holds two note pages.</li>
@@ -250,15 +252,18 @@
   </section>
 </main>
 
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
 <footer class="foot">
   <p>Notes2A4 — built for 400-page notebook doom. <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener">View source on GitHub</a> · MIT licence.</p>
-  <p class="foot-dim">Made with ⚡ and vector geometry · <span class="hin">paper bachao, padhai badhao</span></p>
+  <p class="foot-dim">Made with vector geometry · <span class="hin">paper bachao, padhai badhao</span></p>
 </footer>
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=10"></script>
-<script src="app.js?v=10"></script>
+<script src="converter.js?v=11"></script>
+<script src="enhance.js?v=11"></script>
+<script src="app.js?v=11"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

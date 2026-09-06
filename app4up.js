@@ -1,7 +1,7 @@
 /* ============ Notes2A4 — 4-up Studio (landscape, pair columns) ============ */
 (function () {
   'use strict';
-  var BUILD = 5;
+  var BUILD = 6;
   console.info('[Notes2A4] app4up.js build', BUILD, '· 4-up landscape studio (demo-exact geometry)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.quadLayout) {
     document.addEventListener('DOMContentLoaded', function () {
@@ -40,8 +40,8 @@
   function printAuto() { return printEls.auto.checked; }
   function refreshPrintBadge() {
     var el = $('fbOut'); if (!el) return;
-    var t = el.textContent.replace(' · ☾print', '');
-    if (printMode()) el.textContent = t + ' · ☾print';
+    var t = el.textContent.replace(' · ◐print', '');
+    if (printMode()) el.textContent = t + ' · ◐print';
   }
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(m) { fileErr.hidden = false; fileErr.textContent = m; }
@@ -76,6 +76,7 @@
       }
       pBox.hidden = true;
       afterLoad();
+      if (window.NotesFX) NotesFX.toast(state.pages + ' pages parsed — nothing was uploaded');
     } catch (err) {
       pBox.hidden = true;
       showError('Could not open this PDF (' + (err && err.message || 'password-protected or damaged') + ').');
@@ -127,9 +128,10 @@
     var figures = document.querySelectorAll('.sheet-fig');
     for (var s = 0; s < 2; s++) {
       var fig = figures[s], canvas = $('pv' + (s + 1));
-      if (s * 4 >= state.pages) { fig.hidden = true; continue; }
-      fig.hidden = false;
+      if (s * 4 >= state.pages) { fig.hidden = true; fig.classList.remove('loading'); continue; }
+      fig.hidden = false; fig.classList.add('loading');
       await paintSheet(canvas, page, opts, s);
+      fig.classList.remove('loading');
       if (gen !== state.gen) return;
     }
   }
@@ -273,6 +275,8 @@
     if (!state.bytes || goBtn.disabled) return;
     goBtn.disabled = true; result.hidden = true;
     pBox.hidden = false; pFill.style.width = '2%'; pStatus.textContent = 'embedding pages…';
+    var prevCard = document.querySelector('.card.prev');
+    if (prevCard) prevCard.classList.add('busy');
     var t0 = performance.now();
     try {
       var res;
@@ -309,13 +313,16 @@
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed 4-per-sheet into ' + res.sheets + ' ' +
         NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' landscape sheet' + (res.sheets === 1 ? '' : 's') + ' · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
-        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ☾ print-saver ' + printDpi() + ' dpi b&w' : '');
+        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi b&w' : '');
       await makeThumbs(res.bytes, res.sheets);
       result.hidden = false;
+      if (prevCard) prevCard.classList.remove('busy');
+      if (window.NotesFX) NotesFX.toast(res.sheets + ' landscape sheets ready · ' + (printMode() ? 'print-saver ' + printDpi() + ' dpi' : 'pure vector'));
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       setTimeout(function () { pBox.hidden = true; }, 900);
     } catch (err) {
       pStatus.textContent = 'failed: ' + (err && err.message || err);
+      if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }
     goBtn.disabled = false;
