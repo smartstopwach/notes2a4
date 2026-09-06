@@ -265,32 +265,7 @@
         if (cellPages[c2] && boxes[c2]) pg.drawPage(cellPages[c2], boxes[c2]);
       }
 
-      if (opts.lines) {
-        for (var li = 0; li < L.lines.length; li++) {
-          var y = L.lines[li];
-          pg.drawLine({
-            start: { x: L.gap.x + (L.lineInset || 10), y: y },
-            end: { x: L.gap.x + L.gap.w - (L.lineInset || 10), y: y },
-            thickness: 0.6,
-            color: lineColor
-          });
-        }
-      }
-
-      if (opts.pageNumbers && (L.gap.h >= 12 || per === 2)) {
-        var txt = (s + 1) + ' / ' + nSheets;
-        var size = 8;
-        var tw = font.widthOfTextAtSize(txt, size);
-        var tx, ty;
-        if (opts.lines && L.lines.length) {
-          tx = L.gap.x + 10;
-          ty = L.gap.y + L.gap.h - 12;
-        } else {
-          tx = (page.w - tw) / 2;
-          ty = L.gap.y + 3.5;
-        }
-        pg.drawText(txt, { x: tx, y: ty, size: size, font: font, color: numColor });
-      }
+      decorateSheet(pg, L, opts, font, s, nSheets, page);
 
       if (onProgress && (s % 4 === 3 || s === nSheets - 1)) {
         await onProgress(s + 1, nSheets);
@@ -299,6 +274,104 @@
 
     var saved = await out.save({ useObjectStreams: true });
     return { bytes: saved, sheets: nSheets, sourcePages: n, pageWH: { w: page.w, h: page.h } };
+  }
+
+  /* ================= Print-Saver inversion =================
+   * Converts dark "blackboard" notes to printer-friendly high-contrast ink:
+   *   near-black pixels  → white (the paper)
+   *   white pixels       → black (ink)
+   *   any other colour   → black (ink)
+   * 'auto' mode first measures the page: light pages are left untouched.
+   * Operates on a canvas ImageData-like { data: Uint8ClampedArray RGBA }.
+   */
+  var PS_DARK_LUM = 90;                       // ≤ this counts as "black-ish"
+  function psProcess(imageData, auto) {
+    var d = imageData.data, i, r, g, b, lum, n = 0, dark = 0;
+    for (i = 0; i < d.length; i += 4) {
+      r = d[i]; g = d[i + 1]; b = d[i + 2];
+      lum = (r * 299 + g * 587 + b * 114) / 1000 | 0;
+      if (lum <= PS_DARK_LUM) dark++;
+      n++;
+    }
+    var frac = dark / n;
+    var invert = auto ? frac >= 0.5 : true;
+    if (invert) {
+      for (i = 0; i < d.length; i += 4) {
+        r = d[i]; g = d[i + 1]; b = d[i + 2];
+        lum = (r * 299 + g * 587 + b * 114) / 1000 | 0;
+        var v = lum <= PS_DARK_LUM ? 255 : 0;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        d[i + 3] = 255;
+      }
+    }
+    return { darkFrac: frac, inverted: invert };
+  }
+
+  /** Shared sheet decoration (ruled lines + sheet number) for both build paths. */
+  function decorateSheet(pg, L, opts, font, s, nSheets, page) {
+    if (opts.lines) {
+      for (var li = 0; li < L.lines.length; li++) {
+        var y = L.lines[li];
+        pg.drawLine({
+          start: { x: L.gap.x + (L.lineInset || 10), y: y },
+          end: { x: L.gap.x + L.gap.w - (L.lineInset || 10), y: y },
+          thickness: 0.6,
+          color: rgb(0.66, 0.7, 0.76)
+        });
+      }
+    }
+    if (opts.pageNumbers && (L.gap.h >= 12 || opts.perSheet === 2)) {
+      var txt = (s + 1) + ' / ' + nSheets;
+      var size = 8;
+      var tw = font.widthOfTextAtSize(txt, size);
+      var tx, ty;
+      if (opts.lines && L.lines.length) { tx = L.gap.x + 10; ty = L.gap.y + L.gap.h - 12; }
+      else { tx = (page.w - tw) / 2; ty = L.gap.y + 3.5; }
+      pg.drawText(txt, { x: tx, y: ty, size: size, font: font, color: rgb(0.45, 0.48, 0.53) });
+    }
+  }
+
+  /**
+   * Pack pre-rendered page images (Print-Saver output) using the SAME layout engine.
+   * items: array in page order — { bytes: Uint8Array (PNG), w, h } or null (blank).
+   */
+  async function buildFromImages(items, options, onProgress) {
+    var opts = normalize(options);
+    var n = items.length;
+    if (!n) throw new Error('Nothing to pack');
+    var out = await PDFDocument.create();
+    out.setProducer('Notes2A4 · slides-per-sheet packer · print-saver');
+    var font = await out.embedFont(StandardFonts.Helvetica);
+    var imgs = new Array(n).fill(null);
+    for (var e = 0; e < n; e++) {
+      if (items[e] && items[e].bytes) {
+        try { imgs[e] = await out.embedPng(items[e].bytes); } catch (err) { imgs[e] = null; }
+      }
+      if (onProgress && e % 8 === 7) await onProgress(e + 1, n, 'encoding');
+    }
+    var page = sheetSize(opts);
+    var per = opts.perSheet;
+    var nSheets = Math.ceil(n / per);
+    for (var s = 0; s < nSheets; s++) {
+      var cellSizes = [];
+      for (var c = 0; c < per; c++) {
+        var gi = s * per + c;
+        cellSizes.push(gi < n && items[gi] ? { w: items[gi].w, h: items[gi].h } : null);
+      }
+      var L = (per === 4) ? quadLayout(cellSizes, opts, page) : sheetLayout(cellSizes[0], cellSizes[1], opts, page);
+      var boxes = (per === 4) ? L.slides : [L.top, L.bottom];
+      var pg = out.addPage([page.w, page.h]);
+      for (var c2 = 0; c2 < boxes.length; c2++) {
+        var idx = s * per + c2;
+        if (imgs[idx] && boxes[c2]) {
+          pg.drawImage(imgs[idx], { x: boxes[c2].x, y: boxes[c2].y, width: boxes[c2].width, height: boxes[c2].height });
+        }
+      }
+      decorateSheet(pg, L, opts, font, s, nSheets, page);
+      if (onProgress && (s % 4 === 3 || s === nSheets - 1)) await onProgress(s + 1, nSheets, 'packing');
+    }
+    var saved = await out.save({ useObjectStreams: true });
+    return { bytes: saved, sheets: nSheets, sourcePages: n, pageWH: { w: page.w, h: page.h }, printSaver: true };
   }
 
   return {
@@ -310,6 +383,8 @@
     sheetLayout: sheetLayout,
     quadLayout: quadLayout,
     layoutForSheet: layoutForSheet,
-    build: build
+    build: build,
+    buildFromImages: buildFromImages,
+    printSaver: { process: psProcess, DARK_LUM: PS_DARK_LUM }
   };
 });

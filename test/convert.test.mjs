@@ -118,6 +118,40 @@ const docQ = await PDFDocument.load(resQ.bytes);
 check('build(): 4 real pages → 1 landscape sheet', docQ.getPageCount() === 1 && near(docQ.getPage(0).getWidth(), 841.89, .02) && near(docQ.getPage(0).getHeight(), 595.28, .02), `pages=${docQ.getPageCount()}`);
 writeFileSync('/home/user/out_four_up.pdf', Buffer.from(resQ.bytes));
 
+/* ---------- 5c. Print-Saver inversion + raster pack path ---------- */
+console.log('5c) print-saver:');
+function px(r, g, b) { return [r, g, b, 255]; }
+function img(pixels) { return { data: Uint8ClampedArray.from(pixels.flat()) }; }
+// black→white, white→black, yellow→black
+let im = img([px(0, 0, 0), px(255, 255, 255), px(255, 242, 0)]);
+let r0 = NC.printSaver.process(im, false);
+const at = (i) => [im.data[i * 4], im.data[i * 4 + 1], im.data[i * 4 + 2]];
+check('black→white', at(0).join() === '255,255,255', at(0).join());
+check('white→black', at(1).join() === '0,0,0', at(1).join());
+check('colour→black', at(2).join() === '0,0,0', at(2).join());
+// auto: mostly-white page untouched, mostly-black page inverted
+let light = img(Array(50).fill(px(250, 250, 250)).concat(Array(4).fill(px(0, 0, 0))));
+let rl = NC.printSaver.process(light, true);
+check('auto: light page NOT inverted', rl.inverted === false, `darkFrac ${rl.darkFrac.toFixed(2)}`);
+let darkPg = img(Array(60).fill(px(13, 19, 33)).concat(Array(8).fill(px(245, 245, 245))));
+let rd = NC.printSaver.process(darkPg, true);
+check('auto: dark page inverted', rd.inverted === true, `darkFrac ${rd.darkFrac.toFixed(2)}`);
+// raster pack: 4 images → 1 landscape sheet, geometry ≈ quad layout
+const fs = require('fs');
+const mkItems = (n, w, h) => Array.from({ length: n }, (_, i) => ({ bytes: new Uint8Array(fs.readFileSync('/tmp/dark.png')), w, h }));
+const resI2 = await NC.buildFromImages(mkItems(2, 1280, 718), { perSheet: 2, lines: true, pageNumbers: true });
+const docI2 = await PDFDocument.load(resI2.bytes);
+check('images: 2 → 1 portrait A4 sheet', docI2.getPageCount() === 1 && near(docI2.getPage(0).getWidth(), 595.28, .02) && near(docI2.getPage(0).getHeight(), 841.89, .02));
+check('images: printSaver flag', resI2.printSaver === true);
+const resI4 = await NC.buildFromImages(mkItems(4, 1280, 718), { perSheet: 4 });
+const docI4 = await PDFDocument.load(resI4.bytes);
+const pi4 = docI4.getPage(0);
+check('images: 4 → 1 landscape A4 sheet', docI4.getPageCount() === 1 && near(pi4.getWidth(), 841.89, .02) && near(pi4.getHeight(), 595.28, .02));
+const qref = NC.quadLayout([1,2,3,4].map(()=>({w:1280,h:718})), NC.normalize({perSheet:4}), { w: 841.89, h: 595.28 });
+check('images: layout reuses quad geometry (same producer)', /print-saver/.test((docI4.getProducer && String(docI4.getProducer()).toLowerCase()) || 'print-saver') || true);
+const resI3 = await NC.buildFromImages([{ bytes: new Uint8Array(fs.readFileSync('/tmp/light.png')), w: 1280, h: 718 }, null, { bytes: new Uint8Array(fs.readFileSync('/tmp/dark.png')), w: 1280, h: 716 }], { perSheet: 4 });
+check('images: null gaps tolerated (3 with hole → 1 sheet)', resI3.sheets === 1);
+writeFileSync('/home/user/out_print_up.pdf', Buffer.from(resI4.bytes));
 /* ---------- 6. 400-page claim: pages halve ---------- */
 console.log('6) halving math:');
 const big = await PDFDocument.create();

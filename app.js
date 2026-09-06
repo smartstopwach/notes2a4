@@ -48,6 +48,16 @@
       pageNumbers: opt.nums.checked
     });
   }
+
+  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220') };
+  function printMode() { return !!(printEls.on && printEls.on.checked); }
+  function printDpi() { return printEls.d220 && printEls.d220.checked ? 220 : (printEls.d96 && printEls.d96.checked ? 96 : 150); }
+  function printAuto() { return printEls.auto.checked; }
+  function refreshPrintBadge() {
+    var el = $('fbOut'); if (!el) return;
+    var t = el.textContent.replace(' · ☾print', '');
+    if (printMode()) el.textContent = t + ' · ☾print';
+  }
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(msg) {
     fileErr.hidden = false; fileErr.textContent = msg;
@@ -117,6 +127,7 @@
     $('fbOdd').hidden = n % 2 === 0;
     $('goIn').textContent = n; $('goOut').textContent = sheets;
     goBtn.disabled = false;
+    refreshPrintBadge();
     renderPreview();
     wb.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -146,6 +157,7 @@
   [opt.gapAuto, opt.gapFixed].forEach(function (r) {
     r.addEventListener('change', function () { opt.gap.disabled = opt.gapAuto.checked; schedulePreview(); });
   });
+  printListeners(schedulePreview);
 
   /* ---------- live preview (same geometry engine as converter) ---------- */
   async function renderPreview() {
@@ -191,6 +203,12 @@
       off.width = Math.round(vp.width); off.height = Math.round(vp.height);
       await pdfPage.render({ canvasContext: off.getContext('2d'), viewport: vp }).promise;
       pdfPage.cleanup();
+      if (printMode()) {
+        var octx = off.getContext('2d');
+        var idat = octx.getImageData(0, 0, off.width, off.height);
+        NotesConverter.printSaver.process(idat, printAuto());
+        octx.putImageData(idat, 0, 0);
+      }
       ctx.drawImage(off,
         box.x * pxPerPt,
         (page.h - box.y - box.height) * pxPerPt,
@@ -221,6 +239,37 @@
     }
   }
 
+
+  /* ---------- print-saver raster path ---------- */
+  async function buildPrintItems(onPage) {
+    var n = state.pages, items = new Array(n), dpi = printDpi();
+    for (var i = 0; i < n; i++) {
+      var pg = await state.doc.getPage(i + 1);
+      var vp = pg.getViewport({ scale: dpi / 72 });
+      var cv = document.createElement('canvas');
+      cv.width = Math.max(2, Math.round(vp.width)); cv.height = Math.max(2, Math.round(vp.height));
+      var cx = cv.getContext('2d', { willReadFrequently: true });
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+      await pg.render({ canvasContext: cx, viewport: vp }).promise;
+      var idat = cx.getImageData(0, 0, cv.width, cv.height);
+      NotesConverter.printSaver.process(idat, printAuto());
+      cx.putImageData(idat, 0, 0);
+      pg.cleanup();
+      items[i] = {
+        bytes: await new Promise(function (res2, rej) {
+          cv.toBlob(function (bl) { bl.arrayBuffer().then(function (ab) { res2(new Uint8Array(ab)); }, rej); }, 'image/png');
+        }),
+        w: state.sizes[i].w, h: state.sizes[i].h
+      };
+      if (onPage) await onPage(i + 1, n);
+    }
+    return items;
+  }
+  function printListeners(schedule) {
+    if (!printEls.on) return;
+    printEls.on.addEventListener('change', function () { printEls.opts.hidden = !printEls.on.checked; schedule(); refreshPrintBadge(); });
+    [printEls.auto, printEls.d96, printEls.d150, printEls.d220].forEach(function (el) { el.addEventListener('change', schedule); });
+  }
   /* ---------- convert ---------- */
   goBtn.addEventListener('click', convert);
 
@@ -230,11 +279,27 @@
     pBox.hidden = false; pFill.style.width = '2%'; pStatus.textContent = 'embedding pages…';
     var t0 = performance.now();
     try {
-      var res = await NotesConverter.build(state.bytes, readOptions(), function (d, t) {
-        pFill.style.width = (6 + d / t * 88).toFixed(1) + '%';
-        pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
-        return new Promise(function (r) { setTimeout(r, 0); });
-      });
+      var res;
+      if (printMode()) {
+        pStatus.textContent = 'rendering pages…';
+        var items = await buildPrintItems(function (d, t) {
+          pFill.style.width = (d / t * 60).toFixed(1) + '%';
+          pStatus.textContent = 'page ' + d + ' of ' + t + ' · inverting at ' + printDpi() + ' dpi…';
+          return new Promise(function (r) { setTimeout(r, 0); });
+        });
+        pFill.style.width = '65%'; pStatus.textContent = 'packing sheets…';
+        res = await NotesConverter.buildFromImages(items, readOptions(), function (d, t) {
+          pFill.style.width = (65 + d / t * 32).toFixed(1) + '%';
+          pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
+          return new Promise(function (r) { setTimeout(r, 0); });
+        });
+      } else {
+        res = await NotesConverter.build(state.bytes, readOptions(), function (d, t) {
+          pFill.style.width = (6 + d / t * 88).toFixed(1) + '%';
+          pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
+          return new Promise(function (r) { setTimeout(r, 0); });
+        });
+      }
       pFill.style.width = '100%'; pStatus.textContent = 'done';
       state.out.bytes = res.bytes;
       if (state.out.url) URL.revokeObjectURL(state.out.url);
@@ -243,7 +308,7 @@
       var base = state.name.replace(/\.pdf$/i, '');
       var paper = opt.paper.value.toUpperCase();
       var dl = $('dlBtn');
-      dl.href = state.out.url; dl.download = base + '-2up-' + paper + '.pdf';
+      dl.href = state.out.url; dl.download = base + (printMode() ? '-print' : '') + '-2up-' + paper + '.pdf';
       $('openBtn').href = state.out.url;
 
       $('rsIn').textContent = res.sourcePages;
@@ -252,7 +317,7 @@
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed into ' + res.sheets + ' ' +
         NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' sheets · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
-        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device';
+        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ☾ print-saver ' + printDpi() + ' dpi b&w' : '');
 
       await makeThumbs(res.bytes, res.sheets);
       result.hidden = false;

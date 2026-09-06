@@ -254,3 +254,11 @@ input[type=range]:disabled{opacity:.35}
 .mode-teaser b{color:var(--ink)}
 .nav-4up{color:var(--acc);font-weight:650}
 .nav-4up:hover{color:#7ef0c3}
+
+/* ---------- print-saver block ---------- */
+.psRow{margin-top:.7rem;border-top:1px solid var(--line);padding-top:.75rem}
+.ps-opts{margin:.45rem 0 .35rem;padding:.6rem .7rem;border-left:3px solid var(--ind);
+  background:rgba(129,140,248,.07);border-radius:0 10px 10px 0}
+.ps-opts .seg label{flex:1}
+.ps-opts small{display:block;color:var(--faint);font-size:.72rem;margin-top:.4rem}
+.ps-badge{color:var(--ind);border-color:rgba(129,140,248,.45)}

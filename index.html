@@ -7,7 +7,7 @@
 <meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
 <meta http-equiv="Cache-Control" content="no-cache">
-<link rel="stylesheet" href="styles.css?v=5">
+<link rel="stylesheet" href="styles.css?v=6">
 </head>
 <body id="top">
 
@@ -183,6 +183,19 @@
           </div>
           <label class="sw"><input type="checkbox" id="optLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b> in the gap<em>for writing notes during revision</em></span></label>
           <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>e.g. “137 / 200” inside the gap</em></span></label>
+          <div class="sw psRow"><input type="checkbox" id="optPrint"><span class="track"><span class="thumb"></span></span>
+            <span class="sw-t"><b>Print-Saver inversion ☾</b><em>dark board notes → printer-friendly: black → white paper · white text &amp; every colour → black ink</em></span></div>
+          <div class="ps-opts" id="psOpts" hidden>
+            <div class="fld"><span class="lbl">Raster quality</span>
+              <div class="seg" role="radiogroup" aria-label="Print DPI">
+                <label><input type="radio" name="psdpi" id="dpi96"><span>96 · draft</span></label>
+                <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · print</span></label>
+                <label><input type="radio" name="psdpi" id="dpi220"><span>220 · sharp</span></label>
+              </div>
+              <small>In this mode pages become crisp black &amp; white images (text not selectable). Uncheck for full vector quality.</small>
+            </div>
+            <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>invert only dark pages — already-white pages pass through untouched</em></span></label>
+          </div>
         </div>
 
         <div class="card prev">
@@ -244,8 +257,8 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="converter.js?v=6"></script>
+<script src="app.js?v=6"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>
