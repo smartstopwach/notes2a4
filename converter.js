@@ -319,12 +319,13 @@
    * auto=true: light pages (darkFrac<0.5) are downsampled untouched.
    */
   var PS_BAND = 45;
+  var PS_GAMMA = 1.7;   // ink-bias exponent of the edge ramp (>1 → fatter darks)
   function hqMap(big, outW, outH, auto) {
     var bd = big.data, bw = big.width, bh = big.height;
     var n = outW * outH;
-    var sumL = new Int32Array(n), cnt = new Int32Array(n);
-    var sumR = new Int32Array(n), sumG = new Int32Array(n), sumB = new Int32Array(n);
-    var maxC = new Int32Array(n);
+    var sumL = new Uint16Array(n), cnt = new Uint8Array(n);
+    var sumR = new Uint16Array(n), sumG = new Uint16Array(n), sumB = new Uint16Array(n);
+    var maxC = new Uint8Array(n);
     for (var y = 0; y < bh; y++) {
       var oy = (y * outH / bh) | 0, row = y * bw;
       for (var x = 0; x < bw; x++) {
@@ -361,7 +362,10 @@
       if (maxC[p] > 60) v = 0;                                    // any real colour → solid black ink
       else if (L <= lo) v = 255;
       else if (L >= hi) v = 0;
-      else v = (hi - L) / (hi - lo) * 255 | 0;                    // smooth coverage edge
+      else {                                                       // ink-biased curve (halation compensation):
+        var tt = (L - lo) / (hi - lo);                             // mid-coverage pixels skew toward ink so
+        v = (Math.pow(1 - tt, PS_GAMMA) * 255) | 0;               // inverted handwriting keeps its visual weight
+      }
       out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
     }
     return { imageData: { data: out, width: outW, height: outH }, darkFrac: frac, inverted: invert };
@@ -445,6 +449,6 @@
     layoutForSheet: layoutForSheet,
     build: build,
     buildFromImages: buildFromImages,
-    printSaver: { process: psProcess, hqMap: hqMap, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND }
+    printSaver: { process: psProcess, hqMap: hqMap, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA }
   };
 });

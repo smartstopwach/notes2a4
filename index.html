@@ -7,7 +7,7 @@
 <meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
 <meta http-equiv="Cache-Control" content="no-cache">
-<link rel="stylesheet" href="styles.css?v=8">
+<link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body id="top">
 
@@ -188,11 +188,11 @@
           <div class="ps-opts" id="psOpts" hidden>
             <div class="fld"><span class="lbl">Raster quality</span>
               <div class="seg" role="radiogroup" aria-label="Print DPI">
-                <label><input type="radio" name="psdpi" id="dpi96"><span>96 · draft</span></label>
-                <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · print</span></label>
-                <label><input type="radio" name="psdpi" id="dpi220"><span>220 · sharp</span></label>
+                <label><input type="radio" name="psdpi" id="dpi96"><span>96 · 1×</span></label>
+                <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · 2×</span></label>
+                <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3× max</span></label>
               </div>
-              <small><b>HQ engine:</b> scans are rendered at up to <b>3× their native density with 2× supersample + area-average</b> (SSAA) — smooth subpixel edges, zero jaggies, zero interpolation blur. Colours → solid black; typed pages sharpen via dpi. The dpi setting sharpens typed/vector pages. (Text not selectable in this mode; uncheck for full vector.)</small>
+              <small><b>HQ engine v2:</b> scans rendered at 1×/2×/3× native (your pick) with 2× supersample + area-average (SSAA), and an <b>ink-bias response curve</b> keeps inverted handwriting at full visual weight — no thin/broken strokes. Colours → solid black. (Text not selectable; uncheck for full vector.) The dpi setting sharpens typed/vector pages. (Text not selectable in this mode; uncheck for full vector.)</small>
             </div>
             <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>invert only dark pages — already-white pages pass through untouched</em></span></label>
           </div>
@@ -257,8 +257,8 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="converter.js?v=9"></script>
+<script src="app.js?v=9"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

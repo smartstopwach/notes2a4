@@ -226,7 +226,8 @@
     var mul = dpi >= 200 ? 3 : (dpi >= 120 ? 2 : 1);
     var vp1 = pg.getViewport({ scale: 1 });
     var outSc = cap > 0 ? Math.min(Math.max(cap, 0.5) * mul, 4) : want;
-    var ss = (vp1.width * outSc * 2 <= 7600) ? 2 : 1;
+    var lW = Math.round(vp1.width * outSc * 2), lH = Math.round(vp1.height * outSc * 2);
+    var ss = (lW * lH <= 34000000 && lW <= 16000 && lH <= 16000) ? 2 : 1;   // area-based: 220 tier keeps SSAA
     var outW = pg.getViewport({ scale: outSc });
     var W = Math.max(2, Math.round(outW.width)), H = Math.max(2, Math.round(outW.height));
     var cv = document.createElement('canvas');

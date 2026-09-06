@@ -181,12 +181,17 @@ console.log('5e) hq-map:');
   big = mk([K, W, K, K], 2, 2);
   r = NC.printSaver.hqMap(big, 1, 1, false);
   const v = r.imageData.data[0];
-  check('quarter ink coverage -> light-grey edge ramp', v > 150 && v < 255, `v=${v}`);
+  check('quarter ink coverage -> light-grey edge ramp', v > 140 && v < 250, `v=${v}`);
   // 3 of 4 ink -> dark but NOT pure black (soft, still ink-dominant)
   big = mk([W, W, K, K], 2, 2);
   r = NC.printSaver.hqMap(big, 1, 1, false);
   const v2 = r.imageData.data[0];
-  check('half ink coverage -> mid ramp, neither solid', v2 > 5 && v2 < 250, `v=${v2}`);
+  check('half ink coverage -> near-black via ink-bias (no thinning)', v2 < 40, `v=${v2}`);
+  // uniform mid-dark 90 grey: ink-bias curve must land well below neutral 128
+  big = mk([[90,90,90],[90,90,90],[90,90,90],[90,90,90]], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false);
+  const v3 = r.imageData.data[0];
+  check('luma-90 edge -> dark (halation compensation)', v3 > 30 && v3 < 128, `v=${v3}`);
   // yellow (255,255,0) -> solid black per colour rule even if bright
   big = mk([[255,255,0],[250,245,180],[255,255,0],[250,245,180]], 2, 2);
   r = NC.printSaver.hqMap(big, 1, 1, false);
