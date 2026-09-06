@@ -162,5 +162,44 @@ check('400 pages → exactly 200 sheets', resBig.sourcePages === 400 && resBig.s
 const resQ400 = await NC.build(bigBytes, { perSheet: 4 }, null);
 check('400 pages → exactly 100 landscape sheets (−75%)', resQ400.sheets === 100, `sheets=${resQ400.sheets}`);
 
+/* ---------- 5e. HQ map: supersample + colour-rule + grey-edge ramp ---------- */
+console.log('5e) hq-map:');
+{
+  const mk = (px, w, h) => {                      // px = array of [r,g,b] length w*h
+    const d = new Uint8ClampedArray(w * h * 4);
+    px.forEach((p, i) => { d[i*4] = p[0]; d[i*4+1] = p[1]; d[i*4+2] = p[2]; d[i*4+3] = 255; });
+    return { data: d, width: w, height: h };
+  };
+  const K = [0, 0, 0], W = [255, 255, 255];
+  let big = mk([K, K, K, K], 2, 2);
+  let r = NC.printSaver.hqMap(big, 1, 1, false);
+  check('black block -> white', r.imageData.data[0] === 255 && r.inverted === true);
+  big = mk([W, W, W, W], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false);
+  check('white block -> black', r.imageData.data[0] === 0);
+  // 1 of 4 samples ink -> edge pixel must be LIGHT GREY, not solid (jaggies gone)
+  big = mk([K, W, K, K], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false);
+  const v = r.imageData.data[0];
+  check('quarter ink coverage -> light-grey edge ramp', v > 150 && v < 255, `v=${v}`);
+  // 3 of 4 ink -> dark but NOT pure black (soft, still ink-dominant)
+  big = mk([W, W, K, K], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false);
+  const v2 = r.imageData.data[0];
+  check('half ink coverage -> mid ramp, neither solid', v2 > 5 && v2 < 250, `v=${v2}`);
+  // yellow (255,255,0) -> solid black per colour rule even if bright
+  big = mk([[255,255,0],[250,245,180],[255,255,0],[250,245,180]], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false);
+  check('any colour -> solid black (chroma rule)', r.imageData.data[0] === 0);
+  // auto: light page keeps colours untouched (50,50,250 avg survives)
+  big = mk([W, W, [50, 50, 250], W], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, true);
+  check('auto light page passes through untouched', r.inverted === false && r.imageData.data[0] < 210 && r.imageData.data[2] > 180);
+  // auto: dark page inverts
+  big = mk([K, K, K, W], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, true);
+  check('auto dark page inverts', r.inverted === true && r.darkFrac >= 0.5);
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

@@ -206,8 +206,8 @@
       if (printMode()) {
         var octx = off.getContext('2d');
         var idat = octx.getImageData(0, 0, off.width, off.height);
-        NotesConverter.printSaver.process(idat, printAuto());
-        octx.putImageData(idat, 0, 0);
+        var hmP = NotesConverter.printSaver.hqMap(idat, idat.width, idat.height, printAuto());
+        octx.putImageData(new ImageData(hmP.imageData.data, idat.width, idat.height), 0, 0);
       }
       ctx.drawImage(off,
         box.x * pxPerPt,
@@ -264,25 +264,36 @@
     } catch (e) { return 0; }
   }
 
-  /* Rasterise a page for print-saver. Scanned pages render at EXACT 1:1 with
-     their source pixels — never upscaled (that is what made it blurry) and
-     never downsampled twice. Vector/text pages use the full requested dpi. */
+  /* Rasterise a page for print-saver with HQ quality:
+     - scans (cap>0): output at cap×tier px/pt (96dpi→1×, 150→2×, 220→3×),
+       rendered at 2× that and area-averaged (SSAA) — smooth subpixel edges,
+       no bilinear-mush upsampling, canvas kept within memory bounds
+     - vector/text pages: full requested dpi, 2× supersampled when it fits
+     The map (colours→solid black, dark→white, edges→grey ramp) is
+     NotesConverter.printSaver.hqMap — the same function the Node tests run. */
   async function printRasterPage(pg) {
     var dpi = printDpi(), want = dpi / 72;
     var cap = await nativePP(pg);
-    var capped = cap >= 0.6 && cap < want * 0.98;
-    var sc = capped ? cap : want;
-    var vp = pg.getViewport({ scale: sc });
-    var W = Math.max(2, Math.round(vp.width)), H = Math.max(2, Math.round(vp.height));
+    var mul = dpi >= 200 ? 3 : (dpi >= 120 ? 2 : 1);
+    var vp1 = pg.getViewport({ scale: 1 });
+    var outSc = cap > 0 ? Math.min(Math.max(cap, 0.5) * mul, 4) : want;
+    var ss = (vp1.width * outSc * 2 <= 7600) ? 2 : 1;
+    var outW = pg.getViewport({ scale: outSc });
+    var W = Math.max(2, Math.round(outW.width)), H = Math.max(2, Math.round(outW.height));
     var cv = document.createElement('canvas');
-    cv.width = W; cv.height = H;
+    cv.width = Math.max(2, Math.round(vp1.width * outSc * ss));
+    cv.height = Math.max(2, Math.round(vp1.height * outSc * ss));
     var cx = cv.getContext('2d', { willReadFrequently: true });
-    cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
-    await pg.render({ canvasContext: cx, viewport: vp }).promise;
-    var idat = cx.getImageData(0, 0, W, H);
-    NotesConverter.printSaver.process(idat, printAuto());
-    cx.putImageData(idat, 0, 0);
-    return { canvas: cv, status: capped ? 'pixel-exact ' + W + 'px (1:1 with your scan)' : 'vector-sharp ' + dpi + ' dpi' };
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+    await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
+    var idat = cx.getImageData(0, 0, cv.width, cv.height);
+    var hm = NotesConverter.printSaver.hqMap(idat, W, H, printAuto());
+    var small = document.createElement('canvas');
+    small.width = W; small.height = H;
+    var sx = small.getContext('2d');
+    sx.putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
+    var tag = cap > 0 ? 'HQ ' + mul + '\u00d7 supersampled ' + W + 'px' : 'vector-sharp ' + Math.round(outSc * 72) + ' dpi';
+    return { canvas: small, status: tag };
   }
 
   async function buildPrintItems(onPage) {

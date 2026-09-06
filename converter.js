@@ -307,6 +307,66 @@
     return { darkFrac: frac, inverted: invert };
   }
 
+  /**
+   * HQ map — supersample anti-aliased binarisation (SSAA).
+   * `big` is an ImageData rendered at (outW*ss, outH*ss); each output pixel
+   * area-averages its ss×ss block (ink coverage + max chroma), then maps:
+   *   dark core  (avg luma ≤ 90−band)  → white paper   [black → white]
+   *   any colour (max chroma > 60)      → solid black   [colours → black]
+   *   edge band  (between)              → linear grey ramp (kills jaggies;
+   *     drivers blue-noise/dither it at print time, viewers show it as AA)
+   *   bright     (avg luma ≥ 90+band)   → solid black   [white → black]
+   * auto=true: light pages (darkFrac<0.5) are downsampled untouched.
+   */
+  var PS_BAND = 45;
+  function hqMap(big, outW, outH, auto) {
+    var bd = big.data, bw = big.width, bh = big.height;
+    var n = outW * outH;
+    var sumL = new Int32Array(n), cnt = new Int32Array(n);
+    var sumR = new Int32Array(n), sumG = new Int32Array(n), sumB = new Int32Array(n);
+    var maxC = new Int32Array(n);
+    for (var y = 0; y < bh; y++) {
+      var oy = (y * outH / bh) | 0, row = y * bw;
+      for (var x = 0; x < bw; x++) {
+        var j = row + x, i = j * 4;
+        var ox = (x * outW / bw) | 0;
+        var k = oy * outW + ox;
+        var r = bd[i], g = bd[i + 1], b = bd[i + 2];
+        sumL[k] += (r * 299 + g * 587 + b * 114) / 1000 | 0;
+        sumR[k] += r; sumG[k] += g; sumB[k] += b;
+        var c = Math.max(r, g, b) - Math.min(r, g, b);
+        if (c > maxC[k]) maxC[k] = c;
+        cnt[k]++;
+      }
+    }
+    var out = new Uint8ClampedArray(n * 4);
+    var T = PS_DARK_LUM, B = PS_BAND, lo = T - B, hi = T + B;
+    var Ls = new Float32Array(n);
+    var dark = 0;
+    for (var q = 0; q < n; q++) {
+      var cQ = cnt[q] || 1;
+      Ls[q] = sumL[q] / cQ;
+      if (Ls[q] <= T) dark++;
+    }
+    var frac = dark / n;
+    var invert = auto ? frac >= 0.5 : true;
+    for (var p = 0; p < n; p++) {
+      var cN = cnt[p] || 1, L = Ls[p];
+      var o = p * 4;
+      if (!invert) {                  // light page: plain area-average downsample, untouched colours
+        out[o] = sumR[p] / cN; out[o + 1] = sumG[p] / cN; out[o + 2] = sumB[p] / cN; out[o + 3] = 255;
+        continue;
+      }
+      var v;
+      if (maxC[p] > 60) v = 0;                                    // any real colour → solid black ink
+      else if (L <= lo) v = 255;
+      else if (L >= hi) v = 0;
+      else v = (hi - L) / (hi - lo) * 255 | 0;                    // smooth coverage edge
+      out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+    }
+    return { imageData: { data: out, width: outW, height: outH }, darkFrac: frac, inverted: invert };
+  }
+
   /** Shared sheet decoration (ruled lines + sheet number) for both build paths. */
   function decorateSheet(pg, L, opts, font, s, nSheets, page) {
     if (opts.lines) {
@@ -385,6 +445,6 @@
     layoutForSheet: layoutForSheet,
     build: build,
     buildFromImages: buildFromImages,
-    printSaver: { process: psProcess, DARK_LUM: PS_DARK_LUM }
+    printSaver: { process: psProcess, hqMap: hqMap, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND }
   };
 });
