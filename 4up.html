@@ -6,8 +6,8 @@
 <title>Notes2A4 · 4-up Studio — four 16:9 note pages on one landscape A4 (400 → 100)</title>
 <meta name="description" content="Special mode: pack FOUR note slides onto one landscape A4 — pages 1·2 left column, 3·4 right, flush rows, a 43 mm white band in the middle for your notes. 400 pages become 100. 100% in-browser, no uploads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='7' width='28' height='18' rx='3' fill='%23fff'/%3E%3Crect x='4' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='4' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=6">
-<link rel="stylesheet" href="fourup.css?v=6">
+<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="fourup.css?v=7">
 <meta http-equiv="Cache-Control" content="no-cache">
 </head>
 <body id="top" class="fu-body">
@@ -156,7 +156,7 @@
                 <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · print</span></label>
                 <label><input type="radio" name="psdpi" id="dpi220"><span>220 · sharp</span></label>
               </div>
-              <small>In this mode pages become crisp black &amp; white images (text not selectable). Uncheck for full vector quality.</small>
+              <small>Scans are extracted at their <b>exact 1:1 native pixels — never upscaled, never blurred</b>; stroke width stays true. The dpi setting sharpens typed/vector pages. (Text not selectable in this mode; uncheck for full vector.)</small>
             </div>
             <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>invert only dark pages — already-white pages pass through untouched</em></span></label>
           </div>
@@ -210,7 +210,7 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=6"></script>
-<script src="app4up.js?v=6"></script>
+<script src="converter.js?v=7"></script>
+<script src="app4up.js?v=7"></script>
 </body>
 </html>

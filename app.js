@@ -241,27 +241,63 @@
 
 
   /* ---------- print-saver raster path ---------- */
+  /* Native pixel density: px-per-pt of the dominant image on a page (0 = vector-ish). */
+  async function nativePP(pg) {
+    try {
+      var ops = await pg.getOperatorList();
+      var vp1 = pg.getViewport({ scale: 1 });
+      var IM = pdfjsLib.OPS.paintImageXObject, TR = pdfjsLib.OPS.transform;
+      var a = 0, best = 0, saw = false;
+      for (var i = 0; i < ops.fnArray.length; i++) {
+        if (ops.fnArray[i] === TR) { var m = ops.argsArray[i]; if (m) { var mg = Math.hypot(m[0], m[1]); if (mg) a = mg; } }
+        else if (ops.fnArray[i] === IM) {
+          var A = ops.argsArray[i], iw = 0;
+          if (A) {
+            var o0 = A[0];
+            if (o0 && typeof o0 === 'object') iw = o0.width || (o0.bitmap && o0.bitmap.width) || 0;
+            else if (typeof A[1] === 'number') iw = A[1];           // older layout: [objId, w, h]
+          }
+          if (iw && a > 0) { best = Math.max(best, iw / a); saw = true; }   // px per pt
+        }
+      }
+      return saw ? best : 0;
+    } catch (e) { return 0; }
+  }
+
+  /* Rasterise a page for print-saver. Scanned pages render at EXACT 1:1 with
+     their source pixels — never upscaled (that is what made it blurry) and
+     never downsampled twice. Vector/text pages use the full requested dpi. */
+  async function printRasterPage(pg) {
+    var dpi = printDpi(), want = dpi / 72;
+    var cap = await nativePP(pg);
+    var capped = cap >= 0.6 && cap < want * 0.98;
+    var sc = capped ? cap : want;
+    var vp = pg.getViewport({ scale: sc });
+    var W = Math.max(2, Math.round(vp.width)), H = Math.max(2, Math.round(vp.height));
+    var cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    var cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, W, H);
+    await pg.render({ canvasContext: cx, viewport: vp }).promise;
+    var idat = cx.getImageData(0, 0, W, H);
+    NotesConverter.printSaver.process(idat, printAuto());
+    cx.putImageData(idat, 0, 0);
+    return { canvas: cv, status: capped ? 'pixel-exact ' + W + 'px (1:1 with your scan)' : 'vector-sharp ' + dpi + ' dpi' };
+  }
+
   async function buildPrintItems(onPage) {
-    var n = state.pages, items = new Array(n), dpi = printDpi();
+    var n = state.pages, items = new Array(n);
     for (var i = 0; i < n; i++) {
       var pg = await state.doc.getPage(i + 1);
-      var vp = pg.getViewport({ scale: dpi / 72 });
-      var cv = document.createElement('canvas');
-      cv.width = Math.max(2, Math.round(vp.width)); cv.height = Math.max(2, Math.round(vp.height));
-      var cx = cv.getContext('2d', { willReadFrequently: true });
-      cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
-      await pg.render({ canvasContext: cx, viewport: vp }).promise;
-      var idat = cx.getImageData(0, 0, cv.width, cv.height);
-      NotesConverter.printSaver.process(idat, printAuto());
-      cx.putImageData(idat, 0, 0);
+      var r = await printRasterPage(pg);
       pg.cleanup();
       items[i] = {
         bytes: await new Promise(function (res2, rej) {
-          cv.toBlob(function (bl) { bl.arrayBuffer().then(function (ab) { res2(new Uint8Array(ab)); }, rej); }, 'image/png');
+          r.canvas.toBlob(function (bl) { bl.arrayBuffer().then(function (ab) { res2(new Uint8Array(ab)); }, rej); }, 'image/png');
         }),
         w: state.sizes[i].w, h: state.sizes[i].h
       };
-      if (onPage) await onPage(i + 1, n);
+      if (onPage) await onPage(i + 1, n, r.status);
     }
     return items;
   }
@@ -282,9 +318,9 @@
       var res;
       if (printMode()) {
         pStatus.textContent = 'rendering pages…';
-        var items = await buildPrintItems(function (d, t) {
+        var items = await buildPrintItems(function (d, t, st) {
           pFill.style.width = (d / t * 60).toFixed(1) + '%';
-          pStatus.textContent = 'page ' + d + ' of ' + t + ' · inverting at ' + printDpi() + ' dpi…';
+          pStatus.textContent = 'page ' + d + ' of ' + t + ' · binarising ' + (st || 'at ' + printDpi() + ' dpi…');
           return new Promise(function (r) { setTimeout(r, 0); });
         });
         pFill.style.width = '65%'; pStatus.textContent = 'packing sheets…';

@@ -26,7 +26,7 @@ notes**. This mirrors the classic "2 slides on 1 page" handout layout (top bbox 
 - **Vector-perfect output** — source pages are embedded as PDF Form XObjects, not screenshots
 - **Demo-exact default geometry** — margin 0, full-width slides, auto middle gap (matches the standard 2-per-page layout pixel-close)
 - Options: A4 / Letter / A5 / Legal, printable margin (mm), auto or fixed middle gap, **ruled lines** in the gap for handwriting, sheet numbers
-- **Print-Saver** (both tools): colour inversion for toner-starved printers — black ↔ white swap, every other colour → solid black, so a dark "blackboard" deck prints as white paper with black ink. Pages are rasterised at 96 / 150 (default) / 220 dpi and packed through the same layout engine; *Auto* inverts only genuinely dark pages, light notes pass through untouched. In this mode text becomes part of the image (not selectable); turn the checkbox off and the vector path is exactly as before
+- **Print-Saver** (both tools): colour inversion for toner-starved printers — black ↔ white swap, every other colour → solid black, so a dark "blackboard" deck prints as white paper with black ink. Scanned pages are auto-detected and rendered at their **exact native pixel size (1:1, never upscaled — zero interpolation blur)**; the dpi slider (96 / 150 / 220) only governs genuine vector/text pages, which gain real sharpness from it. Output is packed through the same layout engine; *Auto* inverts only genuinely dark pages, light notes pass through untouched. In this mode text becomes part of the image (not selectable); turn the checkbox off and the vector path is exactly as before
 - Live preview rendered by the **same geometry engine** as the final PDF (`converter.js` is shared with the Node tests)
 - Handles odd page counts (last sheet = one slide + clean space) and blank pages without a Contents stream
 - Animated hero explainer showing exactly what the tool does, reduced-motion aware
@@ -61,7 +61,7 @@ GitHub Pages (if enabled for this repo): https://smartstopwach.github.io/notes2a
 1. `pdf.js` parses the file for stats + previews (page count, per-page size, canvas renders).
 2. `converter.js` computes, per output sheet: each 16:9 page scaled by `s = (W_page − 2·margin) / W_src`, top slide pinned to the top edge, bottom pinned to the bottom edge, gap = leftover height (auto mode) or your fixed value (stack vertically centered, shrunk to fit if requested gap is too large).
 3. `pdf-lib` writes a fresh PDF with `embedPdf()` → `drawPage()` per slide, plus vector ruled lines / page numbers if enabled.
-4. With **Print-Saver** on: each page is rendered through pdf.js to a bitmap at the chosen dpi, passed through the colour map `luma ≤ 90 → white, anything else → black` (`NotesConverter.printSaver`), re-encoded as PNG, and packed by the identical layout code (`buildFromImages`) — geometry, gap, lines and numbers all unchanged.
+4. With **Print-Saver** on: `nativePP()` reads the page's dominant embedded image from the content stream (`getOperatorList`) to learn its true px-per-point density; pages that are scans render at that exact 1:1 scale (no resample at all), vector pages at the chosen dpi. Each bitmap is then binarised by the colour map `luma ≤ 90 → white, anything else → black` (`NotesConverter.printSaver`), re-encoded as PNG, and packed by the identical layout code (`buildFromImages`) — geometry, gap, lines and numbers all unchanged.
 
 ## Tests
 
