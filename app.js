@@ -2,6 +2,20 @@
 (function () {
   'use strict';
 
+  // Build stamp: lets you confirm (DevTools console) that your browser is NOT
+  // running a stale cached app.js. Bump ?v= in index.html together with this.
+  var BUILD = 3;
+  console.info('[Notes2A4] app.js build', BUILD, '· 2-up & 4-up landscape ready');
+  if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetSize) {
+    // Old cached converter.js with a new app.js → warn instead of failing silently.
+    document.addEventListener('DOMContentLoaded', function () {
+      var bar = document.createElement('div');
+      bar.style.cssText = 'position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:99;background:#7f1d1d;color:#fecaca;padding:.7rem 1.1rem;border-radius:12px;font:600 .9rem system-ui;border:1px solid #b91c1c';
+      bar.textContent = '⚠️ Stale cache detected — press Ctrl+Shift+R (hard refresh) to load the new 4-up engine.';
+      document.body.appendChild(bar);
+    });
+  }
+
   var pdfjsLib = window.pdfjsLib;
   pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js';
 
