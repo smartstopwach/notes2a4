@@ -2,6 +2,8 @@
 
 **Your 400-page 16:9 notes PDF becomes exactly 200 print-ready A4 pages — in your browser, with zero uploads.**
 
+> **New: 4-up Studio** (`4up.html`) — a dedicated landing page for the special *four-into-one* mode: four slides on one **landscape A4**, demo-exact (see below). 400 → **100** sheets.
+
 One slide is placed flush on **top** of a white A4 sheet, the next one flush at the **bottom**, both scaled to the full page
 width. The leftover height (≈ 6 cm for 16:9 content) stays a clean white **gap in the middle — free space to write your own
 notes**. This mirrors the classic "2 slides on 1 page" handout layout (top bbox ≈ 0–334 pt, bottom ≈ 508–842 pt on a
@@ -28,6 +30,21 @@ notes**. This mirrors the classic "2 slides on 1 page" handout layout (top bbox 
 - Handles odd page counts (last sheet = one slide + clean space) and blank pages without a Contents stream
 - Animated hero explainer showing exactly what the tool does, reduced-motion aware
 
+## 4-up Studio — `4up.html` (special landing page)
+
+Geometry measured from the reference demo (`11th (2) (1).pdf`) and reproduced to ≤ 5.1 pt (1.8 mm — the demo's own edge bleed):
+
+| property | value |
+|---|---|
+| sheet | A4 **landscape** — 841.89 × 595.28 pt |
+| order | **pair columns**: page 1 top-left, 2 bottom-left, 3 top-right, 4 bottom-right |
+| column width | exactly half the printable width — 420.94 pt (no center gutter, flush edges) |
+| rows | flush to top & bottom edges; each slide keeps its own aspect (mixed 715/716/718 heights OK) |
+| middle band | leftover horizontal strip ≈ 123 pt ≈ 43 mm, white — optional ruled lines + centered sheet number |
+| saving | 400 pages → 100 landscape sheets (**−75 %** paper), vector-perfect like 2-up |
+
+The page ships its own animated hero (4-card deck flying into the 2 × 2 grid, counter flip, glow cues), a full workbench with live preview (paper, margin, auto/custom band, ruled lines, numbers) and one-click download — all in the same shared `converter.js` engine the Node tests run.
+
 ## Try it
 
 Open [`index.html`](index.html) — or with a tiny server (recommended so the pdf.js worker loads cleanly):
@@ -53,7 +70,7 @@ npm install          # dev-only, provides pdf-lib for the test harness
 node test/convert.test.mjs
 ```
 
-17 assertions: geometry vs. the reference 2-up demo (±3 pt), gap/margin invariants, shrink-to-fit, odd count, blank-page robustness, 400 → 200 halving, and an end-to-end build on a real notes PDF.
+29 assertions: 2-up geometry vs. the reference demo (±3 pt); 4-up pair-column geometry vs. the measured landscape demo cells (±6 pt per corner); band/flush/gutter invariants; shrink-to-fit; partial sheets; blank-page robustness; 400 → 200 and 400 → 100; end-to-end builds on real notes PDFs.
 
 ## Layout
 
@@ -61,6 +78,8 @@ node test/convert.test.mjs
 index.html            the whole app shell
 styles.css            theme + hero explainer animation
 app.js                file intake, options, live preview, convert, download
+4up.html              4-up Studio landing page (special mode)
+app4up.js             4-up workbench logic · fourup.css  hero animation + styles
 converter.js          shared geometry + PDF packing core (UMD: browser & node)
 vendor/               pdf-lib 1.17.1, pdfjs-dist 3.11.174 (local copies — no CDN needed)
 test/convert.test.mjs Node test harness

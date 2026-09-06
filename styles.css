@@ -248,3 +248,9 @@ input[type=range]:disabled{opacity:.35}
 .reveal{opacity:0;transform:translateY(16px);transition:opacity .6s ease,transform .6s ease}
 .reveal.in{opacity:1;transform:none}
 @media (prefers-reduced-motion:reduce){.reveal{opacity:1;transform:none;transition:none}}
+
+/* ---------- cross-link to the 4-up studio ---------- */
+.mode-teaser{font-size:.9rem;color:var(--dim);border-left:3px solid var(--acc);padding-left:.75rem;margin:.9rem 0 0}
+.mode-teaser b{color:var(--ink)}
+.nav-4up{color:var(--acc);font-weight:650}
+.nav-4up:hover{color:#7ef0c3}

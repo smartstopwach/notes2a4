@@ -85,6 +85,39 @@ const doc3 = await PDFDocument.load(res3.bytes);
 check('3 pages → 2 sheets', res3.sheets === 2 && doc3.getPageCount() === 2, `sheets=${res3.sheets}`);
 writeFileSync('/home/user/out_three_up.pdf', Buffer.from(res3.bytes));
 
+/* ---------- 5b. 4-up LANDSCAPE pair-column geometry vs measured demo ---------- */
+console.log('5b) 4-up landscape vs demo bbox (measured from "11th (2) (1).pdf"):');
+const QPAGE = NC.sheetSize(NC.normalize({ perSheet: 4 }));
+check('sheet is landscape A4', near(QPAGE.w, 841.89, .01) && near(QPAGE.h, 595.28, .01), `${QPAGE.w.toFixed(2)}x${QPAGE.h.toFixed(2)}`);
+const demoSizes = [{ w: 1280, h: 718 }, { w: 1280, h: 718 }, { w: 1280, h: 715 }, { w: 1280, h: 716 }];
+const qo = NC.normalize({ perSheet: 4 });
+const Q = NC.quadLayout(demoSizes, qo, QPAGE);
+// user's demo image boxes, top-left origin [x0,y0,x1,y1]: TL=p1, BL=p2, TR=p3, BR=p4
+const DEMO_CELLS = [
+  [-0.99, -1.33, 420.10, 234.89],
+  [-0.99, 363.07, 420.10, 599.25],
+  [424.16, 1.96, 845.25, 237.05],
+  [421.86, 364.69, 842.95, 600.33],
+];
+Q.slides.forEach(function (b, i) {
+  const topY = QPAGE.h - (b.y + b.height);
+  const dev = Math.max(Math.abs(b.x - DEMO_CELLS[i][0]), Math.abs(topY - DEMO_CELLS[i][1]),
+    Math.abs(b.x + b.width - DEMO_CELLS[i][2]), Math.abs(topY + b.height - DEMO_CELLS[i][3]));
+  check('cell ' + ['TL', 'BL', 'TR', 'BR'][i] + ' within 6pt of demo', dev <= 6, 'max dev ' + dev.toFixed(2) + 'pt');
+});
+check('pair-column order: pages 1·2 left, 3·4 right', near(Q.slides[1].x, Q.slides[0].x, .01) && Q.slides[2].x > QPAGE.w / 2 - .01);
+check('middle band ≈ demo 126pt', near(Q.gap.h, 126.0, 6), `${Q.gap.h.toFixed(1)}pt = ${(Q.gap.h * 25.4 / 72).toFixed(1)}mm`);
+check('columns flush, no center gutter', Math.abs(Q.slides[2].x - (Q.slides[0].x + Q.slides[0].width)) <= 4.2);
+const qp = NC.quadLayout([demoSizes[0], demoSizes[1]], qo, QPAGE);
+check('partial sheet (2 of 4) → right column empty, no crash', !!(qp.slides[0] && qp.slides[1]) && qp.slides[2] === null && qp.slides[3] === null);
+const qf = NC.quadLayout(demoSizes, NC.normalize({ perSheet: 4, gapMode: 'fixed', gap: 200 }), QPAGE);
+check('huge fixed gap shrinks to fit, never overflows', qf.slides.every(b => b.y >= -.01 && b.y + b.height <= 595.281));
+const src4 = readFileSync('/home/user/uploads/6120851524276654305 (1).pdf');
+const resQ = await NC.build(src4, { perSheet: 4, lines: true, pageNumbers: true });
+const docQ = await PDFDocument.load(resQ.bytes);
+check('build(): 4 real pages → 1 landscape sheet', docQ.getPageCount() === 1 && near(docQ.getPage(0).getWidth(), 841.89, .02) && near(docQ.getPage(0).getHeight(), 595.28, .02), `pages=${docQ.getPageCount()}`);
+writeFileSync('/home/user/out_four_up.pdf', Buffer.from(resQ.bytes));
+
 /* ---------- 6. 400-page claim: pages halve ---------- */
 console.log('6) halving math:');
 const big = await PDFDocument.create();
@@ -92,6 +125,8 @@ for (let i = 0; i < 400; i++) big.addPage([1280, 718]);
 const bigBytes = await big.save();
 const resBig = await NC.build(bigBytes, {}, null);
 check('400 pages → exactly 200 sheets', resBig.sourcePages === 400 && resBig.sheets === 200, `sheets=${resBig.sheets}`);
+const resQ400 = await NC.build(bigBytes, { perSheet: 4 }, null);
+check('400 pages → exactly 100 landscape sheets (−75%)', resQ400.sheets === 100, `sheets=${resQ400.sheets}`);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

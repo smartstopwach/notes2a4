@@ -1,0 +1,103 @@
+/* ============ Notes2A4 · 4-up Studio — landing styles + animation ============ */
+.fu-hero{display:grid;grid-template-columns:1.02fr .98fr;gap:2rem;align-items:center;min-height:80vh;padding-top:3.4rem}
+@media (max-width:1000px){.fu-hero{grid-template-columns:1fr;min-height:0}.fu-anim{order:-1}}
+.fu-tag{display:inline-block;font-size:.72rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#0b1020;background:linear-gradient(90deg,var(--acc),#7ef0c3);border-radius:999px;padding:.3rem .8rem;margin-bottom:.8rem;box-shadow:0 0 24px -6px rgba(52,211,153,.7)}
+.fu-hero h1{font-size:clamp(1.9rem,4.6vw,3.1rem);letter-spacing:-.03em;margin:.3em 0 .5em}
+.fu-hero .lead{color:var(--dim);max-width:58ch}
+.fu-hero .lead b{color:var(--ink)}
+.fu-hero .hinglish{color:var(--faint);font-size:.9rem}
+.fu-anim{display:flex;align-items:center;justify-content:center}
+
+/* ---------- stage ---------- */
+.fu-stage{position:relative;width:640px;max-width:94vw;height:340px}
+.fu-stage>*{position:absolute}
+.fu-stage span,.fu-stage b,.fu-stage i,.fu-stage em{position:static}
+
+/* fanned deck of 4 note cards */
+.fu-deck{left:0;top:112px;width:160px;height:170px}
+.fu-card{width:134px;height:74px;border-radius:9px;background:linear-gradient(160deg,#131c33,#0a0f1e);
+  border:1px solid #2c3a68;box-shadow:0 12px 26px -12px #000;
+  display:flex;align-items:center;justify-content:center;padding:6px;text-align:center;
+  font:600 11px/1.3 "Comic Sans MS","Segoe Print",cursive;color:#cdd7f5}
+.fc1{left:0;top:0;transform:rotate(-8deg);animation:fc1 9s cubic-bezier(.45,.05,.3,1) infinite}
+.fc2{left:10px;top:32px;transform:rotate(4deg);animation:fc2 9s cubic-bezier(.45,.05,.3,1) infinite}
+.fc3{left:2px;top:64px;transform:rotate(-3deg);animation:fc3 9s cubic-bezier(.45,.05,.3,1) infinite}
+.fc4{left:12px;top:96px;transform:rotate(7deg);animation:fc4 9s cubic-bezier(.45,.05,.3,1) infinite}
+@keyframes fc1{0%,5%{transform:rotate(-8deg);opacity:1}13%,92%{transform:translate(325px,-64px) rotate(0) scale(1.22);opacity:0}100%{transform:rotate(-8deg);opacity:1}}
+@keyframes fc2{0%,13%{transform:rotate(4deg);opacity:1}21%,92%{transform:translate(315px,46px) rotate(0) scale(1.22);opacity:0}100%{transform:rotate(4deg);opacity:1}}
+@keyframes fc3{0%,21%{transform:rotate(-3deg);opacity:1}29%,92%{transform:translate(486px,-116px) rotate(0) scale(1.22);opacity:0}100%{transform:rotate(-3deg);opacity:1}}
+@keyframes fc4{0%,29%{transform:rotate(7deg);opacity:1}37%,92%{transform:translate(476px,-4px) rotate(0) scale(1.22);opacity:0}100%{transform:rotate(7deg);opacity:1}}
+
+.fu-arrow{left:212px;top:46%;color:var(--faint);font-size:1.3rem;animation:fuarr 9s ease infinite}
+@keyframes fuarr{0%,4%{opacity:.25;transform:translateX(-5px)}12%,55%{opacity:1;transform:translateX(5px)}70%,100%{opacity:.25;transform:translateX(-5px)}}
+
+/* landscape A4 sheet with 4 cells + middle band (demo geometry) */
+.fu-sheet{left:300px;top:44px;width:330px;height:233px;aspect-ratio:841.89/595.28;background:var(--sheet);
+  border-radius:10px;box-shadow:0 26px 60px -18px rgba(0,0,0,.8),0 0 0 1px #ffffff22;
+  animation:fuSheetIn 9s ease infinite}
+@keyframes fuSheetIn{0%,4%{transform:scale(.985);box-shadow:0 26px 60px -18px rgba(0,0,0,.8),0 0 0 1px #ffffff22}
+50%,100%{transform:scale(1)}}
+.fu-cell{width:calc(50% - 5px);height:39.5%;background:linear-gradient(150deg,#141d33,#0a0f1d);border-radius:4px;
+  display:flex;align-items:center;justify-content:center;font:700 13px/1 system-ui;color:#d6e0ff;opacity:0}
+.cellTL{left:2.5px;top:2.5px;animation:cellIn1 9s cubic-bezier(.3,.7,.25,1) infinite}
+.cellBL{left:2.5px;bottom:2.5px;animation:cellIn2 9s cubic-bezier(.3,.7,.25,1) infinite}
+.cellTR{right:2.5px;top:2.5px;animation:cellIn3 9s cubic-bezier(.3,.7,.25,1) infinite}
+.cellBR{right:2.5px;bottom:2.5px;animation:cellIn4 9s cubic-bezier(.3,.7,.25,1) infinite}
+@keyframes cellIn1{0%,12%{opacity:0;transform:scale(.6)}17%,90%{opacity:1;transform:scale(1)}96%,100%{opacity:0;transform:scale(.6)}}
+@keyframes cellIn2{0%,20%{opacity:0;transform:scale(.6)}25%,90%{opacity:1;transform:scale(1)}96%,100%{opacity:0;transform:scale(.6)}}
+@keyframes cellIn3{0%,28%{opacity:0;transform:scale(.6)}33%,90%{opacity:1;transform:scale(1)}96%,100%{opacity:0;transform:scale(.6)}}
+@keyframes cellIn4{0%,36%{opacity:0;transform:scale(.6)}41%,90%{opacity:1;transform:scale(1)}96%,100%{opacity:0;transform:scale(.6)}}
+
+.fu-band{left:2.5px;right:2.5px;top:calc(50% - 21px);height:42px;display:flex;align-items:center;justify-content:center;
+  background:repeating-linear-gradient(transparent 0 13px,#dfe5f2 13px 14px);
+  clip-path:inset(0 100% 0 0);animation:bandSweep 9s ease infinite}
+.fu-band b{position:static;font-size:9.5px;letter-spacing:.06em;color:#5b6683;background:#fff;padding:.1rem .5rem;border-radius:999px;border:1px solid #dfe5f2}
+@keyframes bandSweep{0%,46%{clip-path:inset(0 100% 0 0)}56%,90%{clip-path:inset(0 0 0 0)}96%,100%{clip-path:inset(0 100% 0 0)}}
+
+/* corner sparks at landing moments */
+.fu-spark{width:34px;height:34px;border-radius:50%;background:radial-gradient(closest-side,rgba(52,211,153,.85),transparent);opacity:0;animation:spark 9s ease infinite}
+.sp1{left:368px;top:72px;animation-delay:0s}
+.sp2{left:368px;top:196px}
+.sp3{left:540px;top:72px}
+.sp4{left:540px;top:196px}
+@keyframes spark{0%,6%,100%{opacity:0;transform:scale(.4)}9%{opacity:1;transform:scale(1.5)}14%{opacity:0;transform:scale(2)}}
+.sp2{animation-name:spark2}.sp3{animation-name:spark3}.sp4{animation-name:spark4}
+@keyframes spark2{0%,14%,100%{opacity:0;transform:scale(.4)}17%{opacity:1;transform:scale(1.5)}22%{opacity:0;transform:scale(2)}}
+@keyframes spark3{0%,22%,100%{opacity:0;transform:scale(.4)}25%{opacity:1;transform:scale(1.5)}30%{opacity:0;transform:scale(2)}}
+@keyframes spark4{0%,30%,100%{opacity:0;transform:scale(.4)}33%{opacity:1;transform:scale(1.5)}38%{opacity:0;transform:scale(2)}}
+
+.fu-sheetlabel{left:0;width:100%;bottom:-24px;text-align:center;font-size:.72rem;color:var(--faint)}
+.fu-count{left:0;top:2%;display:flex;align-items:baseline;gap:.5rem;font-size:1.15rem;font-weight:800;
+  background:rgba(11,16,32,.88);border:1px solid var(--line);border-radius:999px;padding:.32rem .85rem}
+.fu-count i{color:var(--faint);font-style:normal;font-size:.8rem;font-weight:600}
+.fu-count span{color:var(--dim);animation:fuOld 9s ease infinite}
+.fu-count b{color:var(--acc);animation:fuNew 9s ease infinite}
+.fu-count em{font-style:normal;font-size:.68rem;color:#06251a;background:var(--acc);border-radius:999px;padding:.05rem .45rem;animation:fuChip 9s ease infinite}
+@keyframes fuOld{0%,52%{opacity:1;text-decoration:none}60%,90%{opacity:.25;text-decoration:line-through}100%{opacity:1;text-decoration:none}}
+@keyframes fuNew{0%,54%{opacity:.15;transform:scale(.7)}62%,90%{opacity:1;transform:scale(1)}100%{opacity:.15;transform:scale(.7)}}
+@keyframes fuChip{0%,62%{opacity:0;transform:translateX(-8px)}70%,92%{opacity:1;transform:none}100%{opacity:0}}
+
+/* ---------- how strip ---------- */
+.fu-how{padding-top:1rem}
+.fu-howgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+@media (max-width:900px){.fu-howgrid{grid-template-columns:1fr}}
+.fu-hitem{background:linear-gradient(180deg,var(--panel),var(--bg2));border:1px solid var(--line);border-radius:var(--rad);padding:1.1rem 1.15rem;display:flex;gap:.9rem}
+.fu-hitem b{flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  background:rgba(52,211,153,.12);color:var(--acc);font-size:1rem;border:1px solid rgba(52,211,153,.35)}
+.fu-hitem p{color:var(--dim);font-size:.88rem;margin:0}
+.fu-hitem p b{all:unset;color:var(--ink);font-weight:700}
+
+/* 4-up preview canvases get their own subtle band hint */
+#convert4 .sheet-fig canvas{border-radius:6px}
+
+@media (max-width:700px){
+  .fu-stage{transform:scale(.72);transform-origin:top center;height:250px}
+}
+@media (prefers-reduced-motion:reduce){
+  .fu-card,.fu-sheet,.fu-arrow,.fu-spark{animation:none!important}
+  .fu-card{opacity:0}
+  .fu-cell{animation:none!important;opacity:1}
+  .fu-band{animation:none!important;clip-path:none}
+  .fu-count b,.fu-count em,.fu-count span{animation:none!important;opacity:1;transform:none}
+  .fu-count span{text-decoration:line-through;opacity:.4}
+}
