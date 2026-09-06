@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes2A4 — pack 2 note pages onto every A4 sheet (400 → 200)</title>
+<meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body id="top">
+
+<header class="topbar">
+  <a class="brand" href="#top" aria-label="Notes2A4 home">
+    <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
+      <rect x="6" y="2" width="20" height="28" rx="3" class="bm-sheet"/>
+      <rect x="9" y="5"  width="14" height="8" rx="1.5" class="bm-slide"/>
+      <rect x="9" y="19" width="14" height="8" rx="1.5" class="bm-slide"/>
+      <line x1="9.5" y1="16" x2="22.5" y2="16" class="bm-gap"/>
+    </svg>
+    <span class="brand-name">Notes<strong>2A4</strong></span>
+    <span class="brand-sub">two slides → one sheet</span>
+  </a>
+  <nav class="topnav" aria-label="Main">
+    <a href="#how">How it works</a>
+    <a href="#convert">Convert</a>
+    <a href="#faq">FAQ</a>
+    <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener" class="nav-gh">GitHub</a>
+  </nav>
+  <span class="privacy-chip" title="Your file never leaves this tab">🔒 <b>0% uploaded</b> — runs in your browser</span>
+</header>
+
+<main>
+
+  <!-- ======================= HERO + EXPLAINER ANIMATION ======================= -->
+  <section class="hero">
+    <div class="hero-copy reveal">
+      <p class="kicker">for 16:9 class notes · whiteboard sheets · lecture-slide PDFs</p>
+      <h1>Your <span class="num" id="hundreds">400</span>-page notes.<br><span class="grad">Now <span id="halfs">200</span> printed pages.</span></h1>
+      <p class="lead">Notes2A4 puts <b>one slide on top and one at the bottom</b> of a clean white A4 sheet —
+        full width, zero cropping — and leaves the middle as open space for your own handwritten notes.
+        A 400-page notebook becomes exactly 200 pages. Vector-perfect, nothing re-rasterised.</p>
+      <p class="hinglish">400 page ke notes → 200 page. Poori processing <b>aapke browser mein</b> hoti hai — ek bhi file kahin upload nahi hoti.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#convert">Pack my PDF ↓</a>
+        <a class="btn btn-ghost" href="#how">See how it works</a>
+      </div>
+      <ul class="hero-stats">
+        <li><b>−50%</b><span>pages</span></li>
+        <li><b>150&nbsp;MB</b><span>never leaves device</span></li>
+        <li><b>∞</b><span>free, no login</span></li>
+      </ul>
+    </div>
+
+    <div class="hero-anim" aria-hidden="true">
+      <div class="anim-stage">
+        <!-- left: a messy pile of 16:9 note pages -->
+        <div class="anim-pile">
+          <div class="mini ms1"><span>M = L T I</span></div>
+          <div class="mini ms2"><span>F = ma</span></div>
+          <div class="mini ms3"><span>θ = tan⁻¹(y/x)</span></div>
+          <div class="mini ms4"><span>7 Fundamental</span></div>
+          <p class="pile-label">400 pages</p>
+        </div>
+
+        <div class="anim-arrow"><span>➜</span></div>
+
+        <!-- right: the A4 sheet that assembles itself -->
+        <div class="anim-sheet">
+          <div class="sheet-slide s-top"><span>Broteesor ABCs · full 11th</span></div>
+          <div class="sheet-gap">✍️ space for notes</div>
+          <div class="sheet-slide s-bot"><span>MLT·CAT·LO · SI Units</span></div>
+          <p class="sheet-label">A4 · 210 × 297 mm</p>
+        </div>
+
+        <div class="anim-badge"><span class="b400">400</span><i>→</i><span class="b200">200</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= HOW IT WORKS ======================= -->
+  <section id="how" class="how">
+    <h2 class="reveal">What this website actually does</h2>
+    <div class="steps">
+      <article class="step-card reveal">
+        <span class="step-no">01</span>
+        <h3>Feed it your notes PDF</h3>
+        <svg viewBox="0 0 120 72" class="step-fig" aria-hidden="true">
+          <rect x="24" y="6" width="72" height="40" rx="4" class="sf-slide"/>
+          <rect x="24" y="50" width="72" height="40" rx="4" class="sf-slide sf-fade"/>
+          <path d="M60 2 v-14" class="sf-in"/>
+          <text x="60" y="68" text-anchor="middle" class="sf-txt">16:9 pages</text>
+        </svg>
+        <p>Drop the PDF of your class notes (the kind exported from 16:9 slide videos). It is read locally in the tab — never sent to a server.</p>
+      </article>
+      <article class="step-card reveal">
+        <span class="step-no">02</span>
+        <h3>Two slides are stacked per sheet</h3>
+        <svg viewBox="0 0 120 72" class="step-fig" aria-hidden="true">
+          <rect x="38" y="2" width="44" height="68" rx="3" class="sf-a4"/>
+          <rect x="40.5" y="4.5" width="39" height="22" rx="2" class="sf-slide"/>
+          <rect x="40.5" y="45.5" width="39" height="22" rx="2" class="sf-slide"/>
+          <line x1="42" y1="34" x2="78" y2="34" class="sf-gap"/>
+          <text x="60" y="31" text-anchor="middle" class="sf-txt2">gap for notes</text>
+        </svg>
+        <p>Page 1 scales to the full A4 width and sits flush on top; page 2 sits flush at the bottom. The leftover ~6&nbsp;cm in the middle stays white — add ruled lines if you write during revision.</p>
+      </article>
+      <article class="step-card reveal">
+        <span class="step-no">03</span>
+        <h3>Download half-size, print, study</h3>
+        <svg viewBox="0 0 120 72" class="step-fig" aria-hidden="true">
+          <rect x="30" y="8" width="26" height="52" rx="3" class="sf-a4 sf-big"/>
+          <text x="57.5" y="40" class="sf-txt3">→</text>
+          <rect x="64" y="8" width="26" height="52" rx="3" class="sf-a4 sf-big"/>
+          <text x="43" y="68" text-anchor="middle" class="sf-txt">400</text>
+          <text x="77" y="68" text-anchor="middle" class="sf-txt">200</text>
+        </svg>
+        <p>The tool writes a brand-new PDF: N pages in → ⌈N/2⌉ sheets out, original vector quality, ready for double-sided-free printing at 100% scale.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ======================= CONVERTER ======================= -->
+  <section id="convert" class="convert">
+    <div class="convert-head reveal">
+      <h2>The packer</h2>
+      <p class="sub">Upload → preview → download. Everything below happens inside this tab.</p>
+    </div>
+
+    <!-- dropzone -->
+    <div id="dropzone" class="panel dropzone reveal" role="button" tabindex="0" aria-label="Upload a PDF file">
+      <svg viewBox="0 0 64 64" class="dz-icon" aria-hidden="true">
+        <path d="M32 42 V18 m0 0 -9 9 m9 -9 9 9" class="dz-arrow"/>
+        <path d="M14 40 v8 a6 6 0 0 0 6 6 h24 a6 6 0 0 0 6-6 v-8" class="dz-tray"/>
+      </svg>
+      <p class="dz-title">Drop your notes PDF here</p>
+      <p class="dz-hint">any length — 20, 200 or 400 pages · or</p>
+      <button type="button" class="btn btn-primary" id="chooseBtn">Choose PDF</button>
+      <p class="dz-fine">🔒 No server, no account, no upload. Close the tab and everything is gone.</p>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+      <p class="dz-error" id="fileError" role="alert" hidden></p>
+    </div>
+
+    <!-- workbench -->
+    <div id="workbench" class="workbench" hidden>
+      <div class="filebar">
+        <span class="fb-name" id="fbName">file.pdf</span>
+        <span class="chip" id="fbPages">— pages</span>
+        <span class="chip chip-ok" id="fbRatio">—</span>
+        <span class="chip chip-arrow" id="fbOut">→ — sheets</span>
+        <span class="chip chip-warn" id="fbOdd" hidden>odd page count</span>
+        <button class="btn btn-tiny" id="resetBtn" type="button">✕ remove</button>
+      </div>
+
+      <div class="cols">
+        <div class="card opts">
+          <h3>Layout</h3>
+          <label class="fld">
+            <span>Paper</span>
+            <select id="optPaper">
+              <option value="a4" selected>A4 — 210 × 297 mm (portrait)</option>
+              <option value="letter">Letter — 216 × 279 mm</option>
+              <option value="a5">A5 — 148 × 210 mm</option>
+              <option value="legal">Legal — 216 × 356 mm</option>
+            </select>
+          </label>
+          <label class="fld">
+            <span>Edge margin <i id="vMargin">0 mm</i></span>
+            <input type="range" id="optMargin" min="0" max="12" step="0.5" value="0">
+            <small>0 = slides touch the sheet edges (like the classic 2-per-page demo). Add 5–8 mm for home printers that can't print full-bleed.</small>
+          </label>
+          <div class="fld">
+            <span class="lbl">Middle gap</span>
+            <div class="seg" role="radiogroup" aria-label="Gap mode">
+              <label><input type="radio" name="gapmode" id="gapAuto" checked><span>Auto (fill leftover)</span></label>
+              <label><input type="radio" name="gapmode" id="gapFixed"><span>Custom</span></label>
+            </div>
+            <input type="range" id="optGap" min="8" max="90" step="1" value="45" disabled>
+            <small id="vGap">Auto: slides stay flush top &amp; bottom, remaining white space lands in the middle.</small>
+          </div>
+          <label class="sw"><input type="checkbox" id="optLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b> in the gap<em>for writing notes during revision</em></span></label>
+          <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>e.g. “137 / 200” inside the gap</em></span></label>
+        </div>
+
+        <div class="card prev">
+          <h3>Live preview <em>first two sheets, same engine as the final PDF</em></h3>
+          <div class="prev-row">
+            <figure class="sheet-fig"><canvas id="pv1"></canvas><figcaption>sheet 1</figcaption></figure>
+            <figure class="sheet-fig"><canvas id="pv2"></canvas><figcaption>sheet 2</figcaption></figure>
+          </div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <button class="btn btn-primary btn-big" id="goBtn" type="button">⚡ Pack <span id="goIn">—</span> pages into <span id="goOut">—</span> sheets</button>
+        <div class="progress" id="progressBox" hidden>
+          <div class="pbar"><div class="pfill" id="pfill"></div></div>
+          <span id="pstatus">starting…</span>
+        </div>
+      </div>
+
+      <!-- result -->
+      <div class="card result" id="result" hidden>
+        <div class="res-stats">
+          <div class="rs-big"><span id="rsIn">400</span><i>→</i><span id="rsOut">200</span><em>pages</em></div>
+          <div class="rs-sub" id="rsMeta">—</div>
+        </div>
+        <div class="res-btns">
+          <a class="btn btn-primary btn-big" id="dlBtn" href="#" download>⬇ Download packed PDF</a>
+          <a class="btn btn-ghost" id="openBtn" href="#" target="_blank" rel="noopener">Open &amp; check</a>
+          <button class="btn btn-tiny" id="againBtn" type="button">Convert another file</button>
+        </div>
+        <div class="thumbs" id="thumbs" aria-label="Preview of packed sheets"></div>
+        <details class="print-tips">
+          <summary>🖨 Printing tips</summary>
+          <ul>
+            <li>Print at <b>Actual size / 100%</b> (never “fit to page” — that re-scales and adds its own margins).</li>
+            <li>Single-sided is fine: each sheet already holds two note pages.</li>
+            <li>Dark board-notes print better on 90–120 gsm paper if your printer bleeds.</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= FAQ ======================= -->
+  <section id="faq" class="faq">
+    <h2 class="reveal">Questions students actually ask</h2>
+    <details><summary>Is my PDF uploaded anywhere?</summary><p>No. The file is read by JavaScript in your browser (pdf-lib + pdf.js). There is no backend — not even an analytics ping with your filename. You can unplug the network after the page loads and it still works.</p></details>
+    <details><summary>Will the text become blurry (images) after packing?</summary><p>No. Each source page is embedded as a <b>vector Form XObject</b>, not a screenshot. Text stays selectable and prints at full printer resolution.</p></details>
+    <details><summary>What if my page count is odd (401 pages)?</summary><p>The last sheet gets one slide on top and clean white space below — handy for extra notes. Nothing is dropped or duplicated.</p></details>
+    <details><summary>My notes aren't exactly 16:9.</summary><p>The packer fits <i>each page's own</i> aspect into the full printable width, so 4:3, 16:10 or mixed decks also work. The middle gap simply adjusts to the leftover height.</p></details>
+    <details><summary>Why not just print 2 slides per page from the PDF viewer?</summary><p>Viewer “2-in-1” shrinks pages into half-height boxes with black borders and wastes the middle. Here the slides are re-laid-out flush at the edges with a purposeful note gap — and you get a real, shareable PDF file, not just one print job.</p></details>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>Notes2A4 — built for 400-page notebook doom. <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener">View source on GitHub</a> · MIT licence.</p>
+  <p class="foot-dim">Made with ⚡ and vector geometry · <span class="hin">paper bachao, padhai badhao</span></p>
+</footer>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="converter.js"></script>
+<script src="app.js"></script>
+<noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
+</body>
+</html>

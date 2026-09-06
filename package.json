@@ -1,0 +1,13 @@
+{
+  "name": "notes2a4",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pack two 16:9 note slides onto every white A4 sheet — 400 pages become 200. Fully in-browser PDF tool.",
+  "scripts": {
+    "test": "node test/convert.test.mjs",
+    "start": "python3 -m http.server 8080"
+  },
+  "devDependencies": {
+    "pdf-lib": "1.17.1"
+  }
+}
