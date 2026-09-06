@@ -41,6 +41,7 @@
         full width, zero cropping — and leaves the middle as open space for your own handwritten notes.
         A 400-page notebook becomes exactly 200 pages. Vector-perfect, nothing re-rasterised.</p>
       <p class="hinglish">400 page ke notes → 200 page. Poori processing <b>aapke browser mein</b> hoti hai — ek bhi file kahin upload nahi hoti.</p>
+      <p class="mode-teaser">✨ <b>New: 4-up mode</b> — a 2 × 2 grid on <b>landscape A4</b>: 400 pages become just 100. <a href="#quadband">Watch the animation ↓</a></p>
       <div class="cta-row">
         <a class="btn btn-primary" href="#convert">Pack my PDF ↓</a>
         <a class="btn btn-ghost" href="#how">See how it works</a>
@@ -103,7 +104,7 @@
           <line x1="42" y1="34" x2="78" y2="34" class="sf-gap"/>
           <text x="60" y="31" text-anchor="middle" class="sf-txt2">gap for notes</text>
         </svg>
-        <p>Page 1 scales to the full A4 width and sits flush on top; page 2 sits flush at the bottom. The leftover ~6&nbsp;cm in the middle stays white — add ruled lines if you write during revision.</p>
+        <p>Page 1 scales to the full A4 width and sits flush on top; page 2 sits flush at the bottom. The leftover ~6&nbsp;cm in the middle stays white — add ruled lines if you write during revision. Prefer density? Switch the packer to <b>4-up</b> for a 2 × 2 grid on <b>landscape A4</b>.</p>
       </article>
       <article class="step-card reveal">
         <span class="step-no">03</span>
@@ -120,11 +121,43 @@
     </div>
   </section>
 
+  <!-- ======================= 4-UP BAND (animated) ======================= -->
+  <section id="quadband" class="quad-band">
+    <div class="qb-copy reveal">
+      <span class="qb-tag">new mode</span>
+      <h2>4 note pages <span class="grad">→ 1 landscape sheet</span></h2>
+      <p>Flip the A4 sideways and your slides drop into a tidy <b>2 × 2 grid</b> with even cross-gutters — every slide keeps its
+        16:9 shape and the whole block stays perfectly centred. Maximum density: <b>400 → 100</b>, a 75% paper cut.</p>
+      <button class="btn btn-primary" id="useQuadBtn" type="button">Use 4-up mode ↓</button>
+    </div>
+    <div class="qb-anim" aria-hidden="true">
+      <div class="q-stage">
+        <div class="q-pile">
+          <div class="mini qf1"><span>page 1</span></div>
+          <div class="mini qf2"><span>page 2</span></div>
+          <div class="mini qf3"><span>page 3</span></div>
+          <div class="mini qf4"><span>page 4</span></div>
+          <p class="pile-label qpile-label">−75%</p>
+        </div>
+        <div class="q-sheet">
+          <div class="qg qgh"></div>
+          <div class="qg qgv"></div>
+          <div class="qc qc1"><span>M = L T I</span></div>
+          <div class="qc qc2"><span>7 Fundamental</span></div>
+          <div class="qc qc3"><span>F = ma</span></div>
+          <div class="qc qc4"><span>SI Units</span></div>
+          <p class="sheet-label qsheet-label">A4 · landscape · 297 × 210 mm</p>
+        </div>
+        <div class="q-badge"><span>400</span><i>→</i><b>100</b></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ======================= CONVERTER ======================= -->
   <section id="convert" class="convert">
     <div class="convert-head reveal">
       <h2>The packer</h2>
-      <p class="sub">Upload → preview → download. Everything below happens inside this tab.</p>
+      <p class="sub">Upload → pick 2-up or 4-up → preview → download. Everything stays inside this tab.</p>
     </div>
 
     <!-- dropzone -->
@@ -155,6 +188,13 @@
       <div class="cols">
         <div class="card opts">
           <h3>Layout</h3>
+          <div class="fld">
+            <span class="lbl">Pages per sheet</span>
+            <div class="seg" role="radiogroup" aria-label="Pages per sheet">
+              <label><input type="radio" name="persheet" id="per2" checked><span>2-up · portrait</span></label>
+              <label><input type="radio" name="persheet" id="per4"><span>4-up · landscape</span></label>
+            </div>
+          </div>
           <label class="fld">
             <span>Paper</span>
             <select id="optPaper">
@@ -178,7 +218,7 @@
             <input type="range" id="optGap" min="8" max="90" step="1" value="45" disabled>
             <small id="vGap">Auto: slides stay flush top &amp; bottom, remaining white space lands in the middle.</small>
           </div>
-          <label class="sw"><input type="checkbox" id="optLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b> in the gap<em>for writing notes during revision</em></span></label>
+          <label class="sw" id="linesRow"><input type="checkbox" id="optLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b> in the gap <em>for writing notes during revision · 2-up only</em></span></label>
           <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>e.g. “137 / 200” inside the gap</em></span></label>
         </div>
 
