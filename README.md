@@ -21,13 +21,12 @@ notes**. This mirrors the classic "2 slides on 1 page" handout layout (top bbox 
 ## Features
 
 - **100% client-side** — pdf.js reads, pdf-lib writes; no server, no tracking, works offline after load (all libraries vendored in `vendor/`)
-- **Two modes** — `2-up portrait` (demo-exact: flush top/bottom slides + big middle note gap) and `4-up landscape` (uniform 2 × 2 grid with even cross-gutters): **400 pages → 200** or **→ 100 sheets (−75%)**
 - **Vector-perfect output** — source pages are embedded as PDF Form XObjects, not screenshots
 - **Demo-exact default geometry** — margin 0, full-width slides, auto middle gap (matches the standard 2-per-page layout pixel-close)
-- Options: A4 / Letter / A5 / Legal, printable margin (mm), auto or fixed middle gap / cross-gutters, **ruled lines** in the gap for handwriting, sheet numbers
+- Options: A4 / Letter / A5 / Legal, printable margin (mm), auto or fixed middle gap, **ruled lines** in the gap for handwriting, sheet numbers
 - Live preview rendered by the **same geometry engine** as the final PDF (`converter.js` is shared with the Node tests)
 - Handles odd page counts (last sheet = one slide + clean space) and blank pages without a Contents stream
-- Animated front page: explainer loop for the 2-up portrait flow **and** a 4-up landscape band (slides flying into the 2 × 2 grid), reduced-motion aware
+- Animated hero explainer showing exactly what the tool does, reduced-motion aware
 
 ## Try it
 
@@ -42,7 +41,7 @@ GitHub Pages (if enabled for this repo): https://smartstopwach.github.io/notes2a
 ## How it works
 
 1. `pdf.js` parses the file for stats + previews (page count, per-page size, canvas renders).
-2. `converter.js` computes, per output sheet: **2-up** — each 16:9 page scaled by `s = (W_page − 2·margin) / W_src`, top slide pinned to the top edge, bottom pinned to the bottom edge, gap = leftover height (auto mode) or your fixed value (stack vertically centered, shrunk to fit if requested gap is too large). **4-up** — sheet flips to landscape, a uniform scale fits four cells in a 2 × 2 grid with even cross-gutters, block centered; a partial last sheet (1–3 slides) is centered and the free cells stay blank.
+2. `converter.js` computes, per output sheet: each 16:9 page scaled by `s = (W_page − 2·margin) / W_src`, top slide pinned to the top edge, bottom pinned to the bottom edge, gap = leftover height (auto mode) or your fixed value (stack vertically centered, shrunk to fit if requested gap is too large).
 3. `pdf-lib` writes a fresh PDF with `embedPdf()` → `drawPage()` per slide, plus vector ruled lines / page numbers if enabled.
 
 ## Tests
@@ -54,7 +53,7 @@ npm install          # dev-only, provides pdf-lib for the test harness
 node test/convert.test.mjs
 ```
 
-29 assertions: 2-up geometry vs. the reference demo (±3 pt), 4-up landscape grid (uniform cell width, gutter fit, partial-sheet centering), gap/margin invariants, shrink-to-fit, odd counts, blank-page robustness, 400 → 200 and 400 → 100 halving/quartering, and end-to-end builds on a real notes PDF.
+17 assertions: geometry vs. the reference 2-up demo (±3 pt), gap/margin invariants, shrink-to-fit, odd count, blank-page robustness, 400 → 200 halving, and an end-to-end build on a real notes PDF.
 
 ## Layout
 

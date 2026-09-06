@@ -2,16 +2,14 @@
 (function () {
   'use strict';
 
-  // Build stamp: lets you confirm (DevTools console) that your browser is NOT
-  // running a stale cached app.js. Bump ?v= in index.html together with this.
-  var BUILD = 3;
-  console.info('[Notes2A4] app.js build', BUILD, '· 2-up & 4-up landscape ready');
-  if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetSize) {
-    // Old cached converter.js with a new app.js → warn instead of failing silently.
+  // Build stamp: confirm in DevTools console that no stale cached app.js is running.
+  var BUILD = 4;
+  console.info('[Notes2A4] app.js build', BUILD, '· 2-up A4 packer (demo layout)');
+  if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetLayout) {
     document.addEventListener('DOMContentLoaded', function () {
       var bar = document.createElement('div');
       bar.style.cssText = 'position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:99;background:#7f1d1d;color:#fecaca;padding:.7rem 1.1rem;border-radius:12px;font:600 .9rem system-ui;border:1px solid #b91c1c';
-      bar.textContent = '⚠️ Stale cache detected — press Ctrl+Shift+R (hard refresh) to load the new 4-up engine.';
+      bar.textContent = '⚠️ Stale cache detected — press Ctrl+Shift+R (hard refresh).';
       document.body.appendChild(bar);
     });
   }
@@ -34,17 +32,14 @@
   var wb = $('workbench'), result = $('result'), thumbs = $('thumbs');
   var goBtn = $('goBtn'), pBox = $('progressBox'), pFill = $('pfill'), pStatus = $('pstatus');
   var opt = {
-    per2: $('per2'), per4: $('per4'),
     paper: $('optPaper'), margin: $('optMargin'),
     gapAuto: $('gapAuto'), gapFixed: $('gapFixed'), gap: $('optGap'),
     lines: $('optLines'), nums: $('optNums')
   };
 
   /* ---------- helpers ---------- */
-  function perSheet() { return opt.per4.checked ? 4 : 2; }
   function readOptions() {
     return NotesConverter.normalize({
-      perSheet: perSheet(),
       paper: opt.paper.value,
       margin: parseFloat(opt.margin.value) * MM,
       gapMode: opt.gapFixed.checked ? 'fixed' : 'auto',
@@ -109,35 +104,21 @@
 
   function afterLoad() {
     dz.hidden = true; wb.hidden = false; result.hidden = true;
+    var n = state.pages, sheets = Math.ceil(n / 2);
     $('fbName').textContent = state.name;
-    $('fbPages').textContent = state.pages + (state.pages === 1 ? ' page' : ' pages');
+    $('fbPages').textContent = n + (n === 1 ? ' page' : ' pages');
     var w9 = 16 / 9, tol = 0.07, allWide = true, anyWide = false;
     state.sizes.forEach(function (s) {
       var ar = s.w / s.h;
       if (Math.abs(ar - w9) / w9 <= tol) anyWide = true; else allWide = false;
     });
     $('fbRatio').textContent = allWide ? '16:9 ✓' : (anyWide ? 'mixed aspects — auto-fit' : 'auto-fit');
+    $('fbOut').textContent = '→ ' + sheets + ' sheet' + (sheets === 1 ? '' : 's') + ' (−' + Math.round((1 - sheets / n) * 100) + '%)';
+    $('fbOdd').hidden = n % 2 === 0;
+    $('goIn').textContent = n; $('goOut').textContent = sheets;
     goBtn.disabled = false;
-    updateModeUI();
     renderPreview();
     wb.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  /* sheet counts, chips, labels and option visibility for the current mode */
-  function updateModeUI() {
-    var per = perSheet();
-    var n = state.pages;
-    var sheets = n ? Math.ceil(n / per) : 0;
-    $('fbOut').textContent = n
-      ? '→ ' + sheets + ' ' + (per === 4 ? 'landscape ' : '') + 'sheet' + (sheets === 1 ? '' : 's') +
-        ' (−' + Math.round((1 - sheets / n) * 100) + '%)'
-      : '→ — sheets';
-    $('fbOdd').hidden = (n % per === 0);
-    $('goIn').textContent = n || '—';
-    $('goOut').textContent = sheets || '—';
-    $('linesRow').hidden = (per === 4);
-    if (per === 4 && opt.lines.checked) opt.lines.checked = false;
-    updateGapLabel();
   }
 
   /* ---------- options wiring ---------- */
@@ -145,19 +126,16 @@
   function schedulePreview() {
     clearTimeout(pvTimer);
     pvTimer = setTimeout(renderPreview, 120);
-    updateModeUI();
+    updateGapLabel();
+    var n = state.pages;
+    $('fbOut').textContent = '→ ' + Math.ceil(n / 2) + ' sheets (−' + Math.round((1 - Math.ceil(n / 2) / n) * 100) + '%)';
   }
   function updateGapLabel() {
     $('vMargin').textContent = parseFloat(opt.margin.value) + ' mm';
-    var quad = perSheet() === 4;
     if (opt.gapFixed.checked) {
-      $('vGap').textContent = quad
-        ? 'Custom: ' + parseFloat(opt.gap.value) + ' mm cross-gutters between the four cells.'
-        : 'Custom: ' + parseFloat(opt.gap.value) + ' mm of white space between the two slides.';
+      $('vGap').textContent = 'Custom: ' + parseFloat(opt.gap.value) + ' mm of white space between the two slides.';
     } else {
-      $('vGap').textContent = quad
-        ? 'Auto: even slim gutters; the 2 × 2 block is centered on the landscape sheet.'
-        : 'Auto: slides stay flush top & bottom, remaining white space lands in the middle.';
+      $('vGap').textContent = 'Auto: slides stay flush top & bottom, remaining white space lands in the middle.';
     }
   }
   opt.paper.addEventListener('change', schedulePreview);
@@ -168,35 +146,30 @@
   [opt.gapAuto, opt.gapFixed].forEach(function (r) {
     r.addEventListener('change', function () { opt.gap.disabled = opt.gapAuto.checked; schedulePreview(); });
   });
-  [opt.per2, opt.per4].forEach(function (r) { r.addEventListener('change', schedulePreview); });
-  $('useQuadBtn').addEventListener('click', function () {
-    opt.per4.checked = true;
-    $('convert').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    if (state.pages) schedulePreview(); else updateGapLabel();
-  });
 
   /* ---------- live preview (same geometry engine as converter) ---------- */
   async function renderPreview() {
     if (!state.doc) return;
     var gen = ++state.gen;
     var opts = readOptions();
-    var page = NotesConverter.sheetSize(opts);
+    var page = NotesConverter.PAPERS[opts.paper];
     var figures = document.querySelectorAll('.sheet-fig');
     for (var s = 0; s < 2; s++) {
       var fig = figures[s], canvas = $('pv' + (s + 1));
-      if (s * opts.perSheet >= state.pages) { fig.hidden = true; continue; }
+      var aIdx = 2 * s, bIdx = 2 * s + 1;
+      if (aIdx >= state.pages) { fig.hidden = true; continue; }
       fig.hidden = false;
-      await paintSheetPreview(canvas, page, opts, s);
+      await paintSheetPreview(canvas, page, opts, aIdx, bIdx);
       if (gen !== state.gen) return; // superseded
     }
   }
 
-  async function paintSheetPreview(canvas, page, opts, sIdx) {
-    var per = opts.perSheet;
-    var base = sIdx * per, idxs = [];
-    for (var c = 0; c < per && base + c < state.pages; c++) idxs.push(base + c);
-    var L = NotesConverter.layoutForSheet(idxs.map(function (i) { return state.sizes[i]; }), opts, page);
-
+  async function paintSheetPreview(canvas, page, opts, aIdx, bIdx) {
+    var L = NotesConverter.sheetLayout(
+      state.sizes[aIdx],
+      bIdx < state.pages ? state.sizes[bIdx] : null,
+      opts, page
+    );
     var cssW = Math.max(240, canvas.parentElement.clientWidth || 300);
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     var pxPerPt = cssW / page.w;
@@ -224,12 +197,10 @@
         box.width * pxPerPt, box.height * pxPerPt
       );
     }
-    var q = per === 4 ? 1.2 : 1.5;
-    for (var ci = 0; ci < idxs.length; ci++) {
-      await slide(idxs[ci] + 1, L.slides[ci], q);
-    }
+    await slide(aIdx + 1, L.top, 1.5);
+    if (bIdx < state.pages) await slide(bIdx + 1, L.bottom, 1.5);
 
-    if (opts.lines && per === 2) {
+    if (opts.lines) {
       ctx.strokeStyle = '#c3cbd9'; ctx.lineWidth = 0.8;
       for (var i = 0; i < L.lines.length; i++) {
         var yPx = (page.h - L.lines[i]) * pxPerPt;
@@ -238,13 +209,10 @@
       }
     }
     if (opts.pageNumbers) {
-      var sheets = Math.ceil(state.pages / per);
-      var txt = (sIdx + 1) + ' / ' + sheets;
+      var sheets = Math.ceil(state.pages / 2);
+      var txt = (aIdx / 2 + 1) + ' / ' + sheets;
       ctx.fillStyle = '#7a869e'; ctx.font = '7px system-ui';
-      if (per === 4) {
-        var tw4 = ctx.measureText(txt).width;
-        ctx.fillText(txt, (cssW - tw4) / 2, (page.h - L.gutterCenterY) * pxPerPt + 3);
-      } else if (opts.lines) {
+      if (opts.lines) {
         ctx.fillText(txt, (L.gap.x + 10) * pxPerPt, (page.h - L.gap.y - L.gap.h + 12) * pxPerPt + 6);
       } else {
         var tw = ctx.measureText(txt).width;
@@ -280,10 +248,9 @@
 
       $('rsIn').textContent = res.sourcePages;
       $('rsOut').textContent = res.sheets;
-      var orient = res.pageWH.w > res.pageWH.h ? 'landscape' : 'portrait';
       $('rsMeta').textContent =
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed into ' + res.sheets + ' ' +
-        NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' ' + orient + ' sheets · ' +
+        NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' sheets · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device';
 

@@ -85,34 +85,6 @@ const doc3 = await PDFDocument.load(res3.bytes);
 check('3 pages → 2 sheets', res3.sheets === 2 && doc3.getPageCount() === 2, `sheets=${res3.sheets}`);
 writeFileSync('/home/user/out_three_up.pdf', Buffer.from(res3.bytes));
 
-/* ---------- 6b. 4-up LANDSCAPE mode ---------- */
-console.log('6b) 4-up landscape layout + build:');
-const QPAGE = { w: 841.89, h: 595.28 }; // A4 turned sideways
-const qo = NC.normalize({ perSheet: 4 });
-check('sheetSize flips to landscape', qo.perSheet === 4 && (() => { const sz = NC.sheetSize(qo); return sz.w > sz.h; })(), JSON.stringify(NC.sheetSize(qo)));
-const Q = NC.quadLayout([SRC_PAGE, SRC_PAGE, SRC_PAGE, SRC_PAGE], qo, QPAGE);
-check('4 cells present, uniform width', Q.slides.length === 4 && Q.slides.every(b => b && near(b.width, Q.slides[0].width, 0.01)));
-check('2×2: top row above bottom row', Q.slides[0].y > Q.slides[2].y + Q.slides[2].height);
-check('cells centered horizontally with gutter', near(Q.slides[0].x, (841.89 - (Q.slides[1].x) - Q.slides[1].width) , 0.6) && Q.slides[1].x > Q.slides[0].width);
-check('everything fits the landscape sheet', Q.slides.every(b => b.x >= -0.01 && b.y >= -0.01 && b.x + b.width <= 841.89 + 0.01 && b.y + b.height <= 595.28 + 0.01));
-check('16:9 preserved per cell', near(Q.slides[0].width / Q.slides[0].height, 1280 / 718, 0.01));
-const q2 = NC.quadLayout([SRC_PAGE, SRC_PAGE, SRC_PAGE], qo, QPAGE); // 3 of 4
-check('missing 4th cell → null, no crash', q2.slides[3] === null && q2.slides[0] !== null);
-const q1row = NC.quadLayout([SRC_PAGE, SRC_PAGE], qo, QPAGE); // 2 of 4 → one row
-check('partial sheet (2 slides) centers vertically',
-  Math.abs((q1row.slides[0].y + q1row.slides[0].height / 2) - 595.28 / 2) < 1,
-  `slide mid-y ${(q1row.slides[0].y + q1row.slides[0].height / 2).toFixed(1)} vs page mid 297.6`);
-const qBig = NC.quadLayout([SRC_PAGE, SRC_PAGE, SRC_PAGE, SRC_PAGE], NC.normalize({ perSheet: 4, gapMode: 'fixed', gap: 400, margin: 20 }), QPAGE);
-check('huge custom gutter shrinks to fit', qBig.slides.every(b => b.y >= 20 - .01 && b.y + b.height <= 595.28 - 20 + .01));
-const resQ = await NC.build(src, { perSheet: 4 });
-const docQ = await PDFDocument.load(resQ.bytes);
-const pQ = docQ.getPages()[0];
-check('build 4-up: 2 pages → 1 landscape sheet', resQ.sheets === 1 && docQ.getPageCount() === 1);
-check('4-up sheet is landscape A4 (841.89 × 595.28)', near(pQ.getWidth(), 841.89, 0.02) && near(pQ.getHeight(), 595.28, 0.02), `${pQ.getWidth().toFixed(2)}x${pQ.getHeight().toFixed(2)}`);
-const resQ6 = await NC.build(threeBytes.length ? threeBytes : src, { perSheet: 4 });
-check('3 pages → 1 sheet in 4-up (≤4 fit one sheet)', resQ6.sheets === 1);
-writeFileSync('/home/user/out_four_up.pdf', Buffer.from(resQ.bytes));
-
 /* ---------- 6. 400-page claim: pages halve ---------- */
 console.log('6) halving math:');
 const big = await PDFDocument.create();
@@ -120,8 +92,6 @@ for (let i = 0; i < 400; i++) big.addPage([1280, 718]);
 const bigBytes = await big.save();
 const resBig = await NC.build(bigBytes, {}, null);
 check('400 pages → exactly 200 sheets', resBig.sourcePages === 400 && resBig.sheets === 200, `sheets=${resBig.sheets}`);
-const resBig4 = await NC.build(bigBytes, { perSheet: 4 }, null);
-check('400 pages → exactly 100 landscape sheets (−75%)', resBig4.sheets === 100, `sheets=${resBig4.sheets}`);
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);
