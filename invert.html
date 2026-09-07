@@ -6,8 +6,8 @@
 <title>Notes2A4 · Invert Lab — flip PDF colours 1:1, page for page, size for size</title>
 <meta name="description" content="Pure colour inversion for PDFs: every page keeps its exact size and page count — black becomes white, white becomes black, every colour 255−c. Nothing is re-laid-out. 100% in-browser, no uploads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='6' width='24' height='20' rx='3' fill='%23fff'/%3E%3Cpath d='M16 6h12a0 0 0 0 1 0 0v20H16z' fill='%230d1321'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=12">
-<link rel="stylesheet" href="invert.css?v=12">
+<link rel="stylesheet" href="styles.css?v=13">
+<link rel="stylesheet" href="invert.css?v=13">
 <meta http-equiv="Cache-Control" content="no-cache">
 </head>
 <body id="top" class="iv-body">
@@ -118,6 +118,14 @@
         <div class="card opts">
           <h3>Output</h3>
           <div class="fld">
+            <span class="lbl">Flip style</span>
+            <div class="seg" role="radiogroup" aria-label="Flip style">
+              <label><input type="radio" name="ivstyle" id="styleNeg" checked><span>True negative · 255−c</span></label>
+              <label><input type="radio" name="ivstyle" id="styleInk"><span>Black ink · print-safe</span></label>
+            </div>
+            <small>Black ink flips the dark board to white paper and prints <b>every colour as solid black</b> — your printer uses only the K cartridge. Already-bright pages pass through untouched.</small>
+          </div>
+          <div class="fld">
             <span class="lbl">Sharpness</span>
             <div class="seg" role="radiogroup" aria-label="Output DPI">
               <label><input type="radio" name="ivdpi" id="dpi96"><span>96 · fast</span></label>
@@ -187,8 +195,9 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="enhance.js?v=12"></script>
-<script src="app-invert.js?v=12"></script>
+<script src="converter.js?v=13"></script>
+<script src="enhance.js?v=13"></script>
+<script src="app-invert.js?v=13"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

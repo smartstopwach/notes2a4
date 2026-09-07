@@ -5,8 +5,8 @@
 (function () {
   'use strict';
 
-  var BUILD = 1;
-  console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip');
+  var BUILD = 2;
+  console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
       var bar = document.createElement('div');
@@ -31,11 +31,13 @@
   var goBtn = $('goBtn'), pBox = $('progressBox'), pFill = $('pfill'), pStatus = $('pstatus');
   var opt = {
     dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'),
-    fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip')
+    fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
+    styleNeg: $('styleNeg'), styleInk: $('styleInk')
   };
 
   function dpi() { return opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96); }
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
+  function inkMode() { return opt.styleInk.checked && window.NotesConverter && NotesConverter.printSaver; }
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(m) { fileErr.hidden = false; fileErr.textContent = m; }
   function clearError() { fileErr.hidden = true; fileErr.textContent = ''; }
@@ -145,8 +147,13 @@
       var x2 = c2.getContext('2d', { willReadFrequently: true });
       x2.drawImage(c1, 0, 0);
       var id = x2.getImageData(0, 0, c2.width, c2.height);
-      invertPixels(id, true);
-      x2.putImageData(id, 0, 0);
+      if (inkMode()) {
+        var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true);
+        x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
+      } else {
+        invertPixels(id, true);
+        x2.putImageData(id, 0, 0);
+      }
       (await state.doc.getPage(1)).cleanup();
     } finally {
       f1.classList.remove('loading'); f2.classList.remove('loading');
@@ -169,14 +176,20 @@
     await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
     pg.cleanup();
     var idat = cx.getImageData(0, 0, cv.width, cv.height);
-    var blank = invertPixels(idat, true);
-    cx.putImageData(idat, 0, 0);
+    var blank = invertPixels(idat, false);            // scan-only: is the page pure white?
     var out = document.createElement('canvas');
     out.width = W; out.height = H;
-    var ox = out.getContext('2d');
-    ox.imageSmoothingEnabled = true; ox.imageSmoothingQuality = 'high';
-    ox.drawImage(cv, 0, 0, W, H);
-    cv.width = cv.height = 0;                        // release big buffer early
+    if (inkMode()) {                                  // same ink-bias mapping the Print-Saver engine uses
+      var hm = NotesConverter.printSaver.hqMap(idat, W, H, true);
+      out.getContext('2d').putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
+    } else {
+      invertPixels(idat, true);                       // true negative — colours included
+      cx.putImageData(idat, 0, 0);
+      var ox = out.getContext('2d');
+      ox.imageSmoothingEnabled = true; ox.imageSmoothingQuality = 'high';
+      ox.drawImage(cv, 0, 0, W, H);
+    }
+    cv.width = cv.height = 0;                          // release big buffer early
     return { canvas: out, blank: blank };
   }
 
@@ -215,7 +228,7 @@
         outPg.drawImage(img, { x: 0, y: 0, width: size.w, height: size.h });
         r.canvas.width = r.canvas.height = 0;
         pFill.style.width = (4 + i / n * 90).toFixed(1) + '%';
-        pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' + (r.blank && skip ? ' · blank kept white' : '');
+        pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + (inkMode() ? 'black ink' : 'negative') + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' + (r.blank && skip ? ' · blank kept white' : '');
         await new Promise(function (res) { setTimeout(res, 0); });   // keep the UI alive
       }
       pStatus.textContent = 'writing file…';
@@ -232,7 +245,7 @@
       $('rsIn').textContent = n;
       $('rsOut').textContent = n;
       $('rsMeta').textContent =
-        n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · sizes unchanged · ' +
+        n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + (inkMode() ? 'black ink' : 'true negative') + ' · sizes unchanged · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(saved.length) + ' · ' + dpi() + ' dpi ' + (fmt() === 'png' ? 'PNG' : 'JPEG') +
         (skipped ? ' · ' + skipped + ' blank page' + (skipped === 1 ? '' : 's') + ' kept white' : '') + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device';
@@ -279,7 +292,7 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip].forEach(function (el) {
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk].forEach(function (el) {
     el.addEventListener('change', schedulePreview);
   });
 
