@@ -101,3 +101,7 @@ MIT © 2026 smartstopwach
 - Hero stages are real CSS-3D (`perspective` + `preserve-3d` + per-layer `translateZ`), reacting to pointer proximity with a subtle tilt and a cursor light — see `enhance.js` (opt-in via `data-tilt`/`data-count`, fully disabled on touch and `prefers-reduced-motion`).
 - Motion language: enter = ease-out, exit = ease-in-out, progress = linear; UI ≤300 ms, complex reveals 400–700 ms. Icons are a single inline SVG set (no emoji).
 - `enhance.js` also owns the topbar scroll state, kinetic count-ups (400 → 200 / −75 %) and the toast layer; errors stay inline (`role="alert"`), skeletons shimmer while the engine paints.
+
+## Invert Lab (`invert.html`)
+
+Third standalone tool: **1:1 colour inversion** — every page keeps its exact size and the document keeps its exact page count; each pixel becomes 255−value on R/G/B (true photographic negative). Rendered in-browser with pdf.js at 96/150/220 dpi (2× SSAA guard like the print engine), re-embedded full-bleed into a fresh pdf-lib document with the original MediaBoxes. Options: JPEG (lighter) vs PNG (lossless) and “skip blank pages” so empty sheets never flip to solid black. No server, ever. `app-invert.js` is standalone — it never touches `converter.js`.

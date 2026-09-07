@@ -1,0 +1,97 @@
+/* ============ Notes2A4 · Invert Lab — hero flip stage + page layer ============
+   Same design system as the packer pages (tokens from styles.css).
+   Concept: one page, two faces — a physical flip in 3D is the product itself. */
+
+.iv-hero{display:grid;grid-template-columns:1.02fr .98fr;gap:var(--s7);align-items:center;min-height:80vh;padding-block:var(--s8) 84px}
+@media (max-width:1000px){.iv-hero{grid-template-columns:1fr;min-height:0;gap:var(--s6);padding-block:var(--s7) var(--s8)}.iv-anim{order:-1}
+  .iv-stage{transform:none!important}}
+.iv-hero h1{font-size:clamp(2.3rem,4.4vw,3.3rem);margin:var(--s4) 0 var(--s5);letter-spacing:-.035em;text-wrap:balance}
+.iv-hero h1 .num{color:var(--acc)}
+.iv-hero .lead,.iv-copy .lead{color:var(--dim);font-size:1.08rem;max-width:62ch}
+.iv-hero .lead b{color:var(--ink)}
+.iv-hero .hinglish{color:var(--faint);font-size:.92rem}
+.iv-anim{display:flex;align-items:center;justify-content:center;perspective:1500px}
+
+/* ---------- stage ---------- */
+.iv-stage{position:relative;width:640px;height:340px;transform-style:preserve-3d;
+  transform:rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));
+  transition:transform .5s var(--ease-out);will-change:transform}
+.iv-stage>*{position:absolute}
+.iv-stage span,.iv-stage b,.iv-stage i,.iv-stage em{position:static}
+.iv-copies{inset:0;pointer-events:none}
+.iv-copies i{position:absolute;top:66px;width:150px;height:212px;border-radius:10px;background:#0d1526;border:1px solid var(--line-soft)}
+.iv-copies i:nth-child(1){left:186px;transform:translateZ(-16px) rotate(1.4deg)}
+.iv-copies i:nth-child(2){left:366px;transform:translateZ(-16px) rotate(-1.2deg)}
+.iv-floor{left:150px;top:300px;width:400px;height:34px;border-radius:50%;filter:blur(10px);
+  background:radial-gradient(closest-side,rgba(2,6,18,.6),transparent 72%);transform:translateZ(-44px)}
+/* ghost frame — the page never moves: ratio proof */
+.iv-ghost{left:168px;top:44px;width:154px;height:216px;border:1.5px dashed rgba(129,140,248,.4);border-radius:12px;
+  transform:translateZ(-6px)}
+.iv-ghost::after{content:"size locked";position:absolute;left:50%;top:-9px;transform:translateX(-50%);
+  font:800 8.5px/1 var(--font);letter-spacing:.14em;text-transform:uppercase;color:#8b93d8;
+  background:var(--bg);padding:3px 7px;border-radius:var(--pill)}
+/* the mirror axis between the two faces */
+.iv-mirror{left:340px;top:34px;width:2px;height:250px;border-radius:2px;transform:translateZ(2px);
+  background:linear-gradient(180deg,transparent,rgba(52,211,153,.65),transparent);
+  animation:mirrorPulse 7.2s ease infinite}
+@keyframes mirrorPulse{0%,16%,58%,100%{opacity:.35}26%,48%{opacity:1;box-shadow:0 0 22px 2px rgba(52,211,153,.35)}}
+
+/* ---------- flipping pages ---------- */
+.iv-card{width:150px;height:212px;border-radius:10px;transform-style:preserve-3d;
+  animation:flip1 7.2s var(--ease-in-out) infinite}
+.ic1{left:170px;top:46px}
+.ic2{left:350px;top:46px;animation-name:flip2}
+@keyframes flip1{0%,16%{transform:translateZ(40px) rotateY(0deg)}
+  30%,52%{transform:translateZ(40px) rotateY(180deg)}
+  66%,96%{transform:translateZ(40px) rotateY(360deg)}
+  100%{transform:translateZ(40px) rotateY(360deg)}}
+@keyframes flip2{0%,26%{transform:translateZ(40px) rotateY(0deg)}
+  40%,62%{transform:translateZ(40px) rotateY(180deg)}
+  76%,96%{transform:translateZ(40px) rotateY(360deg)}
+  100%{transform:translateZ(40px) rotateY(360deg)}}
+.iv-face{position:absolute;inset:0;border-radius:10px;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;overflow:hidden}
+.iv-dark{background:linear-gradient(160deg,#151e37,#0a0f1e);border:1px solid #2c3a68;
+  color:#d6e0ff;font:600 12.5px/1.4 "Comic Sans MS","Segoe Print",cursive;box-shadow:var(--e2)}
+.iv-light{background:linear-gradient(168deg,#fff,#eef1f8 62%,#e3e8f2);transform:rotateY(180deg);
+  border:1px solid rgba(255,255,255,.55);color:#1a2440;font:700 12px/1.4 "Segoe UI",system-ui,sans-serif;
+  box-shadow:var(--e3),0 0 0 1px rgba(255,255,255,.08)}
+.iv-dark::before{content:"";position:absolute;inset:14px;border-radius:4px;pointer-events:none;
+  background:repeating-linear-gradient(transparent 0 20px,rgba(214,224,255,.14) 20px 21px),
+             radial-gradient(60px 40px at 70% 30%,rgba(250,220,60,.25),transparent 70%)}
+.iv-light::before{content:"";position:absolute;inset:14px;border-radius:4px;pointer-events:none;
+  background:repeating-linear-gradient(transparent 0 20px,rgba(26,36,64,.16) 20px 21px),
+             radial-gradient(60px 40px at 30% 70%,rgba(16,185,129,.18),transparent 70%)}
+
+/* ---------- badge + caption ---------- */
+.iv-badge{left:0;top:44px;display:flex;align-items:baseline;gap:.5rem;font-size:1.15rem;font-weight:800;
+  transform:translateZ(110px);background:rgba(10,15,31,.92);border:1px solid var(--line);border-radius:var(--pill);
+  padding:.32rem .85rem;box-shadow:var(--e2);font-variant-numeric:tabular-nums}
+.iv-badge i{color:var(--faint);font-style:normal;font-size:.8rem;font-weight:600}
+.iv-badge span,.iv-badge b{color:var(--acc)}
+.iv-badge b{animation:popB 7.2s var(--ease-out) infinite}
+@keyframes popB{0%,24%{opacity:.25;transform:scale(.7)}34%,92%{opacity:1;transform:scale(1)}100%{opacity:.25;transform:scale(.7)}}
+.iv-badge em{font-style:normal;font-size:.68rem;color:#06251a;background:var(--acc);border-radius:var(--pill);
+  padding:.05rem .45rem;animation:chipB 7.2s ease infinite}
+@keyframes chipB{0%,40%{opacity:0;transform:translateX(-8px)}48%,94%{opacity:1;transform:none}100%{opacity:0}}
+.iv-dims{left:0;bottom:-4px;display:flex;align-items:baseline;gap:8px;font-size:.78rem;color:var(--dim);
+  font-variant-numeric:tabular-nums;transform:translateZ(20px)}
+.iv-dims i{font-style:normal;color:var(--faint);font-size:.68rem;letter-spacing:.04em}
+
+@media (max-width:700px){
+  .iv-stage{zoom:.56;transform-origin:top center}
+  .iv-anim{perspective:none}
+}
+@media (max-width:420px){
+  .iv-stage{zoom:.47}
+}
+@media (prefers-reduced-motion:reduce){
+  .iv-card{animation:none!important;transform:translateZ(40px)}
+  .ic2{transform:translateZ(40px) rotateY(180deg)}
+  .iv-mirror{animation:none;opacity:.7}
+  .iv-badge b,.iv-badge em{animation:none!important;opacity:1;transform:none}
+  .iv-stage{transform:none!important}
+}
+
+/* option copy spacing inside this page's option card */
+#convertInv .fld small b{white-space:nowrap}

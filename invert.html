@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes2A4 · Invert Lab — flip PDF colours 1:1, page for page, size for size</title>
+<meta name="description" content="Pure colour inversion for PDFs: every page keeps its exact size and page count — black becomes white, white becomes black, every colour 255−c. Nothing is re-laid-out. 100% in-browser, no uploads.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='6' width='24' height='20' rx='3' fill='%23fff'/%3E%3Cpath d='M16 6h12a0 0 0 0 1 0 0v20H16z' fill='%230d1321'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="invert.css?v=12">
+<meta http-equiv="Cache-Control" content="no-cache">
+</head>
+<body id="top" class="iv-body">
+
+<header class="topbar">
+  <a class="brand" href="index.html" aria-label="Notes2A4 home">
+    <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
+      <rect x="2" y="7" width="28" height="18" rx="3" class="bm-sheet"/>
+      <rect x="4" y="9" width="11" height="6" rx="1" class="bm-slide"/>
+      <rect x="17" y="9" width="11" height="6" rx="1" class="bm-slide"/>
+      <rect x="4" y="17" width="11" height="6" rx="1" class="bm-slide"/>
+      <rect x="17" y="17" width="11" height="6" rx="1" class="bm-slide"/>
+    </svg>
+    <span class="brand-name">Notes<strong>2A4</strong></span>
+    <span class="brand-sub">Invert Lab · one-to-one colour flip</span>
+  </a>
+  <nav class="topnav" aria-label="Main">
+    <a href="index.html">2-up tool</a>
+    <a href="4up.html">4-up Studio ✦</a>
+    <a href="#howInv">How it works</a>
+    <a href="#convertInv">Convert</a>
+    <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener" class="nav-gh">GitHub</a>
+  </nav>
+  <span class="privacy-chip" title="Your file never leaves this tab"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg> <b>0% uploaded</b> <span class="pc-tail">— runs in your browser</span></span>
+</header>
+
+<main>
+  <!-- ============ HERO with the flip animation ============ -->
+  <section class="iv-hero">
+    <div class="iv-copy reveal">
+      <p class="kicker">pure invert · zero re-layout</p>
+      <h1>Same PDF, same pages.<br><span class="grad">Just the <em class="seri">colours</em> flip.</span></h1>
+      <p class="lead">Invert Lab re-renders every page exactly one-to-one — same page count, same width × height,
+        same order — and paints each pixel as <b>255 − colour</b>: dark board notes become white paper with ink-dark
+        strokes, and light pages flip the other way if you ever need that. Nothing is moved, scaled or cropped.</p>
+      <p class="hinglish">जैसा PDF, वैसा ही आउटपुट — सिर्फ़ colour उल्टा. कितने page, kitni size — सब same. Poori processing aapke browser mein.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#convertInv">Invert my PDF ↓</a>
+        <a class="btn btn-ghost" href="#howInv">See how it works</a>
+      </div>
+      <ul class="hero-stats">
+        <li><b>1:1</b><span>pages in = pages out</span></li>
+        <li><b data-count="0:312" data-delay="250" class="num" id="ivCount">312</b><span>pages handled, no re-layout</span></li>
+        <li><b>255−c</b><span>every channel, every page</span></li>
+      </ul>
+    </div>
+
+    <div class="iv-anim" aria-hidden="true" data-tilt>
+      <div class="iv-stage">
+        <div class="iv-copies"><i></i><i></i></div>
+        <div class="iv-floor"></div>
+        <div class="iv-mirror"></div>
+        <!-- two pages that flip to their inverted face, looped -->
+        <div class="iv-card ic1">
+          <div class="iv-face iv-dark"><span>M = L T I</span></div>
+          <div class="iv-face iv-light"><span>M = L T I</span></div>
+        </div>
+        <div class="iv-card ic2">
+          <div class="iv-face iv-dark"><span>F = ma</span></div>
+          <div class="iv-face iv-light"><span>F = ma</span></div>
+        </div>
+        <div class="iv-badge"><span>312</span><i>pages →</i><b>312</b><em>1:1</em></div>
+        <div class="iv-dims"><span>595.3 × 841.9 pt</span><i>unchanged</i></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOW ============ -->
+  <section id="howInv" class="fu-how">
+    <h2 class="reveal">What happens to your file</h2>
+    <div class="fu-howgrid">
+      <div class="fu-hitem reveal"><b>1</b><p>The PDF is read locally in your tab (pdf.js). Your page count and every page's exact size are measured — <b>nothing is re-flowed</b>.</p></div>
+      <div class="fu-hitem reveal"><b>2</b><p>Each page is rendered at the dpi you pick and every pixel becomes <b>255 − value</b> on all three channels — the true photographic negative of the page, <b>alpha kept</b>.</p></div>
+      <div class="fu-hitem reveal"><b>3</b><p>Pages are written back into a brand-new PDF with the <b>same MediaBox sizes</b>, same order, page 1 → page 1. Download it, print it, annotate it — it behaves like the original.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ WORKBENCH ============ -->
+  <section id="convertInv" class="convert">
+    <div class="convert-head reveal">
+      <h2>Invert Lab — the flipper</h2>
+      <p class="sub">Upload → pick sharpness → live before/after → download. One in, one out. Everything stays in this tab.</p>
+    </div>
+
+    <div id="dropzone" class="panel dropzone reveal" role="button" tabindex="0" aria-label="Upload a PDF file">
+      <svg viewBox="0 0 64 64" class="dz-icon" aria-hidden="true">
+        <path d="M32 42 V18 m0 0 -9 9 m9 -9 9 9" class="dz-arrow"/>
+        <path d="M14 40 v8 a6 6 0 0 0 6 6 h24 a6 6 0 0 0 6-6 v-8" class="dz-tray"/>
+      </svg>
+      <p class="dz-title">Drop the PDF you want flipped</p>
+      <p class="dz-hint">any size, any count — 1:1 guaranteed · or</p>
+      <button type="button" class="btn btn-primary" id="chooseBtn">Choose PDF</button>
+      <p class="dz-fine">No server, no account, no upload. Close the tab and everything is gone.</p>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+      <p class="dz-error" id="fileError" role="alert" hidden></p>
+    </div>
+
+    <div id="workbench" class="workbench" hidden>
+      <div class="filebar">
+        <span class="fb-name" id="fbName">file.pdf</span>
+        <span class="chip" id="fbPages">— pages</span>
+        <span class="chip chip-ok" id="fbRatio">—</span>
+        <span class="chip chip-arrow" id="fbOut">→ — pages (1:1)</span>
+        <button class="btn btn-tiny" id="resetBtn" type="button">✕ remove</button>
+      </div>
+
+      <div class="cols">
+        <div class="card opts">
+          <h3>Output</h3>
+          <div class="fld">
+            <span class="lbl">Sharpness</span>
+            <div class="seg" role="radiogroup" aria-label="Output DPI">
+              <label><input type="radio" name="ivdpi" id="dpi96"><span>96 · fast</span></label>
+              <label><input type="radio" name="ivdpi" id="dpi150" checked><span>150 · balanced</span></label>
+              <label><input type="radio" name="ivdpi" id="dpi220"><span>220 · max</span></label>
+            </div>
+          </div>
+          <div class="fld">
+            <span class="lbl">Encoding</span>
+            <div class="seg" role="radiogroup" aria-label="Image encoding">
+              <label><input type="radio" name="ivfmt" id="fmtJpg" checked><span>JPEG · smaller</span></label>
+              <label><input type="radio" name="ivfmt" id="fmtPng"><span>PNG · lossless</span></label>
+            </div>
+            <small>Pages become full-page images (text won't be selectable — the <b>one true colour negative</b> of your PDF). PNG keeps flat ink razor-crisp; JPEG keeps the file light. Page sizes &amp; count never change.</small>
+          </div>
+          <label class="sw psRow"><input type="checkbox" id="optSkip"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Skip blank pages</b><em>a page that is already pure white stays pure white instead of becoming a black sheet</em></span></label>
+        </div>
+
+        <div class="card prev">
+          <h3>Live preview <em>page 1 — original vs inverted, same engine as the final PDF</em></h3>
+          <div class="prev-row">
+            <figure class="sheet-fig"><canvas id="pv1"></canvas><figcaption>page 1 · original</figcaption></figure>
+            <figure class="sheet-fig"><canvas id="pv2"></canvas><figcaption>page 1 · inverted</figcaption></figure>
+          </div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <button class="btn btn-primary btn-big" id="goBtn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4.5 13.5H11l-1 8.5L19.5 10H13z" fill="currentColor" stroke="none"/></svg> Invert <span id="goIn">—</span> pages (1:1)</button>
+        <div class="progress" id="progressBox" hidden aria-live="polite">
+          <div class="pbar"><div class="pfill" id="pfill"></div></div>
+          <span id="pstatus">starting…</span>
+        </div>
+      </div>
+
+      <!-- result -->
+      <div class="card result" id="result" hidden>
+        <div class="res-stats">
+          <div class="rs-big"><span id="rsIn">400</span><i>→</i><span id="rsOut">400</span><em>pages</em></div>
+          <div class="rs-sub" id="rsMeta">—</div>
+        </div>
+        <div class="res-btns">
+          <a class="btn btn-primary btn-big" id="dlBtn" href="#" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5M4 20h16"/></svg> Download inverted PDF</a>
+          <a class="btn btn-ghost" id="openBtn" href="#" target="_blank" rel="noopener">Open &amp; check</a>
+          <button class="btn btn-tiny" id="againBtn" type="button">Invert another file</button>
+        </div>
+        <div class="thumbs" id="thumbs" aria-label="Preview of inverted pages"></div>
+        <details class="print-tips">
+          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5"/><rect x="3.5" y="8" width="17" height="8" rx="2"/><rect x="7" y="13" width="10" height="8" rx="1"/></svg> Printing tips</summary>
+          <ul>
+            <li>Print at <b>Actual size / 100%</b> — page dimensions are byte-identical to the original.</li>
+            <li>Dark scan → inverted at 220 dpi looks best on matte paper.</li>
+            <li>Want only some pages flipped? Split first in any PDF viewer — every page is independent here.</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
+<footer class="foot">
+  <p>Notes2A4 Invert Lab — the one-to-one colour flipper. <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener">Source</a> · MIT.</p>
+  <p class="foot-dim">255 − c, every pixel · <a href="index.html">2-up packer</a> · <a href="4up.html">4-up Studio</a></p>
+</footer>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="enhance.js?v=12"></script>
+<script src="app-invert.js?v=12"></script>
+<noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
+</body>
+</html>

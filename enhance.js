@@ -25,8 +25,8 @@
   /* ---------- 3D tilt + cursor light (mouse only, rAF-batched) ---------- */
   if (FINE && !REDUCE) {
     Array.prototype.forEach.call(document.querySelectorAll('[data-tilt]'), function (host) {
-      var stage = host.querySelector('.anim-stage,.fu-stage');
-      var sheet = host.querySelector('.anim-sheet,.fu-sheet');
+      var stage = host.querySelector('.anim-stage,.fu-stage,.iv-stage');
+      var sheet = host.querySelector('.anim-sheet,.fu-sheet,.iv-card.ic1');
       if (!stage) return;
       var raf = 0, tx = 0, ty = 0, lx = -1, ly = -1;
 
