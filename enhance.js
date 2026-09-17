@@ -181,6 +181,38 @@
     setTimeout(function () { r.hidden = true; r.classList.remove('big'); }, 1600);
   };
 
+  /* ---------- multi-PDF merge ----------
+     Drop or pick SEVERAL PDFs at once: they are stitched into one document
+     (in the order given) with pdf-lib, then flow through the normal
+     single-file pipeline. Returns { file, parts } or throws. */
+  NotesFX.mergePdfs = async function (files, onStep) {
+    var pdfs = Array.prototype.filter.call(files, function (f) {
+      return /\.pdf$/i.test(f.name) || f.type === 'application/pdf';
+    });
+    if (pdfs.length === 0) throw new Error('no PDF files');
+    if (pdfs.length === 1) return { file: pdfs[0], parts: 1 };
+    var out = await window.PDFLib.PDFDocument.create();
+    var total = 0;
+    for (var i = 0; i < pdfs.length; i++) {
+      if (onStep) onStep(i + 1, pdfs.length, pdfs[i].name);
+      var bytes = new Uint8Array(await pdfs[i].arrayBuffer());
+      if (bytes.length < 5 || String.fromCharCode(bytes[0], bytes[1], bytes[2], bytes[3]) !== '%PDF') {
+        throw new Error('"' + pdfs[i].name + '" is not a valid PDF');
+      }
+      var doc = await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+      var idx = doc.getPageIndices();
+      var pages = await out.copyPages(doc, idx);
+      for (var p = 0; p < pages.length; p++) out.addPage(pages[p]);
+      total += idx.length;
+      await NotesFX.uiYield();
+    }
+    var merged = await out.save({ useObjectStreams: true });
+    var base = pdfs[0].name.replace(/\.pdf$/i, '');
+    var name = base + ' +' + (pdfs.length - 1) + ' more.pdf';
+    NotesFX.toast(pdfs.length + ' PDFs merged \u00b7 ' + total + ' pages \u00b7 order kept');
+    return { file: new File([merged], name, { type: 'application/pdf' }), parts: pdfs.length };
+  };
+
   NotesFX.toast = function (msg, ms) {
     var wrap = document.getElementById('toasts');
     if (!wrap) return;

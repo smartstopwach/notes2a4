@@ -67,10 +67,27 @@
     dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('drag'); });
   });
   dz.addEventListener('drop', function (e) {
-    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) loadFile(f);
+    var fs = e.dataTransfer && e.dataTransfer.files;
+    if (fs && fs.length) loadFiles(fs);
   });
-  fileInput.addEventListener('change', function () { if (fileInput.files[0]) loadFile(fileInput.files[0]); });
+  fileInput.addEventListener('change', function () { if (fileInput.files.length) loadFiles(fileInput.files); });
+
+  /* Accept one PDF — or several: they are merged in order, then loaded as one. */
+  async function loadFiles(files) {
+    if (files.length === 1) return loadFile(files[0]);
+    clearError();
+    pBox.hidden = false; pFill.style.width = '10%';
+    try {
+      var m = await NotesFX.mergePdfs(files, function (d, t, nm) {
+        pFill.style.width = (10 + d / t * 80).toFixed(0) + '%';
+        pStatus.textContent = 'merging ' + d + ' of ' + t + ' \u00b7 ' + nm;
+      });
+      await loadFile(m.file);
+    } catch (err) {
+      pBox.hidden = true;
+      showError('Could not merge PDFs (' + (err && err.message || err) + ').');
+    }
+  }
 
   async function loadFile(f) {
     if (!/\.pdf$/i.test(f.name) && f.type !== 'application/pdf') { showError('Please pick a .pdf file.'); return; }
