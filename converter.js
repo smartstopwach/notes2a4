@@ -38,7 +38,11 @@
       gap: 40 * PT_PER_MM / 2, // pt, used only when gapMode === 'fixed'
       lines: false,       // ruled lines inside the middle band (room for handwritten notes)
       lineSpacing: 14,    // pt
-      pageNumbers: false  // small "sheet / total" inside the band
+      pageNumbers: false, // small "sheet / total" inside the band
+      numPos: 'gap',      // gap | tl | tc | tr | bl | bc | br  (top/bottom × left/centre/right)
+      numFmt: 'frac',     // frac "3 / 20" | plain "3" | page "Page 3" | dash "– 3 –" | of "3 of 20"
+      numStart: 1,        // first sheet gets this number
+      numSize: 8          // pt font size (6–14)
     };
   }
 
@@ -53,6 +57,10 @@
     o.lines = !!o.lines;
     o.pageNumbers = !!o.pageNumbers;
     o.lineSpacing = Math.max(6, Math.min(36, +o.lineSpacing || 14));
+    if (['gap', 'tl', 'tc', 'tr', 'bl', 'bc', 'br'].indexOf(o.numPos) < 0) o.numPos = 'gap';
+    if (['frac', 'plain', 'page', 'dash', 'of'].indexOf(o.numFmt) < 0) o.numFmt = 'frac';
+    o.numStart = Math.max(0, Math.min(99999, Math.round(+o.numStart) || 1));
+    o.numSize = Math.max(6, Math.min(14, +o.numSize || 8));
     return o;
   }
 
@@ -468,14 +476,43 @@
         });
       }
     }
-    if (opts.pageNumbers && (L.gap.h >= 12 || opts.perSheet === 2)) {
-      var txt = (s + 1) + ' / ' + nSheets;
-      var size = 8;
+    if (opts.pageNumbers && (opts.numPos !== 'gap' || L.gap.h >= 12 || opts.perSheet === 2)) {
+      var txt = numText(s, nSheets, opts);
+      var size = opts.numSize;
       var tw = font.widthOfTextAtSize(txt, size);
-      var tx, ty;
-      if (opts.lines && L.lines.length) { tx = L.gap.x + 10; ty = L.gap.y + L.gap.h - 12; }
-      else { tx = (page.w - tw) / 2; ty = L.gap.y + 3.5; }
-      pg.drawText(txt, { x: tx, y: ty, size: size, font: font, color: rgb(0.45, 0.48, 0.53) });
+      var p = numPlace(opts.numPos, L, page, tw, size, opts);
+      pg.drawText(txt, { x: p.x, y: p.y, size: size, font: font, color: rgb(0.45, 0.48, 0.53) });
+    }
+  }
+
+  /** Number label text for sheet index s (0-based). */
+  function numText(s, nSheets, opts) {
+    var n = opts.numStart + s;
+    var last = opts.numStart + nSheets - 1;
+    switch (opts.numFmt) {
+      case 'plain': return '' + n;
+      case 'page':  return 'Page ' + n;
+      case 'dash':  return '\u2013 ' + n + ' \u2013';
+      case 'of':    return n + ' of ' + last;
+      default:      return n + ' / ' + last;   // frac
+    }
+  }
+
+  /** Anchor a number label. Returns {x, y} (pdf-lib bottom-left text origin). */
+  function numPlace(pos, L, page, tw, size, opts) {
+    var M = Math.max(6, opts.margin || 0);        // breathing room from the sheet edge
+    var xl = M + 4, xc = (page.w - tw) / 2, xr = page.w - M - 4 - tw;
+    var yt = page.h - M - size, yb = M + 3;
+    switch (pos) {
+      case 'tl': return { x: xl, y: yt };
+      case 'tc': return { x: xc, y: yt };
+      case 'tr': return { x: xr, y: yt };
+      case 'bl': return { x: xl, y: yb };
+      case 'bc': return { x: xc, y: yb };
+      case 'br': return { x: xr, y: yb };
+      default:                                     // 'gap' — the classic middle band spot
+        if (opts.lines && L.lines && L.lines.length) return { x: L.gap.x + 10, y: L.gap.y + L.gap.h - 12 };
+        return { x: xc, y: L.gap.y + 3.5 };
     }
   }
 
@@ -533,6 +570,8 @@
     layoutForSheet: layoutForSheet,
     build: build,
     buildFromImages: buildFromImages,
+    numText: numText,
+    numPlace: numPlace,
     printSaver: { process: psProcess, hqMap: hqMap, negMap: negMap, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
   };
 });

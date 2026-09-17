@@ -490,3 +490,12 @@ input[type=range]:disabled{opacity:.35}
   .anim-stage{transform:none!important}
 }
 /* (4-up studio overrides live in fourup.css) */
+
+/* ---------- sheet-number options ---------- */
+.num-grid{flex-wrap:wrap}
+.num-grid label{flex:1 1 30%;min-width:31%}
+.num-grid label:last-child{flex-basis:100%}
+.num-inline{display:flex;gap:8px;align-items:stretch}
+.num-inline input[type=number]{width:86px;background:var(--card,#141a28);border:1px solid var(--line,#3a4356);
+  color:var(--ink,#e8ecf5);border-radius:9px;padding:.4rem .55rem;font:600 .85rem system-ui;text-align:center}
+.num-inline .seg{flex:1;margin-bottom:0}

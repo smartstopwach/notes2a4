@@ -152,6 +152,38 @@ check('images: layout reuses quad geometry (same producer)', /print-saver/.test(
 const resI3 = await NC.buildFromImages([{ bytes: new Uint8Array(fs.readFileSync('/tmp/light.png')), w: 1280, h: 718 }, null, { bytes: new Uint8Array(fs.readFileSync('/tmp/dark.png')), w: 1280, h: 716 }], { perSheet: 4 });
 check('images: null gaps tolerated (3 with hole → 1 sheet)', resI3.sheets === 1);
 writeFileSync('/home/user/out_print_up.pdf', Buffer.from(resI4.bytes));
+/* ---------- 5f. sheet-number options: formats & anchors ---------- */
+console.log('5f) numbering options:');
+{
+  const o = NC.normalize({ pageNumbers: true, numFmt: 'frac', numStart: 1 });
+  check('fmt frac', NC.numText(2, 20, o) === '3 / 20', NC.numText(2, 20, o));
+  check('fmt plain', NC.numText(2, 20, NC.normalize({ numFmt: 'plain' })) === '3');
+  check('fmt page', NC.numText(0, 9, NC.normalize({ numFmt: 'page' })) === 'Page 1');
+  check('fmt dash', NC.numText(4, 9, NC.normalize({ numFmt: 'dash' })) === '\u2013 5 \u2013');
+  check('fmt of', NC.numText(4, 9, NC.normalize({ numFmt: 'of' })) === '5 of 9');
+  const oS = NC.normalize({ numFmt: 'frac', numStart: 21 });
+  check('numStart 21: sheet 0 -> 21 / 30', NC.numText(0, 10, oS) === '21 / 30', NC.numText(0, 10, oS));
+  const page = { w: 595.28, h: 841.89 };
+  const L = NC.sheetLayout({ w: 1280, h: 718 }, { w: 1280, h: 718 }, NC.normalize({}), page);
+  const oM = NC.normalize({ numSize: 8, margin: 0 });
+  const tw = 30;
+  const tl = NC.numPlace('tl', L, page, tw, 8, oM);
+  const br = NC.numPlace('br', L, page, tw, 8, oM);
+  const tc = NC.numPlace('tc', L, page, tw, 8, oM);
+  check('tl anchors near top-left', tl.x < 20 && tl.y > page.h - 20, JSON.stringify(tl));
+  check('br anchors near bottom-right', br.x > page.w - tw - 20 && br.y < 20, JSON.stringify(br));
+  check('tc centres horizontally', Math.abs(tc.x - (page.w - tw) / 2) < 0.01);
+  const gap = NC.numPlace('gap', L, page, tw, 8, oM);
+  check('gap anchor sits inside middle band', gap.y >= L.gap.y - 0.01 && gap.y <= L.gap.y + L.gap.h, JSON.stringify(gap));
+  check('normalize rejects bad pos/fmt', NC.normalize({ numPos: 'zz', numFmt: 'qq' }).numPos === 'gap' && NC.normalize({ numPos: 'zz', numFmt: 'qq' }).numFmt === 'frac');
+  // end-to-end: numbered build still renders
+  const big2 = await PDFDocument.create();
+  for (let i = 0; i < 4; i++) big2.addPage([1280, 718]);
+  const rNum = await NC.build(await big2.save(), { pageNumbers: true, numPos: 'br', numFmt: 'page', numStart: 21 }, null);
+  const dNum = await PDFDocument.load(rNum.bytes);
+  check('build with br/page/start-21 numbering -> 2 sheets OK', dNum.getPageCount() === 2);
+}
+
 /* ---------- 6. 400-page claim: pages halve ---------- */
 console.log('6) halving math:');
 const big = await PDFDocument.create();

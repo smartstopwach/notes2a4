@@ -7,7 +7,7 @@
 <meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
 <meta http-equiv="Cache-Control" content="no-cache">
-<link rel="stylesheet" href="styles.css?v=19">
+<link rel="stylesheet" href="styles.css?v=20">
 </head>
 <body id="top">
 
@@ -185,7 +185,40 @@
             <small id="vGap">Auto: slides stay flush top &amp; bottom, remaining white space lands in the middle.</small>
           </div>
           <label class="sw"><input type="checkbox" id="optLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b> in the gap<em>for writing notes during revision</em></span></label>
-          <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>e.g. “137 / 200” inside the gap</em></span></label>
+          <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>position, style &amp; starting number — pick below</em></span></label>
+          <div class="ps-opts" id="numOpts" hidden>
+            <div class="fld"><span class="lbl">Position</span>
+              <div class="seg num-grid" role="radiogroup" aria-label="Number position">
+                <label><input type="radio" name="numpos" id="npTL"><span>↖ top-left</span></label>
+                <label><input type="radio" name="numpos" id="npTC"><span>↑ top-centre</span></label>
+                <label><input type="radio" name="numpos" id="npTR"><span>↗ top-right</span></label>
+                <label><input type="radio" name="numpos" id="npBL"><span>↙ bottom-left</span></label>
+                <label><input type="radio" name="numpos" id="npBC"><span>↓ bottom-centre</span></label>
+                <label><input type="radio" name="numpos" id="npBR"><span>↘ bottom-right</span></label>
+                <label><input type="radio" name="numpos" id="npGap" checked><span>◫ middle gap (classic)</span></label>
+              </div>
+            </div>
+            <div class="fld"><span class="lbl">Style</span>
+              <div class="seg" role="radiogroup" aria-label="Number style">
+                <label><input type="radio" name="numfmt" id="nfFrac" checked><span>3 / 20</span></label>
+                <label><input type="radio" name="numfmt" id="nfPlain"><span>3</span></label>
+                <label><input type="radio" name="numfmt" id="nfPage"><span>Page 3</span></label>
+                <label><input type="radio" name="numfmt" id="nfDash"><span>– 3 –</span></label>
+                <label><input type="radio" name="numfmt" id="nfOf"><span>3 of 20</span></label>
+              </div>
+            </div>
+            <div class="fld"><span class="lbl">Start at &amp; size</span>
+              <div class="num-inline">
+                <input type="number" id="numStart" value="1" min="0" max="99999" step="1" aria-label="Starting number">
+                <div class="seg" role="radiogroup" aria-label="Number size">
+                  <label><input type="radio" name="numsize" id="nsS"><span>small</span></label>
+                  <label><input type="radio" name="numsize" id="nsM" checked><span>medium</span></label>
+                  <label><input type="radio" name="numsize" id="nsL"><span>large</span></label>
+                </div>
+              </div>
+              <small>Start at lets a second file continue where the first ended (e.g. 21).</small>
+            </div>
+          </div>
           <label class="sw psRow"><input type="checkbox" id="optPrint"><span class="track"><span class="thumb"></span></span>
             <span class="sw-t"><b>Print-Saver inversion ◐</b><em>dark board notes → printer-friendly: black → white paper · pick a colour style below — black ink, kept colours, or a true 255−c negative revert</em></span></label>
           <div class="ps-opts" id="psOpts" hidden>
@@ -270,10 +303,10 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=19"></script>
-<script src="enhance.js?v=19"></script>
-<script src="review.js?v=19"></script>
-<script src="app.js?v=19"></script>
+<script src="converter.js?v=20"></script>
+<script src="enhance.js?v=20"></script>
+<script src="review.js?v=20"></script>
+<script src="app.js?v=20"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

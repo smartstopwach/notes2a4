@@ -34,8 +34,15 @@
   var opt = {
     paper: $('optPaper'), margin: $('optMargin'),
     gapAuto: $('gapAuto'), gapFixed: $('gapFixed'), gap: $('optGap'),
-    lines: $('optLines'), nums: $('optNums')
+    lines: $('optLines'), nums: $('optNums'),
+    numOpts: $('numOpts'), numStart: $('numStart'),
+    np: { gap: $('npGap'), tl: $('npTL'), tc: $('npTC'), tr: $('npTR'), bl: $('npBL'), bc: $('npBC'), br: $('npBR') },
+    nf: { frac: $('nfFrac'), plain: $('nfPlain'), page: $('nfPage'), dash: $('nfDash'), of: $('nfOf') },
+    ns: { s: $('nsS'), m: $('nsM'), l: $('nsL') }
   };
+  function numPosVal() { var p = opt.np; for (var k in p) if (p[k] && p[k].checked) return k; return 'gap'; }
+  function numFmtVal() { var p = opt.nf; for (var k in p) if (p[k] && p[k].checked) return k; return 'frac'; }
+  function numSizeVal() { return opt.ns.l && opt.ns.l.checked ? 11 : (opt.ns.s && opt.ns.s.checked ? 6.5 : 8); }
 
   /* ---------- helpers ---------- */
   function readOptions() {
@@ -45,7 +52,9 @@
       gapMode: opt.gapFixed.checked ? 'fixed' : 'auto',
       gap: parseFloat(opt.gap.value) * MM,
       lines: opt.lines.checked,
-      pageNumbers: opt.nums.checked
+      pageNumbers: opt.nums.checked,
+      numPos: numPosVal(), numFmt: numFmtVal(),
+      numStart: parseInt(opt.numStart.value, 10) || 1, numSize: numSizeVal()
     });
   }
 
@@ -186,7 +195,20 @@
   [opt.gapAuto, opt.gapFixed].forEach(function (r) {
     r.addEventListener('change', function () { opt.gap.disabled = opt.gapAuto.checked; schedulePreview(); });
   });
+  // numbering options: reveal panel with the checkbox, refresh preview on any change
+  function numListeners(sched) {
+    if (!opt.numOpts) return;
+    opt.nums.addEventListener('change', function () { opt.numOpts.hidden = !opt.nums.checked; });
+    opt.numOpts.hidden = !opt.nums.checked;
+    var els = [opt.numStart];
+    for (var k in opt.np) els.push(opt.np[k]);
+    for (var k2 in opt.nf) els.push(opt.nf[k2]);
+    for (var k3 in opt.ns) els.push(opt.ns[k3]);
+    els.forEach(function (el) { if (el) el.addEventListener('change', sched); });
+    if (opt.numStart) opt.numStart.addEventListener('input', sched);
+  }
   printListeners(schedulePreview);
+  numListeners(schedulePreview);
 
   /* ---------- live preview (same geometry engine as converter) ---------- */
   async function renderPreview() {
@@ -258,14 +280,12 @@
     }
     if (opts.pageNumbers) {
       var sheets = Math.ceil(state.pages / 2);
-      var txt = (aIdx / 2 + 1) + ' / ' + sheets;
-      ctx.fillStyle = '#7a869e'; ctx.font = '7px system-ui';
-      if (opts.lines) {
-        ctx.fillText(txt, (L.gap.x + 10) * pxPerPt, (page.h - L.gap.y - L.gap.h + 12) * pxPerPt + 6);
-      } else {
-        var tw = ctx.measureText(txt).width;
-        ctx.fillText(txt, (cssW - tw) / 2, (page.h - L.gap.y - 5) * pxPerPt - 4);
-      }
+      var txt = NotesConverter.numText(aIdx / 2, sheets, opts);
+      var fpx = opts.numSize * pxPerPt;
+      ctx.fillStyle = '#7a869e'; ctx.font = fpx.toFixed(2) + 'px system-ui';
+      var twPt = ctx.measureText(txt).width / pxPerPt;
+      var pp = NotesConverter.numPlace(opts.numPos, L, page, twPt, opts.numSize, opts);
+      ctx.fillText(txt, pp.x * pxPerPt, (page.h - pp.y) * pxPerPt);
     }
   }
 
