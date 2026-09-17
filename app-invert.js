@@ -95,6 +95,7 @@
         pg.cleanup();
       }
       pBox.hidden = true;
+      if (window.PageReview) PageReview.setSource(u8, f.name);
       afterLoad();
       if (window.NotesFX) NotesFX.toast(state.pages + ' pages measured — 1:1 ready, nothing uploaded');
     } catch (err) {

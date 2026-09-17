@@ -76,6 +76,7 @@
         pg.cleanup();
       }
       pBox.hidden = true;
+      if (window.PageReview) PageReview.setSource(buf, file.name);
       afterLoad();
       if (window.NotesFX) NotesFX.toast(state.pages + ' pages parsed — nothing was uploaded');
     } catch (err) {
