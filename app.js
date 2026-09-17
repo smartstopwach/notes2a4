@@ -313,6 +313,7 @@
       var pg = await state.doc.getPage(i + 1);
       var r = await printRasterPage(pg);
       pg.cleanup();
+      NotesFX.liveShow(r.canvas, 'page ' + (i + 1) + ' / ' + n + ' · ' + r.status);
       items[i] = {
         bytes: await new Promise(function (res2, rej) {
           r.canvas.toBlob(function (bl) { bl.arrayBuffer().then(function (ab) { res2(new Uint8Array(ab)); }, rej); }, 'image/png');
@@ -364,7 +365,7 @@
         });
       }
       pFill.style.width = '100%'; pStatus.textContent = 'done';
-      NotesFX.titleDone();
+      NotesFX.titleDone(); NotesFX.liveDone();
       state.out.bytes = res.bytes;
       if (state.out.url) URL.revokeObjectURL(state.out.url);
       state.out.url = URL.createObjectURL(new Blob([res.bytes], { type: 'application/pdf' }));
@@ -391,7 +392,7 @@
       setTimeout(function () { pBox.hidden = true; }, 900);
     } catch (err) {
       pStatus.textContent = 'failed: ' + (err && err.message || err);
-      NotesFX.titleDone(false);
+      NotesFX.titleDone(false); NotesFX.liveDone();
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }

@@ -126,6 +126,61 @@
     setTimeout(function () { if (document.title.slice(2).trim() === t0) document.title = t0; }, 4000);
   };
 
+  /* ---------- live conversion preview ----------
+     A floating HD panel that shows every page the moment it is processed —
+     the exact canvas the engine just produced (invert / print-saver output),
+     so you watch the conversion happen page by page. Click to enlarge. */
+  var _lp = null;
+  function _lpBuild() {
+    if (_lp) return _lp;
+    var css = [
+      '.nfx-live{position:fixed;right:18px;bottom:18px;z-index:900;background:#10141f;border:1px solid #2c3548;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.55);padding:.55rem;width:min(300px,42vw);transition:width .25s ease;cursor:zoom-in}',
+      '.nfx-live.big{width:min(760px,72vw);cursor:zoom-out}',
+      '.nfx-live-head{display:flex;align-items:center;gap:.5rem;padding:0 .2rem .45rem}',
+      '.nfx-live-dot{width:8px;height:8px;border-radius:50%;background:#4ade80;animation:nfxpulse 1.1s ease-in-out infinite}',
+      '@keyframes nfxpulse{50%{opacity:.35}}',
+      '.nfx-live-lab{color:#cdd7e8;font:600 .78rem system-ui;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+      '.nfx-live-x{cursor:pointer;border:0;background:none;color:#7b879c;font:700 .9rem system-ui;padding:0 .2rem}',
+      '.nfx-live-x:hover{color:#e8ecf5}',
+      '.nfx-live canvas{display:block;width:100%;border-radius:8px;background:#fff}'
+    ].join('\n');
+    var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+    var root = document.createElement('div');
+    root.className = 'nfx-live'; root.hidden = true;
+    root.innerHTML = '<div class="nfx-live-head"><span class="nfx-live-dot"></span>' +
+      '<span class="nfx-live-lab"></span><button class="nfx-live-x" type="button" title="hide">✕</button></div><canvas></canvas>';
+    document.body.appendChild(root);
+    var closed = { v: false };
+    root.querySelector('.nfx-live-x').addEventListener('click', function (e) {
+      e.stopPropagation(); root.hidden = true; closed.v = true;
+    });
+    root.addEventListener('click', function () { root.classList.toggle('big'); });
+    _lp = { root: root, lab: root.querySelector('.nfx-live-lab'), canvas: root.querySelector('canvas'), closed: closed };
+    return _lp;
+  }
+  /* Show the just-processed page. srcCanvas is copied immediately (HD backing
+     store, up to ~1100px wide) so the caller may free it right after. */
+  NotesFX.liveShow = function (srcCanvas, label) {
+    if (document.hidden) return;                       // hidden tab: skip paints, keep speed
+    var lp = _lpBuild();
+    if (lp.closed.v) return;                           // user dismissed it for this job
+    lp.root.hidden = false;
+    lp.lab.textContent = label || '';
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.min(srcCanvas.width, Math.round(1100 * Math.max(dpr / 2, 1)));
+    var h = Math.max(1, Math.round(w * srcCanvas.height / srcCanvas.width));
+    lp.canvas.width = w; lp.canvas.height = h;
+    var cx = lp.canvas.getContext('2d');
+    cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+    cx.drawImage(srcCanvas, 0, 0, w, h);
+  };
+  NotesFX.liveDone = function () {
+    if (!_lp) return;
+    _lp.closed.v = false;                              // re-arm for the next job
+    var r = _lp.root;
+    setTimeout(function () { r.hidden = true; r.classList.remove('big'); }, 1600);
+  };
+
   NotesFX.toast = function (msg, ms) {
     var wrap = document.getElementById('toasts');
     if (!wrap) return;

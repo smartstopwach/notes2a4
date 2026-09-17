@@ -230,6 +230,7 @@
           skipped++;
         }
         outPg.drawImage(img, { x: 0, y: 0, width: size.w, height: size.h });
+        NotesFX.liveShow(r.canvas, 'page ' + i + ' / ' + n + ' · ' + (inkMode() ? 'black ink' : 'negative') + (r.blank && skip ? ' · blank' : ''));
         r.canvas.width = r.canvas.height = 0;
         pFill.style.width = (4 + i / n * 90).toFixed(1) + '%';
         pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + (inkMode() ? 'black ink' : 'negative') + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' + (r.blank && skip ? ' · blank kept white' : '');
@@ -239,7 +240,7 @@
       pStatus.textContent = 'writing file…';
       var saved = await outDoc.save({ useObjectStreams: true });
       pFill.style.width = '100%'; pStatus.textContent = 'done';
-      NotesFX.titleDone();
+      NotesFX.titleDone(); NotesFX.liveDone();
       if (state.out.url) URL.revokeObjectURL(state.out.url);
       state.out.url = URL.createObjectURL(new Blob([saved], { type: 'application/pdf' }));
 
@@ -264,7 +265,7 @@
       setTimeout(function () { pBox.hidden = true; }, 900);
     } catch (err) {
       pStatus.textContent = 'failed: ' + (err && err.message || err);
-      NotesFX.titleDone(false);
+      NotesFX.titleDone(false); NotesFX.liveDone();
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }
