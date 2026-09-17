@@ -195,8 +195,9 @@
                 <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · 2×</span></label>
                 <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3× max</span></label>
               </div>
-              <small><b>HQ engine v2:</b> scans rendered at 1×/2×/3× native (your pick) with 2× supersample + area-average (SSAA), and an <b>ink-bias response curve</b> keeps inverted handwriting at full visual weight — no thin/broken strokes. Colours → solid black. (Text not selectable; uncheck for full vector.)</small>
+              <small><b>HQ engine v2:</b> scans rendered at 1×/2×/3× native (your pick) with 2× supersample + area-average (SSAA), and an <b>ink-bias response curve</b> keeps inverted handwriting at full visual weight — no thin/broken strokes. Colours → solid black, unless <b>Keep colours</b> is on. (Text not selectable; uncheck for full vector.)</small>
             </div>
+            <label class="sw"><input type="checkbox" id="optKeepColour"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Keep colours</b><em>blue / green / yellow highlights stay their own colour — flipped to a dark printable ink instead of solid black</em></span></label>
             <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>invert only dark pages — already-white pages pass through untouched</em></span></label>
           </div>
         </div>

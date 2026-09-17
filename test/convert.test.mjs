@@ -196,6 +196,39 @@ console.log('5e) hq-map:');
   big = mk([[255,255,0],[250,245,180],[255,255,0],[250,245,180]], 2, 2);
   r = NC.printSaver.hqMap(big, 1, 1, false);
   check('any colour -> solid black (chroma rule)', r.imageData.data[0] === 0);
+  // keepColour=true: light blue keeps its hue but becomes a dark printable blue
+  const LB = [126, 200, 255];                       // light blue, luma 184, chroma 129
+  big = mk([LB, LB, LB, LB], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false, true);
+  {
+    const [rr, gg, bb] = [r.imageData.data[0], r.imageData.data[1], r.imageData.data[2]];
+    const L = (rr*299 + gg*587 + bb*114) / 1000;
+    check('keepColour: light blue -> dark ink, NOT black', L > 20 && L < 160, `rgb(${rr},${gg},${bb}) L=${L.toFixed(0)}`);
+    check('keepColour: hue preserved (blue channel dominates)', bb > rr && bb > gg, `rgb(${rr},${gg},${bb})`);
+  }
+  // keepColour=true: light green keeps its hue
+  const LG = [140, 230, 150];
+  big = mk([LG, LG, LG, LG], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false, true);
+  check('keepColour: light green -> dark green (g dominates)',
+    r.imageData.data[1] > r.imageData.data[0] && r.imageData.data[1] > r.imageData.data[2] && r.imageData.data[1] < 200,
+    `rgb(${r.imageData.data[0]},${r.imageData.data[1]},${r.imageData.data[2]})`);
+  // keepColour=true: achromatic pixels still follow the classic b/w map
+  big = mk([K, K, K, K], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false, true);
+  check('keepColour: black block still -> white', r.imageData.data[0] === 255);
+  big = mk([W, W, W, W], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false, true);
+  check('keepColour: white block still -> black', r.imageData.data[0] === 0);
+  // psProcess keepColour path too
+  {
+    let imC = img([px(126, 200, 255), px(0, 0, 0), px(255, 255, 255)]);
+    NC.printSaver.process(imC, false, true);
+    const c0 = [imC.data[0], imC.data[1], imC.data[2]];
+    check('process keepColour: blue stays blue-ish dark', c0[2] > c0[0] && c0.join() !== '0,0,0', c0.join());
+    check('process keepColour: black->white, white->black unchanged',
+      [imC.data[4],imC.data[5],imC.data[6]].join() === '255,255,255' && [imC.data[8],imC.data[9],imC.data[10]].join() === '0,0,0');
+  }
   // auto: light page keeps colours untouched (50,50,250 avg survives)
   big = mk([W, W, [50, 50, 250], W], 2, 2);
   r = NC.printSaver.hqMap(big, 1, 1, true);

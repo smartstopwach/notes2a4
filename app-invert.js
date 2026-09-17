@@ -32,12 +32,15 @@
   var opt = {
     dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'),
     fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
-    styleNeg: $('styleNeg'), styleInk: $('styleInk')
+    styleNeg: $('styleNeg'), styleInk: $('styleInk'),
+    keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow')
   };
 
   function dpi() { return opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96); }
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
   function inkMode() { return opt.styleInk.checked && window.NotesConverter && NotesConverter.printSaver; }
+  function keepColour() { return !!(opt.keepColour && opt.keepColour.checked); }
+  function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !opt.styleInk.checked; }
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(m) { fileErr.hidden = false; fileErr.textContent = m; }
   function clearError() { fileErr.hidden = true; fileErr.textContent = ''; }
@@ -148,7 +151,7 @@
       x2.drawImage(c1, 0, 0);
       var id = x2.getImageData(0, 0, c2.width, c2.height);
       if (inkMode()) {
-        var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true);
+        var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true, keepColour());
         x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
       } else {
         invertPixels(id, true);
@@ -180,7 +183,7 @@
     var out = document.createElement('canvas');
     out.width = W; out.height = H;
     if (inkMode()) {                                  // same ink-bias mapping the Print-Saver engine uses
-      var hm = NotesConverter.printSaver.hqMap(idat, W, H, true);
+      var hm = NotesConverter.printSaver.hqMap(idat, W, H, true, keepColour());
       out.getContext('2d').putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
     } else {
       invertPixels(idat, true);                       // true negative — colours included
@@ -292,9 +295,11 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk].forEach(function (el) {
-    el.addEventListener('change', schedulePreview);
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.keepColour].forEach(function (el) {
+    if (el) el.addEventListener('change', schedulePreview);
   });
+  [opt.styleNeg, opt.styleInk].forEach(function (el) { el.addEventListener('change', syncKeepColourRow); });
+  syncKeepColourRow();
 
   function resetAll() {
     state.bytes = null; state.doc = null; state.pages = 0; state.sizes = [];

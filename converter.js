@@ -285,7 +285,21 @@
    * Operates on a canvas ImageData-like { data: Uint8ClampedArray RGBA }.
    */
   var PS_DARK_LUM = 90;                       // ≤ this counts as "black-ish"
-  function psProcess(imageData, auto) {
+  var PS_CHROMA = 60;                         // > this counts as a "real colour"
+  var PS_MIN_INK_L = 30, PS_MAX_INK_L = 150;  // kept-colour ink stays in this luma band (printable)
+
+  /* Hue-preserving colour flip: light colour on a dark board → dark ink of the
+     SAME hue on white paper. Returns [r,g,b]. */
+  function psKeepColour(r, g, b, L) {
+    var target = 255 - L;
+    if (target < PS_MIN_INK_L) target = PS_MIN_INK_L;
+    else if (target > PS_MAX_INK_L) target = PS_MAX_INK_L;
+    var k = target / (L > 1 ? L : 1);
+    r *= k; g *= k; b *= k;
+    return [r > 255 ? 255 : r, g > 255 ? 255 : g, b > 255 ? 255 : b];
+  }
+
+  function psProcess(imageData, auto, keepColour) {
     var d = imageData.data, i, r, g, b, lum, n = 0, dark = 0;
     for (i = 0; i < d.length; i += 4) {
       r = d[i]; g = d[i + 1]; b = d[i + 2];
@@ -299,8 +313,14 @@
       for (i = 0; i < d.length; i += 4) {
         r = d[i]; g = d[i + 1]; b = d[i + 2];
         lum = (r * 299 + g * 587 + b * 114) / 1000 | 0;
-        var v = lum <= PS_DARK_LUM ? 255 : 0;
-        d[i] = d[i + 1] = d[i + 2] = v;
+        var chroma = Math.max(r, g, b) - Math.min(r, g, b);
+        if (keepColour && chroma > PS_CHROMA) {
+          var kc = psKeepColour(r, g, b, lum);
+          d[i] = kc[0]; d[i + 1] = kc[1]; d[i + 2] = kc[2];
+        } else {
+          var v = lum <= PS_DARK_LUM ? 255 : 0;
+          d[i] = d[i + 1] = d[i + 2] = v;
+        }
         d[i + 3] = 255;
       }
     }
@@ -317,10 +337,12 @@
    *     drivers blue-noise/dither it at print time, viewers show it as AA)
    *   bright     (avg luma ≥ 90+band)   → solid black   [white → black]
    * auto=true: light pages (darkFrac<0.5) are downsampled untouched.
+   * keepColour=true: coloured pixels keep their hue — lightness is flipped to
+   *   a dark printable ink of the same colour instead of solid black.
    */
   var PS_BAND = 45;
   var PS_GAMMA = 1.7;   // ink-bias exponent of the edge ramp (>1 → fatter darks)
-  function hqMap(big, outW, outH, auto) {
+  function hqMap(big, outW, outH, auto, keepColour) {
     var bd = big.data, bw = big.width, bh = big.height;
     var n = outW * outH;
     var sumL = new Uint16Array(n), cnt = new Uint8Array(n);
@@ -359,7 +381,14 @@
         continue;
       }
       var v;
-      if (maxC[p] > 60) v = 0;                                    // any real colour → solid black ink
+      if (maxC[p] > PS_CHROMA) {                                  // a real colour
+        if (keepColour) {                                          // keep the hue, flip the lightness →
+          var kc = psKeepColour(sumR[p] / cN, sumG[p] / cN, sumB[p] / cN, L);   // dark printable ink of the same colour
+          out[o] = kc[0]; out[o + 1] = kc[1]; out[o + 2] = kc[2]; out[o + 3] = 255;
+          continue;
+        }
+        v = 0;                                                     // classic rule: colour → solid black ink
+      }
       else if (L <= lo) v = 255;
       else if (L >= hi) v = 0;
       else {                                                       // ink-biased curve (halation compensation):
@@ -449,6 +478,6 @@
     layoutForSheet: layoutForSheet,
     build: build,
     buildFromImages: buildFromImages,
-    printSaver: { process: psProcess, hqMap: hqMap, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA }
+    printSaver: { process: psProcess, hqMap: hqMap, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
   };
 });

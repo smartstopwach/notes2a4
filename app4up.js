@@ -34,10 +34,11 @@
       pageNumbers: opt.nums.checked
     });
   }
-  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220') };
+  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), keep: $('optKeepColour') };
   function printMode() { return !!(printEls.on && printEls.on.checked); }
   function printDpi() { return printEls.d220 && printEls.d220.checked ? 220 : (printEls.d96 && printEls.d96.checked ? 96 : 150); }
   function printAuto() { return printEls.auto.checked; }
+  function printKeepColour() { return !!(printEls.keep && printEls.keep.checked); }
   function refreshPrintBadge() {
     var el = $('fbOut'); if (!el) return;
     var t = el.textContent.replace(' · ◐print', '');
@@ -164,7 +165,7 @@
       if (printMode()) {
         var octx = off.getContext('2d');
         var idat = octx.getImageData(0, 0, off.width, off.height);
-        var hmP = NotesConverter.printSaver.hqMap(idat, idat.width, idat.height, printAuto());
+        var hmP = NotesConverter.printSaver.hqMap(idat, idat.width, idat.height, printAuto(), printKeepColour());
         octx.putImageData(new ImageData(hmP.imageData.data, idat.width, idat.height), 0, 0);
       }
       ctx.drawImage(off, box.x * pxPerPt, (page.h - box.y - box.height) * pxPerPt, box.width * pxPerPt, box.height * pxPerPt);
@@ -239,7 +240,7 @@
     cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
     await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
     var idat = cx.getImageData(0, 0, cv.width, cv.height);
-    var hm = NotesConverter.printSaver.hqMap(idat, W, H, printAuto());
+    var hm = NotesConverter.printSaver.hqMap(idat, W, H, printAuto(), printKeepColour());
     var small = document.createElement('canvas');
     small.width = W; small.height = H;
     var sx = small.getContext('2d');
@@ -267,7 +268,7 @@
   function printListeners(schedule) {
     if (!printEls.on) return;
     printEls.on.addEventListener('change', function () { printEls.opts.hidden = !printEls.on.checked; schedule(); refreshPrintBadge(); });
-    [printEls.auto, printEls.d96, printEls.d150, printEls.d220].forEach(function (el) { el.addEventListener('change', schedule); });
+    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.keep].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
   }
   /* ---------- convert ---------- */
   goBtn.addEventListener('click', convert);
