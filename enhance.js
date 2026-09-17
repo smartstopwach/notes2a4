@@ -89,6 +89,43 @@
 
   /* ---------- toasts (small confirmations; errors stay inline with role=alert) ---------- */
   window.NotesFX = window.NotesFX || {};
+
+  /* ---------- throttle-proof UI yield ----------
+     Long convert loops must yield so the page can paint — but setTimeout(0) is
+     clamped to ~1000ms in BACKGROUND tabs, making a 200-sheet job crawl the
+     moment the user switches away. Fix:
+       · tab hidden  → resolve immediately (nothing to paint anyway; run full speed)
+       · tab visible → MessageChannel macrotask — yields to the event loop for
+         rendering but is exempt from background-timer clamping (no 4ms/1s floors). */
+  var _yieldChan = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
+  var _yieldQueue = [];
+  if (_yieldChan) {
+    _yieldChan.port1.onmessage = function () {
+      var r = _yieldQueue.shift();
+      if (r) r();
+    };
+  }
+  NotesFX.uiYield = function () {
+    if (document.hidden || !_yieldChan) return Promise.resolve();
+    return new Promise(function (resolve) {
+      _yieldQueue.push(resolve);
+      _yieldChan.port2.postMessage(0);
+    });
+  };
+
+  /* ---------- tab-title progress (visible from other tabs) ---------- */
+  var _title0 = null;
+  NotesFX.titleProgress = function (done, total) {
+    if (_title0 === null) _title0 = document.title;
+    document.title = '\u23f3 ' + Math.round(done / total * 100) + '% \u00b7 ' + _title0;
+  };
+  NotesFX.titleDone = function (ok) {
+    if (_title0 === null) return;
+    document.title = (ok === false ? '\u26a0\ufe0f ' : '\u2705 ') + _title0;
+    var t0 = _title0; _title0 = null;
+    setTimeout(function () { if (document.title.slice(2).trim() === t0) document.title = t0; }, 4000);
+  };
+
   NotesFX.toast = function (msg, ms) {
     var wrap = document.getElementById('toasts');
     if (!wrap) return;

@@ -233,11 +233,13 @@
         r.canvas.width = r.canvas.height = 0;
         pFill.style.width = (4 + i / n * 90).toFixed(1) + '%';
         pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + (inkMode() ? 'black ink' : 'negative') + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' + (r.blank && skip ? ' · blank kept white' : '');
-        await new Promise(function (res) { setTimeout(res, 0); });   // keep the UI alive
+        NotesFX.titleProgress(i, n);
+        await NotesFX.uiYield();                                      // throttle-proof: full speed in background tabs
       }
       pStatus.textContent = 'writing file…';
       var saved = await outDoc.save({ useObjectStreams: true });
       pFill.style.width = '100%'; pStatus.textContent = 'done';
+      NotesFX.titleDone();
       if (state.out.url) URL.revokeObjectURL(state.out.url);
       state.out.url = URL.createObjectURL(new Blob([saved], { type: 'application/pdf' }));
 
@@ -262,6 +264,7 @@
       setTimeout(function () { pBox.hidden = true; }, 900);
     } catch (err) {
       pStatus.textContent = 'failed: ' + (err && err.message || err);
+      NotesFX.titleDone(false);
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }

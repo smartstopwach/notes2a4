@@ -345,22 +345,26 @@
         var items = await buildPrintItems(function (d, t, st) {
           pFill.style.width = (d / t * 60).toFixed(1) + '%';
           pStatus.textContent = 'page ' + d + ' of ' + t + ' · binarising ' + (st || 'at ' + printDpi() + ' dpi…');
-          return new Promise(function (r) { setTimeout(r, 0); });
+          NotesFX.titleProgress(d * 0.6, t);
+          return NotesFX.uiYield();
         });
         pFill.style.width = '65%'; pStatus.textContent = 'packing sheets…';
         res = await NotesConverter.buildFromImages(items, readOptions(), function (d, t) {
           pFill.style.width = (65 + d / t * 32).toFixed(1) + '%';
           pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
-          return new Promise(function (r) { setTimeout(r, 0); });
+          NotesFX.titleProgress(65 + d / t * 32, 100);
+          return NotesFX.uiYield();
         });
       } else {
         res = await NotesConverter.build(state.bytes, readOptions(), function (d, t) {
           pFill.style.width = (6 + d / t * 88).toFixed(1) + '%';
           pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
-          return new Promise(function (r) { setTimeout(r, 0); });
+          NotesFX.titleProgress(d, t);
+          return NotesFX.uiYield();
         });
       }
       pFill.style.width = '100%'; pStatus.textContent = 'done';
+      NotesFX.titleDone();
       state.out.bytes = res.bytes;
       if (state.out.url) URL.revokeObjectURL(state.out.url);
       state.out.url = URL.createObjectURL(new Blob([res.bytes], { type: 'application/pdf' }));
@@ -387,6 +391,7 @@
       setTimeout(function () { pBox.hidden = true; }, 900);
     } catch (err) {
       pStatus.textContent = 'failed: ' + (err && err.message || err);
+      NotesFX.titleDone(false);
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }
