@@ -288,6 +288,18 @@
   var PS_CHROMA = 60;                         // > this counts as a "real colour"
   var PS_MIN_INK_L = 30, PS_MAX_INK_L = 150;  // kept-colour ink stays in this luma band (printable)
 
+  /* Classic-mode ink level for a COLOURED pixel: photometric negative of its
+     luma instead of unconditional solid black. Bright colour strokes (yellow /
+     orange pen) still land at ~black, but mid-luma colour FILLS (blue quiz
+     badges, pills) become grey — so white labels printed on them survive as
+     black-on-grey instead of vanishing inside a solid black blob. */
+  function psColourInk(L) {
+    var v = 255 - L;
+    if (v <= 40) v = 0;            // near-black → crisp solid ink
+    else if (v >= 215) v = 255;    // (a colour this dark is already board — handled earlier)
+    return v | 0;
+  }
+
   /* Hue-preserving colour flip: light colour on a dark board → dark ink of the
      SAME hue on white paper. Returns [r,g,b]. */
   function psKeepColour(r, g, b, L) {
@@ -319,6 +331,9 @@
         } else if (keepColour && chroma > PS_CHROMA) {
           var kc = psKeepColour(r, g, b, lum);
           d[i] = kc[0]; d[i + 1] = kc[1]; d[i + 2] = kc[2];
+        } else if (chroma > PS_CHROMA) {             // colour fill → luma negative (grey), not blind black:
+          var ci = psColourInk(lum);                 // white-on-colour labels stay readable
+          d[i] = d[i + 1] = d[i + 2] = ci;
         } else {
           d[i] = d[i + 1] = d[i + 2] = 0;
         }
@@ -391,8 +406,9 @@
           out[o] = kc[0]; out[o + 1] = kc[1]; out[o + 2] = kc[2]; out[o + 3] = 255;
           continue;
         }
-        v = 0;                                                     // classic rule: colour → solid black ink
-      }
+        v = psColourInk(L);                                        // bright colour ink → black; mid-luma colour
+      }                                                            // FILLS → grey, so white-on-colour labels
+                                                                   // (quiz badges, pills) survive as black-on-grey
       else if (L >= hi) v = 0;
       else {                                                       // ink-biased curve (halation compensation):
         var tt = (L - lo) / (hi - lo);                             // mid-coverage pixels skew toward ink so

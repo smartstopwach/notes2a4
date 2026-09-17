@@ -213,6 +213,19 @@ console.log('5e) hq-map:');
   check('keepColour: light green -> dark green (g dominates)',
     r.imageData.data[1] > r.imageData.data[0] && r.imageData.data[1] > r.imageData.data[2] && r.imageData.data[1] < 200,
     `rgb(${r.imageData.data[0]},${r.imageData.data[1]},${r.imageData.data[2]})`);
+  // QUIZ-BADGE case (user's screenshot): blue option badge rgb(37,99,235) with a
+  // white number on it. Old rule sent the fill to solid black and the number
+  // drowned. Now: mid-luma colour fill → GREY, white number → black = readable.
+  const BADGE = [37, 99, 235];
+  big = mk([BADGE, BADGE, BADGE, BADGE], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false, false);
+  {
+    const v = r.imageData.data[0];
+    check('quiz badge fill -> grey, not black blob', v > 100 && v < 220, `v=${v}`);
+  }
+  big = mk([[255,140,60],[255,140,60],[255,140,60],[255,140,60]], 2, 2);   // orange pen stroke
+  r = NC.printSaver.hqMap(big, 1, 1, false, false);
+  check('orange pen stroke -> dark ink (still prints)', r.imageData.data[0] <= 90, `v=${r.imageData.data[0]}`);
   // SATURATED dark background (navy slide theme, chroma 75 but luma 24):
   // dark-first rule — it is board, not ink → white paper in BOTH colour modes
   const NAVY = [10, 20, 85];
