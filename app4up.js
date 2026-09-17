@@ -67,9 +67,12 @@
   async function handleFiles(files) {
     if (files.length === 1) return handleFile(files[0]);
     clearError();
+    var ordered = await NotesFX.orderPdfs(files);      // arrange up/down before merging
+    if (!ordered) return;                              // cancelled
+    if (ordered.length === 1) return handleFile(ordered[0]);
     pBox.hidden = false; pFill.style.width = '10%';
     try {
-      var m = await NotesFX.mergePdfs(files, function (d, t, nm) {
+      var m = await NotesFX.mergePdfs(ordered, function (d, t, nm) {
         pFill.style.width = (10 + d / t * 80).toFixed(0) + '%';
         pStatus.textContent = 'merging ' + d + ' of ' + t + ' \u00b7 ' + nm;
       });

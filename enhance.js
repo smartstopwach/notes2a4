@@ -181,6 +181,104 @@
     setTimeout(function () { r.hidden = true; r.classList.remove('big'); }, 1600);
   };
 
+  /* ---------- multi-PDF order picker ----------
+     Shown when several PDFs are dropped: a list where each file can be moved
+     up / down (buttons or ↑↓ keys), removed, previewed by size — then merged
+     in exactly the order shown. Resolves File[] or null (cancelled). */
+  NotesFX.orderPdfs = function (files) {
+    var list = Array.prototype.slice.call(files);
+    return new Promise(function (resolve) {
+      var css = [
+        '.nfx-ord{position:fixed;inset:0;z-index:1100;background:rgba(8,10,18,.9);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:1rem}',
+        '.nfx-ord-card{background:#12182a;border:1px solid #2c3548;border-radius:16px;box-shadow:0 24px 80px rgba(0,0,0,.6);width:min(560px,94vw);max-height:86vh;display:flex;flex-direction:column;font-family:system-ui}',
+        '.nfx-ord-head{padding:1rem 1.2rem .6rem}',
+        '.nfx-ord-head b{color:#e8ecf5;font-size:1.05rem}',
+        '.nfx-ord-head small{display:block;color:#8b97ad;margin-top:.25rem;font-size:.8rem}',
+        '.nfx-ord-list{overflow:auto;padding:.4rem .8rem;flex:1}',
+        '.nfx-ord-row{display:flex;align-items:center;gap:.6rem;background:#1a2135;border:1px solid #2c3548;border-radius:11px;padding:.55rem .7rem;margin:.35rem 0;transition:transform .15s ease,opacity .15s ease}',
+        '.nfx-ord-row.sel{border-color:#5b7bd8;box-shadow:0 0 0 2px rgba(91,123,216,.3)}',
+        '.nfx-ord-num{flex:none;width:26px;height:26px;border-radius:50%;background:#2563eb;color:#fff;font:700 .8rem/26px system-ui;text-align:center}',
+        '.nfx-ord-name{flex:1;min-width:0;color:#dbe3f0;font-size:.86rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+        '.nfx-ord-size{color:#7b879c;font-size:.74rem;flex:none}',
+        '.nfx-ord-btn{flex:none;cursor:pointer;border:1px solid #3a4356;background:#232b40;color:#cbd5e6;border-radius:8px;width:30px;height:30px;font:700 .95rem/1 system-ui}',
+        '.nfx-ord-btn:hover{background:#2d3752}',
+        '.nfx-ord-btn:disabled{opacity:.3;cursor:default}',
+        '.nfx-ord-btn.del{color:#fda4a4;border-color:#5b2727}',
+        '.nfx-ord-foot{display:flex;gap:.7rem;padding: .8rem 1.2rem 1.1rem;align-items:center}',
+        '.nfx-ord-foot .keys{flex:1;color:#67738a;font-size:.72rem}',
+        '.nfx-ord-foot .keys kbd{background:#1d2434;border:1px solid #39445c;border-radius:4px;padding:.05rem .35rem;font-size:.7rem}',
+        '.nfx-ord-go{cursor:pointer;border:1px solid #15803d;background:#123421;color:#86efac;border-radius:10px;padding:.6rem 1.1rem;font:700 .88rem system-ui}',
+        '.nfx-ord-go:hover{background:#174a2c}',
+        '.nfx-ord-cancel{cursor:pointer;border:1px solid #3a4356;background:none;color:#9aa7bd;border-radius:10px;padding:.6rem 1rem;font:600 .85rem system-ui}'
+      ].join('\n');
+      var st = document.createElement('style'); st.textContent = css;
+      var ov = document.createElement('div');
+      ov.className = 'nfx-ord';
+      ov.innerHTML = '<div class="nfx-ord-card"><div class="nfx-ord-head"><b>Arrange your PDFs</b>' +
+        '<small>They will be merged top → bottom. Move files up / down until the order is right.</small></div>' +
+        '<div class="nfx-ord-list"></div>' +
+        '<div class="nfx-ord-foot"><span class="keys"><kbd>↑</kbd><kbd>↓</kbd> select · <kbd>Shift</kbd>+<kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> merge</span>' +
+        '<button class="nfx-ord-cancel" type="button">Cancel</button>' +
+        '<button class="nfx-ord-go" type="button">Merge ' + list.length + ' PDFs ➜</button></div></div>';
+      document.head.appendChild(st);
+      document.body.appendChild(ov);
+      var listEl = ov.querySelector('.nfx-ord-list');
+      var goBtn = ov.querySelector('.nfx-ord-go');
+      var sel = 0;
+
+      function fmtMB(b) { return b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+      function render() {
+        listEl.innerHTML = '';
+        list.forEach(function (f, i) {
+          var row = document.createElement('div');
+          row.className = 'nfx-ord-row' + (i === sel ? ' sel' : '');
+          row.innerHTML = '<span class="nfx-ord-num">' + (i + 1) + '</span>' +
+            '<span class="nfx-ord-name"></span><span class="nfx-ord-size">' + fmtMB(f.size) + '</span>' +
+            '<button class="nfx-ord-btn up" type="button" title="move up" ' + (i === 0 ? 'disabled' : '') + '>↑</button>' +
+            '<button class="nfx-ord-btn dn" type="button" title="move down" ' + (i === list.length - 1 ? 'disabled' : '') + '>↓</button>' +
+            '<button class="nfx-ord-btn del" type="button" title="remove from merge">✕</button>';
+          row.querySelector('.nfx-ord-name').textContent = f.name;
+          row.addEventListener('click', function () { sel = i; render(); });
+          row.querySelector('.up').addEventListener('click', function (e) { e.stopPropagation(); move(i, i - 1); });
+          row.querySelector('.dn').addEventListener('click', function (e) { e.stopPropagation(); move(i, i + 1); });
+          row.querySelector('.del').addEventListener('click', function (e) {
+            e.stopPropagation();
+            list.splice(i, 1);
+            if (sel >= list.length) sel = list.length - 1;
+            if (list.length === 0) return finish(null);
+            goBtn.textContent = 'Merge ' + (list.length === 1 ? 'this PDF ➜' : list.length + ' PDFs ➜');
+            render();
+          });
+          listEl.appendChild(row);
+        });
+      }
+      function move(i, j) {
+        if (j < 0 || j >= list.length) return;
+        var t = list[i]; list[i] = list[j]; list[j] = t;
+        sel = j;
+        render();
+      }
+      function onKey(e) {
+        if (e.key === 'Escape') { finish(null); }
+        else if (e.key === 'Enter') { finish(list.slice()); }
+        else if (e.key === 'ArrowUp') { e.shiftKey ? move(sel, sel - 1) : (sel = Math.max(0, sel - 1), render()); }
+        else if (e.key === 'ArrowDown') { e.shiftKey ? move(sel, sel + 1) : (sel = Math.min(list.length - 1, sel + 1), render()); }
+        else return;
+        e.preventDefault(); e.stopPropagation();
+      }
+      function finish(result) {
+        document.removeEventListener('keydown', onKey, true);
+        ov.remove(); st.remove();
+        resolve(result);
+      }
+      ov.querySelector('.nfx-ord-cancel').addEventListener('click', function () { finish(null); });
+      goBtn.addEventListener('click', function () { finish(list.slice()); });
+      ov.addEventListener('click', function (e) { if (e.target === ov) finish(null); });
+      document.addEventListener('keydown', onKey, true);
+      render();
+    });
+  };
+
   /* ---------- multi-PDF merge ----------
      Drop or pick SEVERAL PDFs at once: they are stitched into one document
      (in the order given) with pdf-lib, then flow through the normal
