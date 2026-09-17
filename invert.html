@@ -6,8 +6,8 @@
 <title>Notes2A4 · Invert Lab — flip PDF colours 1:1, page for page, size for size</title>
 <meta name="description" content="Pure colour inversion for PDFs: every page keeps its exact size and page count — black becomes white, white becomes black, every colour 255−c. Nothing is re-laid-out. 100% in-browser, no uploads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='6' width='24' height='20' rx='3' fill='%23fff'/%3E%3Cpath d='M16 6h12a0 0 0 0 1 0 0v20H16z' fill='%230d1321'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=20">
-<link rel="stylesheet" href="invert.css?v=20">
+<link rel="stylesheet" href="styles.css?v=21">
+<link rel="stylesheet" href="invert.css?v=21">
 <meta http-equiv="Cache-Control" content="no-cache">
 </head>
 <body id="top" class="iv-body">
@@ -122,8 +122,9 @@
             <div class="seg" role="radiogroup" aria-label="Flip style">
               <label><input type="radio" name="ivstyle" id="styleNeg" checked><span>True negative · 255−c</span></label>
               <label><input type="radio" name="ivstyle" id="styleInk"><span>Black ink · print-safe</span></label>
+              <label><input type="radio" name="ivstyle" id="stylePure"><span>Pure B&amp;W · no greys</span></label>
             </div>
-            <small>Black ink flips the dark board to white paper and prints <b>every colour as solid black</b> — your printer uses only the K cartridge. Already-bright pages pass through untouched.</small>
+            <small>Black ink flips the dark board to white paper with smooth (anti-aliased) edges. <b>Pure B&amp;W</b> uses a hard threshold instead — every pixel exactly black or white, zero greys. Already-bright pages pass through untouched.</small>
           </div>
           <label class="sw psRow" id="keepColourRow" hidden><input type="checkbox" id="optKeepColour"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Keep colours</b><em>blue / green / yellow highlights stay their own colour — flipped to a dark printable ink instead of solid black</em></span></label>
           <div class="fld">
@@ -196,10 +197,10 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=20"></script>
-<script src="enhance.js?v=20"></script>
-<script src="review.js?v=20"></script>
-<script src="app-invert.js?v=20"></script>
+<script src="converter.js?v=21"></script>
+<script src="enhance.js?v=21"></script>
+<script src="review.js?v=21"></script>
+<script src="app-invert.js?v=21"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

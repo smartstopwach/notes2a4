@@ -32,15 +32,16 @@
   var opt = {
     dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'),
     fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
-    styleNeg: $('styleNeg'), styleInk: $('styleInk'),
+    styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'),
     keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow')
   };
 
   function dpi() { return opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96); }
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
-  function inkMode() { return opt.styleInk.checked && window.NotesConverter && NotesConverter.printSaver; }
+  function inkMode() { return (opt.styleInk.checked || (opt.stylePure && opt.stylePure.checked)) && window.NotesConverter && NotesConverter.printSaver; }
+  function pureMode() { return !!(opt.stylePure && opt.stylePure.checked); }
   function keepColour() { return !!(opt.keepColour && opt.keepColour.checked); }
-  function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !opt.styleInk.checked; }
+  function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !opt.styleInk.checked; }  // pure mode: no colour row (everything is 0/255)
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(m) { fileErr.hidden = false; fileErr.textContent = m; }
   function clearError() { fileErr.hidden = true; fileErr.textContent = ''; }
@@ -172,7 +173,7 @@
       x2.drawImage(c1, 0, 0);
       var id = x2.getImageData(0, 0, c2.width, c2.height);
       if (inkMode()) {
-        var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true, keepColour());
+        var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true, keepColour(), pureMode());
         x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
       } else {
         invertPixels(id, true);
@@ -204,7 +205,7 @@
     var out = document.createElement('canvas');
     out.width = W; out.height = H;
     if (inkMode()) {                                  // same ink-bias mapping the Print-Saver engine uses
-      var hm = NotesConverter.printSaver.hqMap(idat, W, H, true, keepColour());
+      var hm = NotesConverter.printSaver.hqMap(idat, W, H, true, keepColour(), pureMode());
       out.getContext('2d').putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
     } else {
       invertPixels(idat, true);                       // true negative — colours included
@@ -250,10 +251,10 @@
           skipped++;
         }
         outPg.drawImage(img, { x: 0, y: 0, width: size.w, height: size.h });
-        NotesFX.liveShow(r.canvas, 'page ' + i + ' / ' + n + ' · ' + (inkMode() ? 'black ink' : 'negative') + (r.blank && skip ? ' · blank' : ''));
+        NotesFX.liveShow(r.canvas, 'page ' + i + ' / ' + n + ' · ' + (pureMode() ? 'pure b&w' : inkMode() ? 'black ink' : 'negative') + (r.blank && skip ? ' · blank' : ''));
         r.canvas.width = r.canvas.height = 0;
         pFill.style.width = (4 + i / n * 90).toFixed(1) + '%';
-        pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + (inkMode() ? 'black ink' : 'negative') + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' + (r.blank && skip ? ' · blank kept white' : '');
+        pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + (pureMode() ? 'pure b&w' : inkMode() ? 'black ink' : 'negative') + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' + (r.blank && skip ? ' · blank kept white' : '');
         NotesFX.titleProgress(i, n);
         await NotesFX.uiYield();                                      // throttle-proof: full speed in background tabs
       }
@@ -272,7 +273,7 @@
       $('rsIn').textContent = n;
       $('rsOut').textContent = n;
       $('rsMeta').textContent =
-        n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + (inkMode() ? 'black ink' : 'true negative') + ' · sizes unchanged · ' +
+        n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + (pureMode() ? 'pure b&w' : inkMode() ? 'black ink' : 'true negative') + ' · sizes unchanged · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(saved.length) + ' · ' + dpi() + ' dpi ' + (fmt() === 'png' ? 'PNG' : 'JPEG') +
         (skipped ? ' · ' + skipped + ' blank page' + (skipped === 1 ? '' : 's') + ' kept white' : '') + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device';
@@ -320,10 +321,10 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.keepColour].forEach(function (el) {
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.keepColour].forEach(function (el) {
     if (el) el.addEventListener('change', schedulePreview);
   });
-  [opt.styleNeg, opt.styleInk].forEach(function (el) { el.addEventListener('change', syncKeepColourRow); });
+  [opt.styleNeg, opt.styleInk, opt.stylePure].forEach(function (el) { if (el) el.addEventListener('change', syncKeepColourRow); });
   syncKeepColourRow();
 
   function resetAll() {

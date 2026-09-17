@@ -296,6 +296,33 @@ console.log('5e) hq-map:');
   r = NC.printSaver.hqMap(big, 1, 1, true);
   check('auto dark page inverts', r.inverted === true && r.darkFrac >= 0.5);
 
+  /* --- pure mode: hard threshold, ZERO greys ever --- */
+  big = mk([K, W, K, K], 2, 2);                        // 3/4 ink coverage — ink mode gives grey edge
+  r = NC.printSaver.hqMap(big, 1, 1, false, false, true);
+  check('pure: mixed edge block -> hard 0/255 (no ramp)', r.imageData.data[0] === 255 || r.imageData.data[0] === 0, `v=${r.imageData.data[0]}`);
+  big = mk([[90,90,90],[90,90,90],[90,90,90],[90,90,90]], 2, 2);   // exactly at threshold
+  r = NC.printSaver.hqMap(big, 1, 1, false, false, true);
+  check('pure: luma-90 -> white (<= T is board)', r.imageData.data[0] === 255);
+  big = mk([[91,91,91],[91,91,91],[91,91,91],[91,91,91]], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false, false, true);
+  check('pure: luma-91 -> black ink', r.imageData.data[0] === 0);
+  big = mk([[37,99,235],[37,99,235],[37,99,235],[37,99,235]], 2, 2);  // colour fill: no grey in pure
+  r = NC.printSaver.hqMap(big, 1, 1, false, false, true);
+  check('pure: colour fill -> hard black or white, never grey', r.imageData.data[0] === 0 || r.imageData.data[0] === 255, `v=${r.imageData.data[0]}`);
+  {
+    // full-page scan: not a single grey pixel may exist in pure output
+    const px = [];
+    for (let i = 0; i < 64; i++) px.push([ (i*4) % 256, (i*7) % 256, (i*11) % 256 ]);
+    big = mk(px, 8, 8);
+    r = NC.printSaver.hqMap(big, 8, 8, false, false, true);
+    let greys = 0;
+    for (let i = 0; i < r.imageData.data.length; i += 4) {
+      const v = r.imageData.data[i];
+      if (v !== 0 && v !== 255) greys++;
+    }
+    check('pure: 0 grey pixels across a mixed 8x8 page', greys === 0, `greys=${greys}`);
+  }
+
   /* --- negMap: true negative (255−c) — the 'revert' colour style --- */
   big = mk([[13,19,33],[13,19,33],[13,19,33],[13,19,33]], 2, 2);
   r = NC.printSaver.negMap(big, 1, 1, false);

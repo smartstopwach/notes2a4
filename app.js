@@ -58,16 +58,21 @@
     });
   }
 
-  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), sInk: $('psInk'), sKeep: $('psKeep'), sNeg: $('psNeg') };
+  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), sInk: $('psInk'), sPure: $('psPure'), sKeep: $('psKeep'), sNeg: $('psNeg') };
   function printMode() { return !!(printEls.on && printEls.on.checked); }
   function printDpi() { return printEls.d220 && printEls.d220.checked ? 220 : (printEls.d96 && printEls.d96.checked ? 96 : 150); }
   function printAuto() { return printEls.auto.checked; }
-  function printStyle() { return printEls.sNeg && printEls.sNeg.checked ? 'neg' : (printEls.sKeep && printEls.sKeep.checked ? 'keep' : 'ink'); }
+  function printStyle() {
+    if (printEls.sNeg && printEls.sNeg.checked) return 'neg';
+    if (printEls.sKeep && printEls.sKeep.checked) return 'keep';
+    if (printEls.sPure && printEls.sPure.checked) return 'pure';
+    return 'ink';
+  }
   /* One entry point for all three colour styles: ink / keep / neg (true negative). */
   function printMap(idat, W, H) {
     var st = printStyle();
     if (st === 'neg') return NotesConverter.printSaver.negMap(idat, W, H, printAuto());
-    return NotesConverter.printSaver.hqMap(idat, W, H, printAuto(), st === 'keep');
+    return NotesConverter.printSaver.hqMap(idat, W, H, printAuto(), st === 'keep', st === 'pure');
   }
   function refreshPrintBadge() {
     var el = $('fbOut'); if (!el) return;
@@ -367,7 +372,7 @@
   function printListeners(schedule) {
     if (!printEls.on) return;
     printEls.on.addEventListener('change', function () { printEls.opts.hidden = !printEls.on.checked; schedule(); refreshPrintBadge(); });
-    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.sInk, printEls.sKeep, printEls.sNeg].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
+    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.sInk, printEls.sPure, printEls.sKeep, printEls.sNeg].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
   }
   /* ---------- convert ---------- */
   goBtn.addEventListener('click', convert);
@@ -422,7 +427,7 @@
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed into ' + res.sheets + ' ' +
         NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' sheets · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
-        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', keep:'kept colours', neg:'true negative'})[printStyle()] : '');
+        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative'})[printStyle()] : '');
 
       await makeThumbs(res.bytes, res.sheets);
       result.hidden = false;

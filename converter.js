@@ -366,7 +366,7 @@
    */
   var PS_BAND = 45;
   var PS_GAMMA = 1.7;   // ink-bias exponent of the edge ramp (>1 → fatter darks)
-  function hqMap(big, outW, outH, auto, keepColour) {
+  function hqMap(big, outW, outH, auto, keepColour, pure) {
     var bd = big.data, bw = big.width, bh = big.height;
     var n = outW * outH;
     var sumL = new Uint16Array(n), cnt = new Uint8Array(n);
@@ -405,6 +405,11 @@
         continue;
       }
       var v;
+      if (pure) {                                                  // PURE B&W: hard threshold at the ink midpoint —
+        v = L <= T ? 255 : 0;                                      // only 0 or 255 ever leaves this branch; no edge
+        out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;    // ramp, no grey fills, no gradients at all
+        continue;
+      }
       if (L <= lo) v = 255;                                       // dark pixel → white paper FIRST — even a
                                                                    // saturated dark theme bg (navy slide) is board,
                                                                    // not ink; chroma rule only applies to bright pixels
