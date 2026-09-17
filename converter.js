@@ -419,6 +419,42 @@
     return { imageData: { data: out, width: outW, height: outH }, darkFrac: frac, inverted: invert };
   }
 
+  /**
+   * Negative map — true colour negative (255−c) with the same SSAA area-average
+   * downsample as hqMap. Colours flip to their complements (blue↔orange…),
+   * dark board → light paper, nothing is forced to black.
+   * auto=true: light pages (darkFrac<0.5) are downsampled untouched.
+   */
+  function negMap(big, outW, outH, auto) {
+    var bd = big.data, bw = big.width, bh = big.height;
+    var n = outW * outH;
+    var sumL = new Uint32Array(n), cnt = new Uint16Array(n);
+    var sumR = new Uint32Array(n), sumG = new Uint32Array(n), sumB = new Uint32Array(n);
+    for (var y = 0; y < bh; y++) {
+      var oy = (y * outH / bh) | 0, row = y * bw;
+      for (var x = 0; x < bw; x++) {
+        var i = (row + x) * 4;
+        var k = oy * outW + ((x * outW / bw) | 0);
+        var r = bd[i], g = bd[i + 1], b = bd[i + 2];
+        sumL[k] += (r * 299 + g * 587 + b * 114) / 1000 | 0;
+        sumR[k] += r; sumG[k] += g; sumB[k] += b;
+        cnt[k]++;
+      }
+    }
+    var dark = 0;
+    for (var q = 0; q < n; q++) if (sumL[q] / (cnt[q] || 1) <= PS_DARK_LUM) dark++;
+    var frac = dark / n;
+    var invert = auto ? frac >= 0.5 : true;
+    var out = new Uint8ClampedArray(n * 4);
+    for (var p = 0; p < n; p++) {
+      var cN = cnt[p] || 1, o = p * 4;
+      var r2 = sumR[p] / cN, g2 = sumG[p] / cN, b2 = sumB[p] / cN;
+      if (invert) { r2 = 255 - r2; g2 = 255 - g2; b2 = 255 - b2; }
+      out[o] = r2; out[o + 1] = g2; out[o + 2] = b2; out[o + 3] = 255;
+    }
+    return { imageData: { data: out, width: outW, height: outH }, darkFrac: frac, inverted: invert };
+  }
+
   /** Shared sheet decoration (ruled lines + sheet number) for both build paths. */
   function decorateSheet(pg, L, opts, font, s, nSheets, page) {
     if (opts.lines) {
@@ -497,6 +533,6 @@
     layoutForSheet: layoutForSheet,
     build: build,
     buildFromImages: buildFromImages,
-    printSaver: { process: psProcess, hqMap: hqMap, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
+    printSaver: { process: psProcess, hqMap: hqMap, negMap: negMap, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
   };
 });

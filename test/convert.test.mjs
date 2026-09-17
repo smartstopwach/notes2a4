@@ -263,6 +263,28 @@ console.log('5e) hq-map:');
   big = mk([K, K, K, W], 2, 2);
   r = NC.printSaver.hqMap(big, 1, 1, true);
   check('auto dark page inverts', r.inverted === true && r.darkFrac >= 0.5);
+
+  /* --- negMap: true negative (255−c) — the 'revert' colour style --- */
+  big = mk([[13,19,33],[13,19,33],[13,19,33],[13,19,33]], 2, 2);
+  r = NC.printSaver.negMap(big, 1, 1, false);
+  check('negMap: dark board -> light paper (242,236,222)',
+    r.imageData.data[0] === 242 && r.imageData.data[1] === 236 && r.imageData.data[2] === 222,
+    `rgb(${r.imageData.data[0]},${r.imageData.data[1]},${r.imageData.data[2]})`);
+  big = mk([[126,200,255],[126,200,255],[126,200,255],[126,200,255]], 2, 2);
+  r = NC.printSaver.negMap(big, 1, 1, false);
+  check('negMap: light blue -> orange complement (129,55,0)',
+    r.imageData.data[0] === 129 && r.imageData.data[1] === 55 && r.imageData.data[2] === 0,
+    `rgb(${r.imageData.data[0]},${r.imageData.data[1]},${r.imageData.data[2]})`);
+  big = mk([[250,250,250],[250,250,250],[250,250,250],[250,250,250]], 2, 2);
+  r = NC.printSaver.negMap(big, 1, 1, true);
+  check('negMap auto: light page passes through untouched', r.inverted === false && r.imageData.data[0] === 250, `inv=${r.inverted}`);
+  big = mk([[10,10,10],[10,10,10],[10,10,10],[10,10,10]], 2, 2);
+  r = NC.printSaver.negMap(big, 1, 1, true);
+  check('negMap auto: dark page inverts to 245', r.inverted === true && r.imageData.data[0] === 245);
+  // SSAA downsample: 2x2 mixed block averages before flipping (no hard threshold)
+  big = mk([[0,0,0],[255,255,255],[0,0,0],[255,255,255]], 2, 2);
+  r = NC.printSaver.negMap(big, 1, 1, false);
+  check('negMap: area-average then flip (mixed block -> mid grey)', Math.abs(r.imageData.data[0] - 128) <= 2, `v=${r.imageData.data[0]}`);
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
