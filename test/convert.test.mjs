@@ -213,6 +213,19 @@ console.log('5e) hq-map:');
   check('keepColour: light green -> dark green (g dominates)',
     r.imageData.data[1] > r.imageData.data[0] && r.imageData.data[1] > r.imageData.data[2] && r.imageData.data[1] < 200,
     `rgb(${r.imageData.data[0]},${r.imageData.data[1]},${r.imageData.data[2]})`);
+  // SATURATED dark background (navy slide theme, chroma 75 but luma 24):
+  // dark-first rule — it is board, not ink → white paper in BOTH colour modes
+  const NAVY = [10, 20, 85];
+  big = mk([NAVY, NAVY, NAVY, NAVY], 2, 2);
+  r = NC.printSaver.hqMap(big, 1, 1, false, false);
+  check('saturated dark bg -> white paper (classic mode, no black flood)', r.imageData.data[0] === 255, `v=${r.imageData.data[0]}`);
+  r = NC.printSaver.hqMap(big, 1, 1, false, true);
+  check('saturated dark bg -> white paper (keepColour mode too)', r.imageData.data[0] === 255, `v=${r.imageData.data[0]}`);
+  {
+    let imN = img([px(10, 20, 85)]);
+    NC.printSaver.process(imN, false, false);
+    check('process: saturated dark bg -> white', [imN.data[0], imN.data[1], imN.data[2]].join() === '255,255,255');
+  }
   // keepColour=true: achromatic pixels still follow the classic b/w map
   big = mk([K, K, K, K], 2, 2);
   r = NC.printSaver.hqMap(big, 1, 1, false, true);

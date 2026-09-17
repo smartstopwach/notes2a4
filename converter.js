@@ -314,12 +314,13 @@
         r = d[i]; g = d[i + 1]; b = d[i + 2];
         lum = (r * 299 + g * 587 + b * 114) / 1000 | 0;
         var chroma = Math.max(r, g, b) - Math.min(r, g, b);
-        if (keepColour && chroma > PS_CHROMA) {
+        if (lum <= PS_DARK_LUM) {                    // dark first: saturated dark theme bg is board, not ink
+          d[i] = d[i + 1] = d[i + 2] = 255;
+        } else if (keepColour && chroma > PS_CHROMA) {
           var kc = psKeepColour(r, g, b, lum);
           d[i] = kc[0]; d[i + 1] = kc[1]; d[i + 2] = kc[2];
         } else {
-          var v = lum <= PS_DARK_LUM ? 255 : 0;
-          d[i] = d[i + 1] = d[i + 2] = v;
+          d[i] = d[i + 1] = d[i + 2] = 0;
         }
         d[i + 3] = 255;
       }
@@ -381,7 +382,10 @@
         continue;
       }
       var v;
-      if (maxC[p] > PS_CHROMA) {                                  // a real colour
+      if (L <= lo) v = 255;                                       // dark pixel → white paper FIRST — even a
+                                                                   // saturated dark theme bg (navy slide) is board,
+                                                                   // not ink; chroma rule only applies to bright pixels
+      else if (maxC[p] > PS_CHROMA) {                              // a real colour (bright/mid only)
         if (keepColour) {                                          // keep the hue, flip the lightness →
           var kc = psKeepColour(sumR[p] / cN, sumG[p] / cN, sumB[p] / cN, L);   // dark printable ink of the same colour
           out[o] = kc[0]; out[o + 1] = kc[1]; out[o + 2] = kc[2]; out[o + 3] = 255;
@@ -389,7 +393,6 @@
         }
         v = 0;                                                     // classic rule: colour → solid black ink
       }
-      else if (L <= lo) v = 255;
       else if (L >= hi) v = 0;
       else {                                                       // ink-biased curve (halation compensation):
         var tt = (L - lo) / (hi - lo);                             // mid-coverage pixels skew toward ink so
