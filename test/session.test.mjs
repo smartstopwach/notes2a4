@@ -401,6 +401,30 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     check('strips: ' + f + ' keeps a full-page fallback if a strip render fails',
       /falling back to a full-page render|strip rendering unavailable/.test(src) || f === 'app-invert.js');
   }
+  // heavy pixel work runs in a worker; the main thread must only orchestrate
+  for (const f of ['index.html', '4up.html', 'invert.html']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    const ci = src.indexOf('converter.js?v=');
+    const ri = src.indexOf('raster-client.js?v=');
+    check('worker: ' + f + ' loads the raster client after the converter core',
+      ci > 0 && ri > ci && /app.*\.js\?v=34/.test(src), 'client @' + ri);
+  }
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    check('worker: ' + f + ' tries the worker before its own main-thread pipeline',
+      /NotesRaster\.supported\(\)/.test(src) && /NotesRaster\.mapPage\(/.test(src));
+    check('worker: ' + f + ' falls back to the main thread when the worker cannot help',
+      /catch \(err\) \{[\s\S]{0,220}raster worker could not do this page/.test(src));
+  }
+  const cli = readFileSync(new URL('../raster-client.js', import.meta.url), 'utf8');
+  const wrk = readFileSync(new URL('../worker-raster.js', import.meta.url), 'utf8');
+  check('worker: the worker reuses the converter map pieces (no second implementation)',
+    /printSaver\.pieces/.test(wrk) && /importScripts\('converter\.js'\)/.test(wrk));
+  check('worker: the client never lets a dead worker break a conversion',
+    /dead = true/.test(cli) && /dropPending/.test(cli) && /raster worker unavailable/.test(cli));
+  check('worker: buffers are transferred, not copied',
+    /\[buf\]/.test(cli) && /\[cfg\.rgba\.buffer\]/.test(cli));
+
   const fxPaint = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   check('responsive: enhance.js exposes uiPaint (a yield that really paints)',
     /NotesFX\.uiPaint = function/.test(fxPaint) && /requestAnimationFrame/.test(fxPaint) && /setTimeout\(fin, 120\)/.test(fxPaint));

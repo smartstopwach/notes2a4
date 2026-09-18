@@ -762,6 +762,15 @@
     numPlace: numPlace,
     vectorNegative: vectorNegative,
     sepLines: sepLines,
-    printSaver: { process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, negMap: negMap, negMapAsync: negMapAsync, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
+    /* `pieces` is the raw map machinery, so worker-raster.js can run the
+       identically-mathed map off-thread (and the tests can prove the two agree) */
+    printSaver: {
+      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, negMap: negMap, negMapAsync: negMapAsync,
+      keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA,
+      pieces: {
+        hqAcc: hqAcc, hqFeed: hqFeed, hqFinishA: hqFinishA, hqFinishB: hqFinishB, hqSt: hqSt,
+        negAcc: negAcc, negFeed: negFeed, negFinishA: negFinishA, negFinishB: negFinishB
+      }
+    }
   };
 });

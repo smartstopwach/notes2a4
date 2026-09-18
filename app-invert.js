@@ -325,6 +325,51 @@
     };
     if (sub) sub(0, 'rendering');
     await NotesFX.uiPaint(true);                // let the bar move before the first strip
+    /* Off-thread first: the per-pixel map over the whole page and the JPEG/PNG
+       encode are what froze the tab. The worker does both on the strips we hand
+       over; if it cannot, the main-thread path below does exactly the same maths. */
+    if (window.NotesRaster && NotesRaster.supported()) {
+      var wmime = fmt() === 'png' ? 'image/png' : 'image/jpeg';
+      try {
+        if (inkMode()) {
+          var wi = await NotesRaster.mapPage({
+            kind: 'hq', auto: true, keepColour: keepColour(), pure: pureMode(),
+            bw: bw, bh: bh, W: W, H: H, band: stripRows, trackBlank: true, provider: renderStrip,
+            encode: { mime: wmime, quality: 0.94, previewMax: 720 },
+            onProgress: function (done, total) { if (sub) sub(done / total, 'binarising'); },
+            onStrip: function () { return NotesFX.uiPaint(); }
+          });
+          pg.cleanup();
+          return { bytes: new Uint8Array(wi.bytes), blank: !!wi.blank, blankTracked: true, preview: previewOf(wi.preview) };
+        }
+        /* plain 255 − c: the flipped page is assembled on the main thread (the
+           browser's smooth downscale is part of the look), the encode — the long
+           part for JPEG — goes to the worker */
+        var bigW2 = document.createElement('canvas');
+        bigW2.width = bw; bigW2.height = bh;
+        var bx2 = bigW2.getContext('2d', { willReadFrequently: true });
+        var blank2 = true;
+        for (var wy = 0; wy < bh; wy += stripRows) {
+          var wrows = Math.min(stripRows, bh - wy);
+          var wid = await renderStrip(wy, wrows);
+          if (blank2) blank2 = invertPixels(wid, false);
+          invertPixels(wid, true);
+          bx2.putImageData(wid, 0, wy);
+          if (sub) sub((wy + wrows) / bh, 'flip');
+          await NotesFX.uiPaint();
+        }
+        var ox2 = out.getContext('2d', { willReadFrequently: true });
+        ox2.imageSmoothingEnabled = true; ox2.imageSmoothingQuality = 'high';
+        ox2.drawImage(bigW2, 0, 0, W, H);
+        bigW2.width = bigW2.height = 0;
+        var rgba = out.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+        var enc = await NotesRaster.encode({ rgba: rgba, W: W, H: H, encode: { mime: wmime, quality: 0.94, previewMax: 720 } });
+        pg.cleanup();
+        return { bytes: new Uint8Array(enc.bytes), blank: blank2, blankTracked: true, preview: previewOf(enc.preview) };
+      } catch (err) {
+        console.warn('raster worker could not do this page, using the main thread:', err);
+      }
+    }
     if (inkMode()) {                            // same ink-bias mapping the Print-Saver engine uses
       var stripFeed = function (y0, rows) {
         return renderStrip(y0, rows).then(function (id) {
@@ -386,6 +431,18 @@
     }
     pg.cleanup();
     return { canvas: out, blank: blank };
+  }
+
+  /* a small canvas from the worker's preview pixels (for the live view) */
+  function previewCanvas(prev) {
+    var cv = document.createElement('canvas');
+    cv.width = prev.width; cv.height = prev.height;
+    cv.getContext('2d').putImageData(new ImageData(prev.data, prev.width, prev.height), 0, 0);
+    return cv;
+  }
+
+  function previewOf(prev) {
+    return prev ? { data: new Uint8ClampedArray(prev.data), width: prev.w, height: prev.h } : null;
   }
 
   async function canvasBytes(canvas) {
@@ -462,7 +519,7 @@
               (phase === 'rendering' || phase === 'downsample' ? 'rendering the page' : phase === 'flip' ? 'flipping colours' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
               ' ' + Math.round(f * 100) + '%';
           });
-          bytes = await canvasBytes(r.canvas);
+          bytes = r.bytes || await canvasBytes(r.canvas);
           blank = !!r.blank;
           if (skip && blank) {          // blank page stays white: embed the un-inverted look (white sheet)
             var white = document.createElement('canvas'); white.width = 2; white.height = 2;
@@ -479,8 +536,11 @@
         var size = state.sizes[i - 1];
         var outPg = outDoc.addPage([size.w, size.h]);
         outPg.drawImage(img, { x: 0, y: 0, width: size.w, height: size.h });
-        if (r) NotesFX.liveShow(r.canvas, 'page ' + i + ' / ' + n + ' · ' + styleName() + (blank && skip ? ' · blank' : ''));
-        if (r) { r.canvas.width = r.canvas.height = 0; }
+        if (r) {                                                       // the worker path brings pixels, not a canvas
+          var liveCv = r.canvas || (r.preview ? previewCanvas(r.preview) : null);
+          if (liveCv) NotesFX.liveShow(liveCv, 'page ' + i + ' / ' + n + ' · ' + styleName() + (blank && skip ? ' · blank' : ''));
+          if (r.canvas) { r.canvas.width = r.canvas.height = 0; }
+        }
         pFill.style.width = (4 + i / n * 90).toFixed(1) + '%';
         pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + styleName() + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' +
           (r ? (blank && skip ? ' · blank kept white' : '') : ' · from checkpoint');

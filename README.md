@@ -24,6 +24,7 @@ notes**. This mirrors the classic "2 slides on 1 page" handout layout (top bbox 
 
 - **100% client-side** — pdf.js reads, pdf-lib writes; no server, no tracking, works offline after load (all libraries vendored in `vendor/`)
 - **Vector-perfect output** — source pages are embedded as PDF Form XObjects, not screenshots
+- **The heavy pixels run in a worker** — `worker-raster.js` runs the print-saver map over the supersampled page and the PNG/JPEG encode off the main thread; strips are transferred (never copied) and the finished page comes back as encoded bytes. The maths is not re-implemented: the worker imports `converter.js` and uses the very same `printSaver.pieces`, so a worker-built page is byte-identical (verified by decoding the returned PNG and comparing it with the main-thread map). If a browser cannot start a worker, the apps fall back to the main-thread banded pipeline without breaking a single conversion
 - **Pages are rendered in strips** — a 220 dpi A4 page is ~32 Mpx of supersampled canvas; instead of asking pdf.js for that in one call (which blocks for seconds and triggers Chrome's "Page Unresponsive" dialog), each page is drawn as ~96-row strips with whole-pixel `offsetY` offsets, fed straight into the banded maps. Same pixels, no 128 MB canvas, no long block
 - **The tab stays alive on long runs** — the print-saver pipeline walks each page band by band (`hqMapAsync` / `negMapAsync` in `converter.js`) and hands control back to the browser between bands, so a 33-page 220 dpi flip shows a moving progress bar instead of Chrome's "Page Unresponsive" dialog. Band boundaries never change a pixel — the tests compare the banded maps with the one-shot maps byte for byte
 - **Exact vector true negative** (Invert Lab) — the `255 − c` flip applied to the PDF itself with blend mode `/Difference` (the same trick dedicated inversion tools use): every sampled pixel matches a reference tool's output **exactly** (500,990-point comparison, zero differences, verified in the test suite), while text stays text (sharp + selectable), the file stays small and the run is instant — no rasterising, so Sharpness / Encoding do not apply
@@ -152,6 +153,12 @@ test/app-smoke.test.mjs headless run of the real app files (stubbed DOM) — Sta
                         to throw so they can never come back
 test/fixtures/        sample notes PDFs + PNGs the suites run on
 test/make-fixtures.mjs regenerates those fixtures
+test/raster-worker.test.mjs worker maths + protocol + failure paths (fake Worker)
+test/worker-realm.test.mjs  runs worker-raster.js inside a realm that behaves like a
+                        real Web Worker (importScripts + self + postMessage)
+test/fake-worker.mjs   the shared Worker / OffscreenCanvas stand-ins
+raster-client.js       main-thread side of the client (mapPage / encode / fallback)
+worker-raster.js       the worker: map + encode, using converter.js's pieces
 probe/                colour-probe.pdf / .png — the calibration target you send elsewhere
 tools/colour-probe.mjs  draws the probe · tools/analyse-probe.mjs reads a returned file
 tools/probe-layout.mjs  the shared swatch geometry · tools/img-io.mjs  PNG/JPEG in + out

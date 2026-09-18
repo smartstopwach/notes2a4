@@ -417,6 +417,28 @@
       cv.width = 0; cv.height = 0;                                  // release the strip immediately
       return id;
     };
+    var tag2 = cap > 0 ? 'HQ ' + mul + '\u00d7 supersampled ' + W + 'px' : 'vector-sharp ' + Math.round(outSc * 72) + ' dpi';
+    var st = printStyle();
+    /* Off-thread first: the map over ~32 Mpx and the PNG encode are the heavy,
+       block-the-tab parts. The worker gets the strips (transferred, never copied)
+       and hands back the encoded page; the main thread only draws them. */
+    if (window.NotesRaster && NotesRaster.supported()) {
+      try {
+        var wres = await NotesRaster.mapPage({
+          kind: st === 'neg' ? 'neg' : 'hq', auto: printAuto(), keepColour: st === 'keep', pure: st === 'pure',
+          bw: bw, bh: bh, W: W, H: H, band: stripRows, provider: renderStrip,
+          encode: { mime: 'image/png', previewMax: 720 },
+          onProgress: function (done, total) { if (sub) sub(done / total, 'binarising'); },
+          onStrip: function () { return NotesFX.uiPaint(); }
+        });
+        return {
+          bytes: new Uint8Array(wres.bytes), blank: !!wres.blank, status: tag2,
+          preview: wres.preview ? { data: new Uint8ClampedArray(wres.preview.data), width: wres.preview.w, height: wres.preview.h } : null
+        };
+      } catch (err) {
+        console.warn('raster worker could not do this page, using the main thread:', err);
+      }
+    }
     var hm;
     if (sub) sub(0, 'rendering');
     await NotesFX.uiPaint(true);                // let the bar move before the first strip
@@ -437,8 +459,7 @@
     small.width = W; small.height = H;
     var sx = small.getContext('2d');
     sx.putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
-    var tag = cap > 0 ? 'HQ ' + mul + '\u00d7 supersampled ' + W + 'px' : 'vector-sharp ' + Math.round(outSc * 72) + ' dpi';
-    return { canvas: small, status: tag };
+    return { canvas: small, status: tag2, blank: false, bytes: null, preview: null };
   }
 
   async function buildPrintItems(onPage, checkpoint) {
@@ -461,11 +482,10 @@
           ' ' + Math.round(f * 100) + '%';
       });
       pg.cleanup();
-      NotesFX.liveShow(r.canvas, 'page ' + (i + 1) + ' / ' + n + ' · ' + r.status);
+      var liveCv = r.canvas || (r.preview ? previewCanvas(r.preview) : null);
+      if (liveCv) NotesFX.liveShow(liveCv, 'page ' + (i + 1) + ' / ' + n + ' · ' + r.status);
       items[i] = {
-        bytes: await new Promise(function (res2, rej) {
-          r.canvas.toBlob(function (bl) { bl.arrayBuffer().then(function (ab) { res2(new Uint8Array(ab)); }, rej); }, 'image/png');
-        }),
+        bytes: r.bytes || await canvasToPng(r.canvas),
         w: state.sizes[i].w, h: state.sizes[i].h
       };
       if (checkpoint) {
@@ -477,6 +497,19 @@
     state.reusedPages = reused;
     return items;
   }
+  /* a small canvas from the worker's preview pixels (for the live view) */
+  function previewCanvas(prev) {
+    var cv = document.createElement('canvas');
+    cv.width = prev.width; cv.height = prev.height;
+    cv.getContext('2d').putImageData(new ImageData(prev.data, prev.width, prev.height), 0, 0);
+    return cv;
+  }
+  function canvasToPng(cv) {
+    return new Promise(function (res2, rej) {
+      cv.toBlob(function (bl) { bl.arrayBuffer().then(function (ab) { res2(new Uint8Array(ab)); }, rej); }, 'image/png');
+    });
+  }
+
   function printListeners(schedule) {
     if (!printEls.on) return;
     printEls.on.addEventListener('change', function () { printEls.opts.hidden = !printEls.on.checked; schedule(); refreshPrintBadge(); });

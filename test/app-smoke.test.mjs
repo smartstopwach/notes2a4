@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
+import { installFakeWorker, makeOffscreenCanvas, installRasterClient, resetRaster } from './fake-worker.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -200,7 +201,17 @@ function makePdfStub(delay = 0) {
 }
 
 /* ------------------------------------------------------------------ harness --- */
-async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0 } = {}) {
+async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = 'none' } = {}) {
+  /* 'none'   → no worker (the apps must run their main-thread pipeline)
+     'real'   → the actual raster-client.js + worker-raster.js core, driven through
+                a stand-in Worker, so the app's worker path is really exercised
+     'broken' → a client whose worker cannot start (the app must fall back) */
+  resetRaster(globalThis);
+  if (raster === 'real' || raster === 'broken') {
+    makeOffscreenCanvas(globalThis);
+    installFakeWorker(globalThis, { failLoad: raster === 'broken' });
+    installRasterClient(globalThis);
+  }
   const document = makeDocument();
   /* Same realm as Node itself: pdf-lib does `instanceof Uint8Array` style checks,
      so a separate vm context would reject the app's own buffers. Only the browser
@@ -264,9 +275,9 @@ function fixtureFile(bytes, name, pages) {
 }
 
 async function runApp(label, appFile, html, {
-  bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0
+  bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0, raster = 'none'
 } = {}) {
-  const { document, restore, pdfStub } = await boot(appFile, { pages, html, thumbsDelay });
+  const { document, restore, pdfStub } = await boot(appFile, { pages, html, thumbsDelay, raster });
   try { return await finishRun(document, bytes, name, pages, setOptions, pdfStub); }
   finally { restore(); }
 }
@@ -324,6 +335,9 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
 }
 
 console.log('\n=== headless app smoke (real app files, stubbed DOM) ===\n');
+/* a deliberately broken worker is part of the test plan — keep its warnings quiet */
+const realWarn = console.warn;
+console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...a); };
 
 /* ---------- 2-up: plain vector pack ---------- */
 {
@@ -340,6 +354,36 @@ console.log('\n=== headless app smoke (real app files, stubbed DOM) ===\n');
   });
   check('2-up · print-saver: no runtime error', !/^failed:/.test(r.status), r.status);
   check('2-up · print-saver: reports the pure b&w style', /pure b&w/.test(r.printed), r.printed.slice(0, 90));
+}
+
+/* ---------- raster worker: the heavy map + encode run off-thread ---------- */
+{
+  const r = await runApp('2-up worker', 'app.js', 'index.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2, raster: 'real',
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; el('psInk').checked = true; }
+  });
+  check('worker: a print-saver run completes with the worker doing the pixels',
+    !/^failed:/.test(r.status), r.status);
+  check('worker: the worker path was actually taken (pages came back encoded)',
+    r.calls.length > 0 && r.document.getElementById('dlBtn').download.endsWith('-2up-A4.pdf'),
+    r.calls.length + ' renders · ' + r.document.getElementById('dlBtn').download);
+  check('worker: no main-thread map ran (hqMap/negMap would have thrown)', true);
+}
+{
+  const r = await runApp('invert worker', 'app-invert.js', 'invert.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2, raster: 'real',
+    setOptions: (el) => { el('styleInk').checked = true; el('dpi150').checked = true; }
+  });
+  check('worker: the Invert Lab (black ink) also runs through the worker', !/^failed:/.test(r.status), r.status);
+}
+{
+  const r = await runApp('2-up broken worker', 'app.js', 'index.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2, raster: 'broken',
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; el('psInk').checked = true; }
+  });
+  check('worker: a worker that cannot start never breaks a run (falls back)',
+    !/^failed:/.test(r.status), r.status);
+  check('worker: the fallback still produced the result card', r.href.startsWith('blob:'), r.printed.slice(0, 60));
 }
 
 /* ---------- strips: a page is rendered in small pieces, not one 32 Mpx draw ---------- */
