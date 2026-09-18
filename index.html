@@ -7,7 +7,7 @@
 <meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
 <meta http-equiv="Cache-Control" content="no-cache">
-<link rel="stylesheet" href="styles.css?v=25">
+<link rel="stylesheet" href="styles.css?v=26">
 </head>
 <body id="top">
 
@@ -182,7 +182,10 @@
           <label class="fld">
             <span>Edge margin <i id="vMargin">0 mm</i></span>
             <input type="range" id="optMargin" min="0" max="12" step="0.5" value="0">
-            <small>0 = slides touch the sheet edges (like the classic 2-per-page demo). Add 5–8 mm for home printers that can't print full-bleed.</small>
+            <ul class="note-list">
+              <li><b>0 mm</b> — slides touch the sheet edges, exactly like the classic 2-per-page demo.</li>
+              <li><b>5–8 mm</b> — for home printers that can't print right up to the edge (full-bleed).</li>
+            </ul>
           </label>
           <div class="fld">
             <span class="lbl">Middle gap</span>
@@ -225,19 +228,32 @@
                   <label><input type="radio" name="numsize" id="nsL"><span>large</span></label>
                 </div>
               </div>
-              <small>Start at lets a second file continue where the first ended (e.g. 21).</small>
+              <ul class="note-list">
+                <li><b>Start at</b> — the first sheet gets this number instead of 1, so a second file can continue where the first ended (e.g. 21, 22, 23…).</li>
+                <li><b>Total in "n / last"</b> follows it too — start 21 with 10 sheets shows "21 / 30", not "21 / 10".</li>
+              </ul>
             </div>
           </div>
           <label class="sw psRow"><input type="checkbox" id="optPrint"><span class="track"><span class="thumb"></span></span>
-            <span class="sw-t"><b>Print-Saver inversion ◐</b><em>dark board notes → printer-friendly: black → white paper · pick a colour style below — black ink, kept colours, or a true 255−c negative revert</em></span></label>
+            <span class="sw-t"><b>Print-Saver inversion ◐</b><em>prints dark-board notes as white paper with black ink — the settings below decide how</em></span></label>
           <div class="ps-opts" id="psOpts" hidden>
+            <ul class="note-list">
+              <li><b>What it does</b> — a dark page comes out as white paper with black ink, so a toner-heavy deck prints cheap and never soaks the sheet.</li>
+              <li><b>Pages become images</b> — text is no longer selectable, but every sheet stays the exact same size and page count.</li>
+              <li><b>Off</b> — the original vector PDF is packed untouched (sharpest text, but a dark page prints dark).</li>
+            </ul>
             <div class="fld"><span class="lbl">Raster quality</span>
               <div class="seg" role="radiogroup" aria-label="Print DPI">
                 <label><input type="radio" name="psdpi" id="dpi96"><span>96 · 1×</span></label>
                 <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · 2×</span></label>
                 <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3× max</span></label>
               </div>
-              <small><b>HQ engine v2:</b> scans rendered at 1×/2×/3× native (your pick) with 2× supersample + area-average (SSAA), and an <b>ink-bias response curve</b> keeps inverted handwriting at full visual weight — no thin/broken strokes. Colour handling follows the style picked below. (Text not selectable; uncheck for full vector.)</small>
+              <ul class="note-list">
+                <li><b>Resolution</b> — scans render at 1× / 2× / 3× their own native sharpness (96 / 150 / 220 dpi); vector pages use the same pick.</li>
+                <li><b>Smooth edges</b> — 2× supersampling with area-averaging (SSAA), so curves stay smooth instead of jagged.</li>
+                <li><b>Ink-bias curve</b> — a γ=1.7 response gives inverted handwriting its full visual weight; thin strokes never break up.</li>
+                <li><b>Cost</b> — higher dpi = cleaner print but a bigger file and slower run. 150 is the balanced default.</li>
+              </ul>
             </div>
             <div class="fld"><span class="lbl">Colour style</span>
               <div class="seg" role="radiogroup" aria-label="Print-Saver colour style">
@@ -322,11 +338,11 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=25"></script>
-<script src="converter.js?v=25"></script>
-<script src="enhance.js?v=25"></script>
-<script src="review.js?v=25"></script>
-<script src="app.js?v=25"></script>
+<script src="session.js?v=26"></script>
+<script src="converter.js?v=26"></script>
+<script src="enhance.js?v=26"></script>
+<script src="review.js?v=26"></script>
+<script src="app.js?v=26"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

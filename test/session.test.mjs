@@ -280,16 +280,29 @@ console.log('\n=== session.js: reload-proof storage ===\n');
   }
   // the colour-style / flip-style explanations must be scannable bullets, not a wall of text
   {
-    const expect = { 'index.html': 6, '4up.html': 6, 'invert.html': 4 };
+    // every dense explanation is a bullet list; count them per page
+    const expect = {
+      'index.html': { lists: 6, bullets: 17 },
+      '4up.html': { lists: 6, bullets: 17 },
+      'invert.html': { lists: 3, bullets: 11 }
+    };
     for (const h of htmls) {
       const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');
       const lists = [...src.matchAll(/<ul class="note-list">([\s\S]*?)<\/ul>/g)];
       const items = lists.reduce((n, m) => n + (m[1].match(/<li>/g) || []).length, 0);
-      check('markup: ' + h + ' explains the styles as bullet points (' + items + ' bullets)', items === expect[h]);
-      check('markup: ' + h + ' no longer hides the explanation in a paragraph',
-        !/K-cartridge output/.test(src) && !/<small>Black ink flips/.test(src));
-      check('markup: ' + h + ' every bullet names a style in bold', lists.length > 0 &&
+      check('markup: ' + h + ' explains the settings as bullet points (' + lists.length + ' lists / ' + items + ' bullets)',
+        lists.length === expect[h].lists && items === expect[h].bullets, lists.length + '/' + items);
+      check('markup: ' + h + ' every bullet opens with a bold key word', lists.length > 0 &&
         lists.every((m) => (m[1].match(/<li><b>/g) || []).length === (m[1].match(/<li>/g) || []).length));
+      check('markup: ' + h + ' dropped the old wall-of-text hints', !/K-cartridge output/.test(src) &&
+        !/<small>Black ink flips/.test(src) && !/<small>Pages become full-page images/.test(src) &&
+        !/<small><b>HQ engine v2:<\/b>/.test(src) && !/<small>0 = slides touch/.test(src) &&
+        !/<small>0 = the demo look/.test(src));
+      const switchCount = { 'index.html': 4, '4up.html': 5, 'invert.html': 2 }[h];
+      check('markup: ' + h + ' every switch (toggle) has its own explanation', (() => {
+        const rows = [...src.matchAll(/<label class="sw[^"]*"[^>]*>[\s\S]*?<\/label>/g)].map((m) => m[0]);
+        return rows.length === switchCount && rows.every((r) => /<em>/.test(r));
+      })(), 'switches');
     }
     const css2 = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
     check('css: bullet list is styled (dot markers + muted text)', /\.note-list li::before/.test(css2) && /\.note-list li b\{/.test(css2));
