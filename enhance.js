@@ -124,6 +124,26 @@
     });
   };
 
+  /* ---- background tabs ----------------------------------------------------
+     A hidden tab must cost LESS, never more: no frames to wait for, no live
+     preview to copy, no thumbnails to draw. Anything purely cosmetic waits until
+     the user comes back. */
+  NotesFX.hidden = function () { return !!document.hidden; };
+  NotesFX.whenVisible = function () {
+    if (!document.hidden) return Promise.resolve();
+    return new Promise(function (resolve) {
+      var h = function () {
+        document.removeEventListener('visibilitychange', h);
+        resolve();
+      };
+      document.addEventListener('visibilitychange', h);
+    });
+  };
+  /* cosmetic work (result thumbnails) parks itself while the tab is away */
+  NotesFX.parkWhileHidden = function () {
+    return document.hidden ? NotesFX.whenVisible() : Promise.resolve();
+  };
+
   /* ---- "time left" -------------------------------------------------------
      A run makes a promise the user can hold on to: "page 12 of 34 · ~40 s
      left" instead of a bar that just crawls. */
@@ -183,6 +203,7 @@
   /* ---------- tab-title progress (visible from other tabs) ---------- */
   var _title0 = null;
   NotesFX.titleProgress = function (done, total) {
+    if (document.hidden) return;                       // nobody can see the title now
     if (_title0 === null) _title0 = document.title;
     document.title = '\u23f3 ' + Math.round(done / total * 100) + '% \u00b7 ' + _title0;
   };

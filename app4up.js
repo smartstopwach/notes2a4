@@ -263,13 +263,16 @@
 
   /* a run and the preview strip must not fight over the CPU: the strip stops,
      says so, and is finished off once the result is on screen */
+  function renderStripAgain() {
+    if (typeof renderSheetStrip === 'function') renderSheetStrip(state.gen);
+    else if (typeof renderPageStrip === 'function') renderPageStrip(state.gen);
+  }
   function resumePreviewStrip() {
     if (!state.stripPaused) return;
     state.stripPaused = false;
     setTimeout(function () {
-      if (!state.doc || goBtn.disabled) return;
-      if (typeof renderSheetStrip === 'function') renderSheetStrip(state.gen);
-      else if (typeof renderPageStrip === 'function') renderPageStrip(state.gen);
+      if (!state.doc || goBtn.disabled || document.hidden) return;
+      renderStripAgain();
     }, 400);
   }
   var stripToken = 0;
@@ -285,6 +288,11 @@
       : null;
     for (var s = 0; s < show; s++) {
       if (my !== stripToken || gen !== state.gen) return;                     // changed under us
+      if (document.hidden) {                                                  // tab in the background: no point
+        if (strip) strip.prune('previews paused \u2014 they finish when you come back to this tab');
+        NotesFX.whenVisible().then(function () { if (my === stripToken) renderStripAgain(); });
+        return;
+      }
       if (goBtn.disabled || state.running) {                                  // a run has started: stop cleanly
         if (strip) strip.prune('previews paused while the PDF is being made \— they come back when it finishes');
         state.stripPaused = true;
@@ -690,6 +698,8 @@
     if (stale()) return;
     var show = Math.min(sheets, 6);
     for (var i = 1; i <= show; i++) {
+      await NotesFX.parkWhileHidden();               // cosmetic: wait for the user to come back
+      if (stale()) return;
       var pg = await doc.getPage(i);
       var vp = pg.getViewport({ scale: 230 / pg.getViewport({ scale: 1 }).width });
       var c = document.createElement('canvas');

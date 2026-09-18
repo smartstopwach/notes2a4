@@ -464,6 +464,25 @@ console.log('\n=== session.js: reload-proof storage ===\n');
       (src.match(/goBtn\.disabled = false;/g) || []).length >= 1 &&
       (src.match(/state\.running = false;/g) || []).length >= 1);
   }
+  // a hidden tab must cost less: no frames, no live preview, no cosmetic thumbnails
+  const fxBg = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
+  check('background: uiPaint short-circuits when the tab is hidden',
+    /typeof requestAnimationFrame !== 'function' \|\| document\.hidden\) return NotesFX\.uiYield\(\)/.test(fxBg));
+  check('background: helpers exist to park cosmetic work until the tab returns',
+    /NotesFX\.whenVisible = function/.test(fxBg) && /NotesFX\.parkWhileHidden = function/.test(fxBg) &&
+    /visibilitychange/.test(fxBg));
+  check('background: the live preview and the tab title are skipped while hidden',
+    /if \(document\.hidden\) return;\s+\/\/ hidden tab/.test(fxBg) &&
+    /if \(document\.hidden\) return;\s+\/\/ nobody can see the title now/.test(fxBg));
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    check('background: ' + f + ' parks the sheet/page strip while the tab is hidden',
+      /if \(document\.hidden\) \{[\s\S]{0,180}strip\.prune\(/.test(src) &&
+      /NotesFX\.whenVisible\(\)\.then/.test(src));
+    check('background: ' + f + ' parks the result thumbnails too',
+      /await NotesFX\.parkWhileHidden\(\)/.test(src));
+  }
+
   const fx2 = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   check('wait: NotesFX.eta formats seconds and minutes, and never prints NaN',
     /NotesFX\.eta = function/.test(fx2) && /almost done/.test(fx2) && /s left/.test(fx2) && /min/.test(fx2));

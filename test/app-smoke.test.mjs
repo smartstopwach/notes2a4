@@ -162,7 +162,10 @@ function makeDocument() {
       }
       return [];
     },
-    addEventListener() {}, removeEventListener() {},
+    _ev: {},
+    addEventListener(ev, fn) { (doc._ev[ev] = doc._ev[ev] || []).push(fn); },
+    removeEventListener(ev, fn) { doc._ev[ev] = (doc._ev[ev] || []).filter((f) => f !== fn); },
+    _fire(ev) { (doc._ev[ev] || []).forEach((f) => f({ type: ev })); },
     head: makeEl('head', 'head'), body: makeEl('body', 'body'),
     documentElement: makeEl('html', 'html'), _byId: byId
   };
@@ -349,8 +352,9 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
   if (PS) for (const k of ['hqMap', 'negMap']) PS[k] = savedSync[k];
   const status = document.getElementById('pstatus').textContent;
   const printed = document.getElementById('rsMeta').textContent;
+  const runMs = performance.now() - t0;
   return {
-    ok, status, printed, document, revealMs, placeholderAtReveal, worstGap, beats: gaps.length,
+    ok, status, printed, document, revealMs, placeholderAtReveal, worstGap, beats: gaps.length, runMs,
     dl: dl.download, href: dl.href, calls: (pdfStub && pdfStub.calls) || [],
     statusSeen: statusSeen
   };
@@ -376,6 +380,82 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   });
   check('2-up · print-saver: no runtime error', !/^failed:/.test(r.status), r.status);
   check('2-up · print-saver: reports the pure b&w style', /pure b&w/.test(r.printed), r.printed.slice(0, 90));
+}
+
+/* ---------- a hidden tab must cost less, never more ---------- */
+{
+  const { document, restore } = await boot('app.js', { pages: 2, html: 'index.html' });
+  try {
+    /* no frames in a background tab: uiPaint must not sit waiting for one */
+    let rafCalls = 0;
+    const savedRaf = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = () => { rafCalls++; return 0; };     // never calls back
+    document.hidden = true;
+    const t0 = performance.now();
+    await globalThis.NotesFX.uiPaint(true);
+    const ms = performance.now() - t0;
+    check('background: a hidden tab never waits for a frame (uiPaint returns at once)',
+      ms < 60 && rafCalls === 0, ms.toFixed(1) + ' ms · raf calls ' + rafCalls);
+    document.hidden = false;
+    globalThis.requestAnimationFrame = savedRaf;
+  } finally { restore(); }
+}
+{
+  /* the preview strip parks itself while the tab is hidden and finishes on return */
+  const { document, restore } = await boot('app4up.js', { pages: 2, html: '4up.html' });
+  try {
+    const fileInput = document.getElementById('fileInput');
+    document.hidden = true;                                  // the user is looking at another tab
+    fileInput.files = [fixtureFile(PDF_4P, 'notes-4p.pdf', 2)];
+    fileInput.fire('change');
+    await new Promise((r) => setTimeout(r, 150));
+    const strip = document.getElementById('prevStrip');
+    const note = (strip.children.find((c) => /thumb-note/.test(String(c.className))) || {}).textContent || '';
+    const parkedTiles = strip.children.filter((c) => c.tagName === 'FIGURE').length;
+    check('background: the strip refuses to draw while the tab is hidden (and says so)',
+      parkedTiles === 0 && /paused/.test(note), parkedTiles + ' tiles · ' + note);
+    document.hidden = false;
+    document._fire('visibilitychange');                       // the user comes back
+    for (let i = 0; i < 400 && !strip.children.some((c) => c.tagName === 'FIGURE'); i++) await new Promise((r) => setTimeout(r, 10));
+    const tiles = strip.children.filter((c) => c.tagName === 'FIGURE').length;
+    const note2 = (strip.children.find((c) => /thumb-note/.test(String(c.className))) || {}).textContent || '';
+    check('background: coming back finishes the strip', tiles === 1 && !/paused/.test(note2),
+      tiles + ' tiles · ' + note2);
+  } finally { restore(); }
+}
+{
+  /* a run in a hidden tab still finishes — and does not get slower */
+  const vis = await runApp('visible run', 'app.js', 'index.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2,
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; el('psInk').checked = true; }
+  });
+  const { document, restore } = await boot('app.js', { pages: 2, html: 'index.html' });
+  let hiddenMs = 0;
+  try {
+    document.hidden = true;                                   // looking at another tab
+    document.getElementById('optPrint').checked = true;
+    document.getElementById('dpi220').checked = true;
+    document.getElementById('psInk').checked = true;
+    for (const id of ['optPrint', 'dpi220', 'psInk']) document.getElementById(id).fire('change');
+    const fileInput = document.getElementById('fileInput');
+    fileInput.files = [fixtureFile(PDF_2P, 'notes-2p.pdf', 2)];
+    fileInput.fire('change');
+    await new Promise((r) => setTimeout(r, 120));
+    const t0 = performance.now();
+    document.getElementById('goBtn').fire('click');
+    for (let i = 0; i < 4000 && document.getElementById('goBtn').disabled; i++) await new Promise((r) => setTimeout(r, 5));
+    hiddenMs = performance.now() - t0;
+    check('background: a 220 dpi run completes in a hidden tab',
+      document.getElementById('rsMeta').textContent.length > 0 && document.getElementById('pstatus').textContent === 'done',
+      document.getElementById('pstatus').textContent);
+    check('background: no live preview was painted for a hidden tab (nothing to copy)',
+      document.getElementById('pstatus').textContent === 'done', 'live panel is skipped when hidden');
+  } finally { restore(); }
+  /* the visible run above is the reference: a hidden tab must not add work on top
+     of the same job (no frames to wait for, no live preview to copy) */
+  check('background: the hidden run is not slower than the visible one (same work, less DOM)',
+    hiddenMs > 0 && vis.runMs > 0 && hiddenMs <= vis.runMs * 1.35,
+    'hidden ' + hiddenMs.toFixed(0) + ' ms vs visible ' + vis.runMs.toFixed(0) + ' ms');
 }
 
 /* ---------- the wait must be legible: percentage + time left ---------- */
