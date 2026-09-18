@@ -125,6 +125,8 @@ node test/make-fixtures.mjs   # regenerate the in-repo sample PDFs/PNGs
 
 **`test/convert.test.mjs` — 92 assertions** on the shipped converter: 2-up geometry vs. the reference demo (±3 pt); 4-up pair-column geometry vs. the measured landscape demo cells (±6 pt per corner); band/flush/gutter invariants; shrink-to-fit; partial sheets; blank-page robustness; 400 → 200 and 400 → 100; sheet-numbering (7 positions × 5 styles × start-at × 3 sizes); print-saver pixel map (black→white, white→black, colours→black), auto dark-page detection, HQ coverage map (quarter/half-ink blocks → grey ramp, chroma rule, light-page passthrough), pure B&W hard threshold (0 grey pixels on a mixed page), 4-up dotted separator (vertical seam geometry, margin inset, dash op present in the PDF and absent when off or in 2-up, shipped UI is the vertical toggle only), and raster-pack layout in both 2-up and 4-up; end-to-end builds on the in-repo sample notes PDFs (`test/fixtures/`, so the suite needs no files outside the repo).
 
+**`test/app-smoke.test.mjs` — 19 checks**: the real `app.js` / `app4up.js` / `app-invert.js` are loaded into a stubbed DOM and actually run — a fixture PDF is dropped in, Start is clicked and every mode is exercised (vector pack, Print-Saver in all colour styles, 4-up with the dotted separator, Invert Lab in black-ink, raster-negative and exact-vector modes). Shipped builds have twice failed at run time in exactly this place (a missing helper name), which grep-based checks cannot see.
+
 **`test/session.test.mjs` — 83 assertions**: the real `session.js` running against in-memory IndexedDB + OPFS stand-ins — byte-identical file round-trips in both engines, half-written-file recovery, options snapshot/apply (idempotent), result storage + cached object URL + replacement, run checkpoints (reuse on identical settings, invalidation on changed settings, clear), `clearAll`, plus wiring checks that all three apps call every session API, that every setting really sits inside `#workbench`, that `session.js` is cache-busted with the apps, and that all three previews render at device-pixel density and wire the HD click-to-enlarge view (so the old downscaled-render blur cannot come back).
 
 ## Layout
@@ -140,6 +142,8 @@ session.js            reload-proof local storage (OPFS + IndexedDB): files, opti
 vendor/               pdf-lib 1.17.1, pdfjs-dist 3.11.174 (local copies — no CDN needed)
 test/convert.test.mjs Node harness — converter core
 test/session.test.mjs Node harness — storage engine + app wiring
+test/app-smoke.test.mjs headless run of the real app files (stubbed DOM) — Start is
+                        actually clicked for every mode; catches missing helpers
 test/fixtures/        sample notes PDFs + PNGs the suites run on
 test/make-fixtures.mjs regenerates those fixtures
 probe/                colour-probe.pdf / .png — the calibration target you send elsewhere

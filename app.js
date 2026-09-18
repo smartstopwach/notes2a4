@@ -68,6 +68,9 @@
     if (printEls.sPure && printEls.sPure.checked) return 'pure';
     return 'ink';
   }
+  /* Keep-colours checkbox — part of the run signature, so an interrupted
+     Print-Saver run is only resumed when the colour rule is unchanged too. */
+  function printKeepColour() { return !!(printEls.sKeep && printEls.sKeep.checked); }
   /* One entry point for all three colour styles: ink / keep / neg (true negative). */
   function printMap(idat, W, H) {
     var st = printStyle();
