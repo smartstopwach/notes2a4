@@ -24,6 +24,7 @@ notes**. This mirrors the classic "2 slides on 1 page" handout layout (top bbox 
 
 - **100% client-side** — pdf.js reads, pdf-lib writes; no server, no tracking, works offline after load (all libraries vendored in `vendor/`)
 - **Vector-perfect output** — source pages are embedded as PDF Form XObjects, not screenshots
+- **The tab stays alive on long runs** — the print-saver pipeline walks each page band by band (`hqMapAsync` / `negMapAsync` in `converter.js`) and hands control back to the browser between bands, so a 33-page 220 dpi flip shows a moving progress bar instead of Chrome's "Page Unresponsive" dialog. Band boundaries never change a pixel — the tests compare the banded maps with the one-shot maps byte for byte
 - **Exact vector true negative** (Invert Lab) — the `255 − c` flip applied to the PDF itself with blend mode `/Difference` (the same trick dedicated inversion tools use): every sampled pixel matches a reference tool's output **exactly** (500,990-point comparison, zero differences, verified in the test suite), while text stays text (sharp + selectable), the file stays small and the run is instant — no rasterising, so Sharpness / Encoding do not apply
 - **Demo-exact default geometry** — margin 0, full-width slides, auto middle gap (matches the standard 2-per-page layout pixel-close)
 - Options: A4 / Letter / A5 / Legal, printable margin (mm), auto or fixed middle gap, **ruled lines** in the gap for handwriting, sheet numbers
@@ -125,9 +126,9 @@ node test/make-fixtures.mjs   # regenerate the in-repo sample PDFs/PNGs
 
 **`test/convert.test.mjs` — 92 assertions** on the shipped converter: 2-up geometry vs. the reference demo (±3 pt); 4-up pair-column geometry vs. the measured landscape demo cells (±6 pt per corner); band/flush/gutter invariants; shrink-to-fit; partial sheets; blank-page robustness; 400 → 200 and 400 → 100; sheet-numbering (7 positions × 5 styles × start-at × 3 sizes); print-saver pixel map (black→white, white→black, colours→black), auto dark-page detection, HQ coverage map (quarter/half-ink blocks → grey ramp, chroma rule, light-page passthrough), pure B&W hard threshold (0 grey pixels on a mixed page), 4-up dotted separator (vertical seam geometry, margin inset, dash op present in the PDF and absent when off or in 2-up, shipped UI is the vertical toggle only), and raster-pack layout in both 2-up and 4-up; end-to-end builds on the in-repo sample notes PDFs (`test/fixtures/`, so the suite needs no files outside the repo).
 
-**`test/app-smoke.test.mjs` — 19 checks**: the real `app.js` / `app4up.js` / `app-invert.js` are loaded into a stubbed DOM and actually run — a fixture PDF is dropped in, Start is clicked and every mode is exercised (vector pack, Print-Saver in all colour styles, 4-up with the dotted separator, Invert Lab in black-ink, raster-negative and exact-vector modes). Shipped builds have twice failed at run time in exactly this place (a missing helper name), which grep-based checks cannot see.
+**`test/app-smoke.test.mjs` — 27 checks**: the real `app.js` / `app4up.js` / `app-invert.js` are loaded into a stubbed DOM and actually run — a fixture PDF is dropped in, Start is clicked and every mode is exercised (vector pack, Print-Saver in all colour styles, 4-up with the dotted separator, Invert Lab in black-ink, raster-negative and exact-vector modes). Shipped builds have twice failed at run time in exactly this place (a missing helper name), which grep-based checks cannot see.
 
-**`test/session.test.mjs` — 83 assertions**: the real `session.js` running against in-memory IndexedDB + OPFS stand-ins — byte-identical file round-trips in both engines, half-written-file recovery, options snapshot/apply (idempotent), result storage + cached object URL + replacement, run checkpoints (reuse on identical settings, invalidation on changed settings, clear), `clearAll`, plus wiring checks that all three apps call every session API, that every setting really sits inside `#workbench`, that `session.js` is cache-busted with the apps, and that all three previews render at device-pixel density and wire the HD click-to-enlarge view (so the old downscaled-render blur cannot come back).
+**`test/session.test.mjs` — 112 assertions**: the real `session.js` running against in-memory IndexedDB + OPFS stand-ins — byte-identical file round-trips in both engines, half-written-file recovery, options snapshot/apply (idempotent), result storage + cached object URL + replacement, run checkpoints (reuse on identical settings, invalidation on changed settings, clear), `clearAll`, plus wiring checks that all three apps call every session API, that every setting really sits inside `#workbench`, that `session.js` is cache-busted with the apps, and that all three previews render at device-pixel density and wire the HD click-to-enlarge view (so the old downscaled-render blur cannot come back).
 
 ## Layout
 
@@ -143,7 +144,11 @@ vendor/               pdf-lib 1.17.1, pdfjs-dist 3.11.174 (local copies — no C
 test/convert.test.mjs Node harness — converter core
 test/session.test.mjs Node harness — storage engine + app wiring
 test/app-smoke.test.mjs headless run of the real app files (stubbed DOM) — Start is
-                        actually clicked for every mode; catches missing helpers
+                        actually clicked for every mode; catches missing helpers.
+                        Also watches the main thread: a 2 ms heartbeat runs during a
+                        220 dpi print-saver run and the longest silence must stay
+                        under 250 ms, while the blocking one-shot maps are stubbed
+                        to throw so they can never come back
 test/fixtures/        sample notes PDFs + PNGs the suites run on
 test/make-fixtures.mjs regenerates those fixtures
 probe/                colour-probe.pdf / .png — the calibration target you send elsewhere
