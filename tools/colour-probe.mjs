@@ -23,6 +23,10 @@ mkdirSync(OUT_DIR, { recursive: true });
 
 /* ------------------------------------------------------------------ PDF --- */
 const doc = await PDFDocument.create();
+/* fixed dates: regenerating the probe must produce byte-identical files */
+const FIXED_DATE = new Date(Date.UTC(2026, 0, 1, 0, 0, 0));
+doc.setCreationDate(FIXED_DATE);
+doc.setModificationDate(FIXED_DATE);
 doc.setTitle('Notes2A4 colour-inversion probe');
 doc.setSubject('Send this file to a colour-inversion tool, then send its output back');
 const font = await doc.embedFont(StandardFonts.Helvetica);

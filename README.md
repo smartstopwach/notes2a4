@@ -83,6 +83,31 @@ GitHub Pages (if enabled for this repo): https://smartstopwach.github.io/notes2a
 - Restoring is silent: the file is re-parsed locally, the options are re-applied, and the interrupted run resumes from its checkpoint (same settings) — changing any image setting correctly invalidates the stale checkpoints.
 - Storage failures (private mode, full disk) never break the tools: every call is guarded and simply degrades to no persistence.
 
+## Colour probe — matching another tool exactly
+
+When another colour-inversion tool gets a result you like, use the probe to make Notes2A4 match it **exactly**:
+
+1. **Send the probe** — [`probe/colour-probe.pdf`](probe/colour-probe.pdf) (or `probe/colour-probe.png` for screenshot-based tools). It is a calibration target: 95 known colour blocks (grey ramp + pure white, R/G/B ramps, nine hues at full and half brightness, pastels, dark shades, ten pen colours, five board colours) plus four corner marks, gradient strips and two real-note panels with 0.5–1.5 pt strokes, markers and a highlighter.
+2. **Run it through the other tool** and send the result back — the PDF it produced, a screenshot, a JPEG or even a photo all work.
+3. **Read the answer**:
+
+   ```bash
+   node tools/analyse-probe.mjs <the-file-that-came-back>
+   ```
+
+   The analyser finds the corner marks, corrects for exposure/compression against the measured black/white range, samples all 95 blocks and prints:
+   * the full input → output table
+   * the per-channel fit `out = a·in + b` with its residual
+   * whether the tool is per-channel or luma-only, and whether hues are kept or complemented
+   * a verdict — and, when the fit is not a plain `255 − c`, the exact `clamp()` lines to drop into `converter.js`
+
+   ```bash
+   npm run probe        # regenerate the probe PDF/PNG/truth table
+   npm test             # includes 15 round-trip checks (identity, 255 − c, luma, JPEG)
+   ```
+
+`tools/probe-layout.mjs` holds the single geometry definition shared by the generator and the analyser, so a block can never be read from the wrong place.
+
 ## Tests
 
 The shipped converter core is exercised directly in Node (same file, no re-implementation):
@@ -95,7 +120,7 @@ node test/make-fixtures.mjs   # regenerate the in-repo sample PDFs/PNGs
 
 **`test/convert.test.mjs` — 92 assertions** on the shipped converter: 2-up geometry vs. the reference demo (±3 pt); 4-up pair-column geometry vs. the measured landscape demo cells (±6 pt per corner); band/flush/gutter invariants; shrink-to-fit; partial sheets; blank-page robustness; 400 → 200 and 400 → 100; sheet-numbering (7 positions × 5 styles × start-at × 3 sizes); print-saver pixel map (black→white, white→black, colours→black), auto dark-page detection, HQ coverage map (quarter/half-ink blocks → grey ramp, chroma rule, light-page passthrough), pure B&W hard threshold (0 grey pixels on a mixed page), 4-up dotted separator (vertical seam geometry, margin inset, dash op present in the PDF and absent when off or in 2-up, shipped UI is the vertical toggle only), and raster-pack layout in both 2-up and 4-up; end-to-end builds on the in-repo sample notes PDFs (`test/fixtures/`, so the suite needs no files outside the repo).
 
-**`test/session.test.mjs` — 53 assertions**: the real `session.js` running against in-memory IndexedDB + OPFS stand-ins — byte-identical file round-trips in both engines, half-written-file recovery, options snapshot/apply (idempotent), result storage + cached object URL + replacement, run checkpoints (reuse on identical settings, invalidation on changed settings, clear), `clearAll`, plus wiring checks that all three apps call every session API, that every setting really sits inside `#workbench`, that `session.js` is cache-busted with the apps, and that all three previews render at device-pixel density and wire the HD click-to-enlarge view (so the old downscaled-render blur cannot come back).
+**`test/session.test.mjs` — 83 assertions**: the real `session.js` running against in-memory IndexedDB + OPFS stand-ins — byte-identical file round-trips in both engines, half-written-file recovery, options snapshot/apply (idempotent), result storage + cached object URL + replacement, run checkpoints (reuse on identical settings, invalidation on changed settings, clear), `clearAll`, plus wiring checks that all three apps call every session API, that every setting really sits inside `#workbench`, that `session.js` is cache-busted with the apps, and that all three previews render at device-pixel density and wire the HD click-to-enlarge view (so the old downscaled-render blur cannot come back).
 
 ## Layout
 
@@ -112,6 +137,10 @@ test/convert.test.mjs Node harness — converter core
 test/session.test.mjs Node harness — storage engine + app wiring
 test/fixtures/        sample notes PDFs + PNGs the suites run on
 test/make-fixtures.mjs regenerates those fixtures
+probe/                colour-probe.pdf / .png — the calibration target you send elsewhere
+tools/colour-probe.mjs  draws the probe · tools/analyse-probe.mjs reads a returned file
+tools/probe-layout.mjs  the shared swatch geometry · tools/img-io.mjs  PNG/JPEG in + out
+tools/probe-selftest.mjs round-trip checks (identity · 255 − c · luma · JPEG)
 ```
 
 ## Privacy
