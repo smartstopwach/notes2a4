@@ -200,6 +200,71 @@
     });
   };
 
+  /* ---------- frames in a hidden tab (the "19% and stuck" bug) --------------
+     pdf.js schedules every render chunk with requestAnimationFrame
+     (`InternalRenderTask._scheduleNext` → `window.requestAnimationFrame`), and a
+     hidden tab fires NO frames: the render promise never settles, so the page loop
+     stopped at the page it was on while our once-a-second ticker kept re-painting
+     that same fraction — "19%, and the time left climbing to 3 minutes".
+
+     The pixels are not touched (same intent, same canvas, same code) — only the
+     wake-up changes. While a run is active, a frame requested in a hidden tab is
+     answered from the message channel, which is exempt from the background-timer
+     clamp (setTimeout is 1 s there, and 1 per minute after 5 minutes hidden, so a
+     timer fallback would make a hidden run crawl). Wake-ups are paced to ~250/s so
+     a frame loop cannot spin the CPU, and the shim is removed the moment the run
+     ends: an idle hidden tab still asks for nothing at all. */
+  /* the originals are captured once and called with the window as receiver, so a
+     hook can never call itself (enhance.js may run before or after the hook) */
+  var _rafOrig = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : null;
+  var _cafOrig = (typeof cancelAnimationFrame === 'function') ? cancelAnimationFrame : null;
+  var _raf0 = _rafOrig ? function (cb) { return _rafOrig.call(window, cb); } : null;
+  var _caf0 = _cafOrig ? function (id) { return _cafOrig.call(window, id); } : null;
+  var _frameChan = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
+  var _frames = {}, _frameSeq = 1000000, _frameAt = 0, _frameArmed = false;
+  function _frameRun() {
+    _frameArmed = false;
+    var now = Date.now();
+    if (document.hidden && now - _frameAt < 4) { _frameArm(); return; }   // keep it ≤ ~250 wake-ups/s
+    _frameAt = now;
+    var q = _frames; _frames = {};
+    for (var id in q) { if (q.hasOwnProperty(id)) { try { q[id](now); } catch (e) { console.error(e); } } }
+  }
+  function _frameArm() {
+    if (_frameArmed) return;
+    _frameArmed = true;
+    if (_frameChan) _frameChan.port2.postMessage(0);
+    else setTimeout(_frameRun, 16);                  // ancient browser: late beats never
+  }
+  if (_frameChan) _frameChan.port1.onmessage = _frameRun;
+  function _rafShim(cb) {
+    if (!document.hidden && _raf0) return _raf0(cb);   // a visible tab has real frames
+    _frames[++_frameSeq] = cb;                       // ids ≥ 1e6 are ours, never the browser's
+    _frameArm();
+    return _frameSeq;
+  }
+  function _cafShim(id) {
+    if (id >= 1000000) { delete _frames[id]; return; }
+    if (_caf0) _caf0(id);
+  }
+  var _rafHooked = false;
+  /* the apps call this for the duration of a run (state.running) */
+  NotesFX.keepRendering = function (on) {
+    var want = on !== false;
+    if (want === _rafHooked || !_raf0 || typeof window === 'undefined') return;
+    try {
+      if (want) { window.requestAnimationFrame = _rafShim; window.cancelAnimationFrame = _cafShim; }
+      else {
+        window.requestAnimationFrame = _raf0; if (_caf0) window.cancelAnimationFrame = _caf0;
+        var owed = _frames; _frames = {};                    // hand anything still owed
+        for (var id in owed) {                               // back to the browser's own queue
+          if (owed.hasOwnProperty(id)) { try { _raf0(owed[id]); } catch (e2) { /* frame lost, hurt nobody */ } }
+        }
+      }
+      _rafHooked = want;
+    } catch (e) { /* frozen global: runs still work, a hidden tab just waits for a frame */ }
+  };
+
   /* ---------- tab-title progress (visible from other tabs) ---------- */
   var _title0 = null;
   var _titleAt = 0;

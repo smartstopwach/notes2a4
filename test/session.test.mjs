@@ -521,14 +521,37 @@ console.log('\n=== session.js: reload-proof storage ===\n');
       /\.p-eta\.est\{/.test(cssEta) && /'p-eta' \+ \(eta && !etaReady \? ' est' : ''\)/.test(
         readFileSync(new URL('../app4up.js', import.meta.url), 'utf8')));
   }
+  // a hidden tab fires no frames, and pdf.js drives every render chunk with
+  // requestAnimationFrame — the run used to freeze at "19%" until the tab was
+  // looked at again, while the ticker kept growing the estimate
   for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
     const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    const on = (src.match(/NotesFX\.keepRendering\(true\);/g) || []).length;
+    const off = (src.match(/NotesFX\.keepRendering\(false\);/g) || []).length;
+    check('hidden frames: ' + f + ' hooks the frame fallback for exactly the length of a run',
+      on >= 1 && off >= 1 &&
+      on === (src.match(/state\.running = true;/g) || []).length &&
+      off === (src.match(/state\.running = false;/g) || []).length);
+    check('hidden frames: ' + f + ' says "still working" instead of growing a number that cannot be true',
+      /etaMoveFrac/.test(src) && /etaMoveAt/.test(src) && /STUCK_MS/.test(src) &&
+      /if \(now - etaMoveAt > STUCK_MS\) return 'still working…';/.test(src));
     check('wait: ' + f + ' never leaves a stale estimate behind on failure',
       (src.match(/setEta\(''\);/g) || []).length >= (src.match(/failed: /g) || []).length);
   }
   const wrkSrc = readFileSync(new URL('../worker-raster.js', import.meta.url), 'utf8');
   check('wait: worker progress reports the page height, not the message (the NaN bug)',
     /total: job\.o\.bh/.test(wrkSrc) && !/progress', id: m\.id, done: job\.fed, total: m\.bh/.test(wrkSrc));
+
+  const fxFrames = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
+  check('hidden frames: enhance.js explains and fixes the pdf.js stall (rAF never fires when hidden)',
+    /InternalRenderTask/.test(fxFrames) && /NotesFX\.keepRendering = function/.test(fxFrames) &&
+    /function _rafShim/.test(fxFrames) && /if \(!document\.hidden && _raf0\) return _raf0\(cb\)/.test(fxFrames));
+  check('hidden frames: the fallback is a message-channel macrotask, paced so it cannot spin the CPU',
+    /_frameChan = typeof MessageChannel !== 'undefined'/.test(fxFrames) &&
+    /if \(_frameChan\) _frameChan\.port2\.postMessage\(0\);/.test(fxFrames) &&
+    /else setTimeout\(_frameRun, 16\);/.test(fxFrames) &&          // the timer only as a last resort
+    /if \(document\.hidden && now - _frameAt < 4\) \{ _frameArm\(\); return; \}/.test(fxFrames) &&
+    /var _rafOrig = \(typeof requestAnimationFrame === 'function'\) \? requestAnimationFrame : null;/.test(fxFrames));
 
   const fx2 = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   check('wait: NotesFX.eta formats seconds and minutes, and never prints NaN',

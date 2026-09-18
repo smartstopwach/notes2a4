@@ -1,7 +1,7 @@
 /* ============ Notes2A4 — 4-up Studio (landscape, pair columns) ============ */
 (function () {
   'use strict';
-  var BUILD = 7;
+  var BUILD = 8;
   console.info('[Notes2A4] app4up.js build', BUILD, '· 4-up landscape studio (demo-exact geometry)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.quadLayout) {
     document.addEventListener('DOMContentLoaded', function () {
@@ -578,6 +578,7 @@
   async function convert() {
     if (!state.bytes || goBtn.disabled) return;
     goBtn.disabled = true; result.hidden = true; state.running = true;
+ NotesFX.keepRendering(true);   // frames must not stall a hidden tab
     pBox.hidden = false;
     var prevCard = document.querySelector('.card.prev');
     if (prevCard) prevCard.classList.add('busy');
@@ -586,13 +587,21 @@
        so every phase reports the same way and they can never disagree. The
        estimate is smoothed (one slow page must not make it jump) and refreshed
        once a second, so it stays honest during a long phase as well. */
-    var etaSmooth = null, etaReady = false, lastStep = null, ticker = null;
+    var etaSmooth = null, etaReady = false, etaMoveFrac = -1, etaMoveAt = Date.now(),
+        STUCK_MS = (NotesFX.stuckMs || 15000), lastStep = null, ticker = null;
     /* a bare estimate string, not a fragment of the sentence: it is shown in its
        own chip next to the bar (legible at a glance) and in the tab title, which
        is the only progress a background tab can show */
     var etaText = function (frac) {
       etaReady = false;                                  // until a real estimate exists
       if (frac >= 0.999) return '';                      // finished: no estimate needed
+      var now = Date.now();
+      if (!(frac > etaMoveFrac + 0.0005)) {              // this phase has not moved on
+        /* a percentage that is not moving with a time left that keeps growing is a
+           lie: say what is true instead (pdf.js used to stall exactly like this in a
+           hidden tab, because it renders by animation frames and a hidden tab has none) */
+        if (now - etaMoveAt > STUCK_MS) return 'still working…';
+      } else { etaMoveFrac = frac; etaMoveAt = now; }
       var elapsed = performance.now() - t0;
       if (!(frac > 0.005) || elapsed < 1500) return 'estimating time left…';
       var left = (elapsed / frac) * (1 - frac);
@@ -702,6 +711,7 @@
     }
     stopTicker();
     state.running = false;
+    NotesFX.keepRendering(false);
     goBtn.disabled = false;
   }
 

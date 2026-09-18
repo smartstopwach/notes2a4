@@ -173,8 +173,9 @@ function makeDocument() {
 }
 
 /* -------------------------------------------------------------- pdf.js stub --- */
-function makePdfStub(delay = 0, sourceDelay = 0) {
+function makePdfStub(delay = 0, sourceDelay = 0, rafChunks = 0) {
   const calls = [];                       // every render() the apps asked for
+  const cfg = { holdFrom: Infinity, holdMs: 0 };
   const page = (isSource) => ({
     getViewport({ scale, offsetY }) {
       return { width: 595.28 * scale, height: 841.89 * scale, scale, offsetY: offsetY || 0 };
@@ -184,9 +185,24 @@ function makePdfStub(delay = 0, sourceDelay = 0) {
         isSource, area: canvasContext.canvas.width * canvasContext.canvas.height,
         w: canvasContext.canvas.width, h: canvasContext.canvas.height, offsetY: viewport.offsetY || 0
       });
+      if (rafChunks > 0) {
+        /* exactly like pdf.js: `InternalRenderTask._scheduleNext` asks for an
+           animation frame per chunk, and a hidden tab delivers none — this is the
+           stall that froze a run at "19%" until the tab was looked at again */
+        return {
+          promise: new Promise((resolve) => {
+            let left = rafChunks;
+            const chunk = () => { if (--left <= 0) resolve(); else globalThis.requestAnimationFrame(chunk); };
+            globalThis.requestAnimationFrame(chunk);
+          })
+        };
+      }
       /* strips render immediately; a rendered page of the OUTPUT pdf is slowed
-         down so tests can prove previews never hold the result back */
-      return { promise: new Promise((r) => setTimeout(r, isSource ? sourceDelay : delay)) };
+         down so tests can prove previews never hold the result back. `cfg.hold`
+         lets one test stall the renders of the RUN itself (progress stops dead,
+         which is what the estimate must not lie about). */
+      const hold = calls.length === cfg.holdFrom ? cfg.holdMs : 0;   // one render, one stall
+      return { promise: new Promise((r) => setTimeout(r, hold || (isSource ? sourceDelay : delay))) };
     },
     cleanup() {},
     getOperatorList: async () => ({ fnArray: [], argsArray: [] })
@@ -198,7 +214,7 @@ function makePdfStub(delay = 0, sourceDelay = 0) {
   });
   let opened = 0;
   return {
-    calls,
+    calls, cfg,
     GlobalWorkerOptions: {},
     OPS: { paintImageXObject: 85, transform: 12 },
     getDocument: ({ data }) => {
@@ -212,7 +228,7 @@ function makePdfStub(delay = 0, sourceDelay = 0) {
 }
 
 /* ------------------------------------------------------------------ harness --- */
-async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = 'none', sourceDelay = 0 } = {}) {
+async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = 'none', sourceDelay = 0, rafChunks = 0 } = {}) {
   /* 'none'   → no worker (the apps must run their main-thread pipeline)
      'real'   → the actual raster-client.js + worker-raster.js core, driven through
                 a stand-in Worker, so the app's worker path is really exercised
@@ -243,13 +259,26 @@ async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = '
   set('innerHeight', 900);
   set('location', { href: 'http://localhost:8080/' + html });
   set('navigator', { userAgent: 'node', storage: undefined });
-  const pdfStub = makePdfStub(thumbsDelay, sourceDelay);
+  const pdfStub = makePdfStub(thumbsDelay, sourceDelay, rafChunks);
   set('pdfjsLib', pdfStub);
   set('PDFLib', require('pdf-lib'));
   set('matchMedia', () => ({ matches: false, addEventListener() {} }));
   set('scrollTo', () => {});
-  set('requestAnimationFrame', (fn) => setTimeout(fn, 0));
-  set('cancelAnimationFrame', clearTimeout);
+  /* Chrome fires NO animation frames while the tab is hidden, so neither does the
+     stub: a frame asked for in a hidden tab stays parked until the tab is visible
+     again. Code that waits for a frame in a background tab therefore hangs here
+     exactly like it did in the browser (pdf.js drives every render chunk with
+     requestAnimationFrame), and NotesFX.keepRendering() is what un-sticks it. */
+  const frames = new Map(); let frameSeq = 0;
+  const framePump = () => {
+    if (!frames.size) return;
+    if (document.hidden) { setTimeout(framePump, 16); return; }        // hidden: hold them
+    const due = [...frames.values()]; frames.clear();
+    for (const fn of due) { try { fn(Date.now()); } catch (e) { console.error(e); } }
+    if (frames.size) setTimeout(framePump, 0);
+  };
+  set('requestAnimationFrame', (fn) => { frames.set(++frameSeq, fn); setTimeout(framePump, 0); return frameSeq; });
+  set('cancelAnimationFrame', (id) => frames.delete(id));
   /* keep the real URL constructor (apps use `new URL`) and only add the blob helpers */
   const realURL = { createObjectURL: globalThis.URL.createObjectURL, revokeObjectURL: globalThis.URL.revokeObjectURL };
   globalThis.URL.createObjectURL = () => 'blob:stub-' + Math.random().toString(36).slice(2);
@@ -292,13 +321,14 @@ function fixtureFile(bytes, name, pages) {
 }
 
 async function runApp(label, appFile, html, {
-  bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0, raster = 'none', sourceDelay = 0
+  bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0, raster = 'none', sourceDelay = 0,
+  rafChunks = 0, beforeRun = null
 } = {}) {
-  const { document, restore, pdfStub } = await boot(appFile, { pages, html, thumbsDelay, raster, sourceDelay });
-  try { return await finishRun(document, bytes, name, pages, setOptions, pdfStub); }
+  const { document, restore, pdfStub } = await boot(appFile, { pages, html, thumbsDelay, raster, sourceDelay, rafChunks });
+  try { return await finishRun(document, bytes, name, pages, setOptions, pdfStub, { beforeRun }); }
   finally { restore(); }
 }
-async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
+async function finishRun(document, bytes, name, pages, setOptions, pdfStub, opts = {}) {
   const ok = { loaded: true };
   /* set the option elements before the file arrives, then fire the same change
      events a user's click would fire (the apps reveal panels on those) */
@@ -330,6 +360,9 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
     savedSync[k] = PS[k];
     PS[k] = () => { throw new Error('blocking ' + k + '() called on the main thread'); };
   }
+  /* tests use this to change the world at the moment the run starts: hide the tab
+     (the user switching away) or shorten the estimate's patience */
+  if (opts.beforeRun) opts.beforeRun(document);
   const t0 = performance.now();
   const statusSeen = [];
   globalThis.__statusSeen = statusSeen;
@@ -491,6 +524,73 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
       titles.slice(0, 5).join(' → ').slice(0, 160));
     check('background: no title ever shows NaN', !/NaN/.test(titles.join(' ')), titles.length + ' titles seen');
   } finally { restore(); }
+}
+
+/* ---------- a hidden tab delivers no frames: the fix for "19% and stuck" ----------
+   pdf.js schedules every render chunk with requestAnimationFrame
+   (`InternalRenderTask._scheduleNext`), a hidden tab fires none, so the render
+   promise never settled — the run froze at the page it was on while the ticker
+   kept re-painting that same percentage with a time left that grew and grew. */
+{
+  const { document, restore } = await boot('app4up.js', { pages: 2, html: '4up.html' });
+  try {
+    const fx = globalThis.NotesFX;
+    const seen = [];
+    document.hidden = true;
+    globalThis.requestAnimationFrame(() => seen.push('stuck'));
+    await new Promise((r) => setTimeout(r, 40));
+    check('hidden frames: a hidden tab delivers no frame at all (the stall pdf.js hits)',
+      seen.length === 0, seen.join(',') || 'no frame, exactly like Chrome');
+    fx.keepRendering(true);                                     // what the apps do for a run
+    globalThis.requestAnimationFrame(() => seen.push('awake'));
+    for (let i = 0; i < 60 && !seen.includes('awake'); i++) await new Promise((r) => setTimeout(r, 5));
+    check('hidden frames: while a run is active the frame arrives anyway (message channel, not a timer)',
+      seen.includes('awake'), seen.join(',') || '(nothing arrived)');
+    fx.keepRendering(false);
+    globalThis.requestAnimationFrame(() => seen.push('after'));
+    await new Promise((r) => setTimeout(r, 40));
+    check('hidden frames: the hook is removed when the run ends (an idle hidden tab stays idle)',
+      !seen.includes('after'), seen.join(','));
+  } finally { restore(); }
+}
+{
+  /* the user's exact scenario: the run is started, then the tab is switched away,
+     and every single page render is a requestAnimationFrame chain (as in pdf.js) */
+  const r = await runApp('4-up hidden mid-run', 'app4up.js', '4up.html', {
+    bytes: PDF_4P, name: 'notes-4p.pdf', pages: 2, raster: 'real', rafChunks: 2,
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; },
+    beforeRun: (document) => { document.hidden = true; }        // the user looks at another tab
+  });
+  const titles = r.titleSeen || [];
+  const pcts = titles.map((t) => parseInt((t.match(/(\d+)%/) || [])[1], 10)).filter((n) => !isNaN(n));
+  check('hidden run: the run finishes even though every page render needed a frame',
+    r.status === 'done' && r.calls.length > 0,
+    r.status + ' · ' + r.calls.length + ' renders asked for');
+  check('hidden run: the percentage kept climbing while the tab was away',
+    new Set(pcts).size >= 3 && pcts[pcts.length - 1] > pcts[0],
+    titles.slice(0, 4).join(' → ').slice(0, 150));
+  check('hidden run: the title never froze on one number while the estimate grew',
+    !/NaN/.test(titles.join(' ')) && r.eta === '' && r.status === 'done',
+    'titles ' + titles.length + ' · final chip "' + r.eta + '"');
+}
+{
+  /* a phase that stops moving must not keep promising a smaller time left: the chip
+     says "still working…" instead of a number that grows while nothing happens */
+  const r = await runApp('stalled phase', 'app4up.js', '4up.html', {
+    bytes: PDF_4P, name: 'notes-4p.pdf', pages: 2,
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; },
+    beforeRun: () => {
+      const stub = globalThis.pdfjsLib;
+      stub.cfg.holdFrom = stub.calls.length + 1;                // the run's very next render
+      stub.cfg.holdMs = 1200;                                  // one strip takes 1.2 s
+      globalThis.NotesFX.stuckMs = 250;                         // patience for the test
+    }
+  });
+  const eta = (r.etaSeen || []).join(' | ');
+  check('stalled phase: the chip stops quoting a number once nothing has moved',
+    /still working/.test(eta), eta.slice(0, 160) || '(nothing seen)');
+  check('stalled phase: it recovers on its own and ends clean',
+    r.status === 'done' && r.eta === '', 'status ' + r.status + ' · chip "' + r.eta + '"');
 }
 
 /* ---------- the wait must be legible: percentage + time left ---------- */
