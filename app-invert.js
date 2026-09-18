@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 4;
+  var BUILD = 5;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -32,7 +32,8 @@
   var opt = {
     dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'),
     fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
-    styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'),
+    styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'),
+    dpiFld: $('dpiFld'), fmtFld: $('fmtFld'), skipRow: $('skipRow'),
     keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow')
   };
 
@@ -40,6 +41,10 @@
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
   function inkMode() { return (opt.styleInk.checked || (opt.stylePure && opt.stylePure.checked)) && window.NotesConverter && NotesConverter.printSaver; }
   function pureMode() { return !!(opt.stylePure && opt.stylePure.checked); }
+  /* exact vector 255 - c: no rasterising, the flip is applied to the PDF content
+     itself (blend mode Difference), so the output matches a dedicated inversion
+     tool pixel for pixel while text stays vector */
+  function vectorMode() { return !!(opt.styleVec && opt.styleVec.checked); }
   function keepColour() { return !!(opt.keepColour && opt.keepColour.checked); }
   function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !opt.styleInk.checked; }  // pure mode: no colour row (everything is 0/255)
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
@@ -61,11 +66,20 @@
     if (sessReady()) NotesSession.clearAll();
     if (sessBar) sessBar.hidden = true;
   }
-  function styleName() { return pureMode() ? 'pure b&w' : (inkMode() ? 'black ink' : 'true negative'); }
+  function styleName() {
+    if (vectorMode()) return 'true negative (exact vector)';
+    return pureMode() ? 'pure b&w' : (inkMode() ? 'black ink' : 'true negative');
+  }
   function invSig() {
     return [Math.round(dpi()), fmt(), styleName(), keepColour() ? 1 : 0, opt.skip.checked ? 1 : 0].join('|');
   }
-  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); }
+  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); syncVectorRows(); }
+  function syncVectorRows() {
+    var v = vectorMode();
+    if (opt.dpiFld) opt.dpiFld.hidden = v;          // Sharpness / Encoding / Skip blank are raster-only
+    if (opt.fmtFld) opt.fmtFld.hidden = v;
+    if (opt.skipRow) opt.skipRow.hidden = v;
+  }
   async function restoreResult(meta) {
     var url = await NotesSession.resultUrl();
     if (!url) return;
@@ -212,7 +226,7 @@
     x2.imageSmoothingEnabled = true; x2.imageSmoothingQuality = 'high';
     x2.drawImage(c1, 0, 0);
     var id = x2.getImageData(0, 0, c2.width, c2.height);
-    if (inkMode()) {
+    if (inkMode() && !vectorMode()) {                 // vector mode = plain 255 - c, same as the PDF it produces
       var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true, keepColour(), pureMode());
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else {
@@ -319,6 +333,42 @@
     if (prevCard) prevCard.classList.add('busy');
     var t0 = performance.now();
     var skip = opt.skip.checked, n = state.pages;
+    if (vectorMode()) {                              // exact vector 255 - c: instant, no raster, no checkpoints
+      try {
+        pStatus.textContent = 'applying 255 - c to the PDF itself…';
+        if (sessReady()) { await NotesSession.runClear(); }
+        var vres = await NotesConverter.vectorNegative(state.bytes);
+        pFill.style.width = '100%'; pStatus.textContent = 'done';
+        if (state.out.url) URL.revokeObjectURL(state.out.url);
+        state.out.url = URL.createObjectURL(new Blob([vres.bytes], { type: 'application/pdf' }));
+        var baseV = state.name.replace(/\.pdf$/i, '');
+        var dlV = $('dlBtn');
+        dlV.href = state.out.url; dlV.download = baseV + '-inverted.pdf';
+        $('openBtn').href = state.out.url;
+        $('rsIn').textContent = n;
+        $('rsOut').textContent = n;
+        $('rsMeta').textContent = n + (n === 1 ? ' page' : ' pages') +
+          ' inverted 1:1 · true negative (exact vector, 255 − c per channel) · text stays sharp and selectable · sizes unchanged · ' +
+          fmtMB(state.bytes.length) + ' → ' + fmtMB(vres.bytes.length) + ' · ' +
+          ((performance.now() - t0) / 1000).toFixed(2) + 's · 100% on-device';
+        await makeThumbs(vres.bytes, n);
+        result.hidden = false;
+        if (prevCard) prevCard.classList.remove('busy');
+        if (sessReady()) {
+          NotesSession.saveResult({ bytes: vres.bytes, name: dlV.download, kind: 'vector-negative', info: { in: n, out: n, meta: $('rsMeta').textContent } });
+          sessNote('Saved · ' + n + ' page' + (n === 1 ? '' : 's') + ' flipped (exact vector) — reloading keeps this result.');
+        }
+        if (window.NotesFX) NotesFX.toast(n + ' pages flipped · exact 255 − c · vector kept');
+        result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        setTimeout(function () { pBox.hidden = true; }, 900);
+      } catch (err) {
+        pStatus.textContent = 'failed: ' + (err && err.message || err);
+        if (prevCard) prevCard.classList.remove('busy');
+        console.error(err);
+      }
+      goBtn.disabled = false;
+      return;
+    }
     var ck = false, hand = { have: 0 };
     if (sessReady()) {                                     // same settings ⇒ leftover pages are still good
       try { hand = await NotesSession.runBegin(invSig(), n, 'invert'); ck = true; } catch (e) { ck = false; }
@@ -430,11 +480,14 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.keepColour].forEach(function (el) {
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.keepColour].forEach(function (el) {
     if (el) el.addEventListener('change', schedulePreview);
   });
-  [opt.styleNeg, opt.styleInk, opt.stylePure].forEach(function (el) { if (el) el.addEventListener('change', syncKeepColourRow); });
+  [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec].forEach(function (el) {
+    if (el) el.addEventListener('change', function () { syncKeepColourRow(); syncVectorRows(); });
+  });
   syncKeepColourRow();
+  syncVectorRows();
 
   function resetAll() {
     state.bytes = null; state.doc = null; state.pages = 0; state.sizes = [];

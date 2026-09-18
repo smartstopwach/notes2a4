@@ -284,7 +284,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     const expect = {
       'index.html': { lists: 6, bullets: 17 },
       '4up.html': { lists: 6, bullets: 17 },
-      'invert.html': { lists: 3, bullets: 11 }
+      'invert.html': { lists: 3, bullets: 12 }
     };
     for (const h of htmls) {
       const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');

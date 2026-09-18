@@ -557,6 +557,36 @@
   }
 
   /**
+   * Vector true-negative — a per-channel 255 − c inversion that never rasterises.
+   * Each page keeps its original content (text stays text, selectable, sharp) and
+   * gets one full-page white rectangle drawn on top with blend mode /Difference,
+   * which renders as |white − backdrop| = 255 − c for every pixel. That is exactly
+   * what the dedicated colour-inversion tools do, so the output matches them
+   * pixel for pixel while the file stays small and instant.
+   *
+   * Returns { bytes, pages, size } — the first page's MediaBox is reported so the
+   * caller can show what was processed.
+   */
+  async function vectorNegative(bytes) {
+    var doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    var pages = doc.getPages();
+    if (!pages.length) throw new Error('This PDF has no pages');
+    var BlendMode = PDFLib.BlendMode;
+    for (var i = 0; i < pages.length; i++) {
+      var pg = pages[i];
+      var box = pg.getMediaBox ? pg.getMediaBox() : { x: 0, y: 0, width: pg.getWidth(), height: pg.getHeight() };
+      pg.drawRectangle({
+        x: box.x, y: box.y, width: box.width, height: box.height,
+        color: rgb(1, 1, 1),
+        blendMode: BlendMode ? BlendMode.Difference : undefined
+      });
+    }
+    var saved = await doc.save({ useObjectStreams: true });
+    var first = pages[0].getMediaBox ? pages[0].getMediaBox() : { width: pages[0].getWidth(), height: pages[0].getHeight() };
+    return { bytes: saved, pages: pages.length, size: { w: first.width, h: first.height } };
+  }
+
+  /**
    * Pack pre-rendered page images (Print-Saver output) using the SAME layout engine.
    * items: array in page order — { bytes: Uint8Array (PNG), w, h } or null (blank).
    */
@@ -612,6 +642,7 @@
     buildFromImages: buildFromImages,
     numText: numText,
     numPlace: numPlace,
+    vectorNegative: vectorNegative,
     sepLines: sepLines,
     printSaver: { process: psProcess, hqMap: hqMap, negMap: negMap, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
   };

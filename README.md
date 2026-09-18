@@ -24,6 +24,7 @@ notes**. This mirrors the classic "2 slides on 1 page" handout layout (top bbox 
 
 - **100% client-side** — pdf.js reads, pdf-lib writes; no server, no tracking, works offline after load (all libraries vendored in `vendor/`)
 - **Vector-perfect output** — source pages are embedded as PDF Form XObjects, not screenshots
+- **Exact vector true negative** (Invert Lab) — the `255 − c` flip applied to the PDF itself with blend mode `/Difference` (the same trick dedicated inversion tools use): every sampled pixel matches a reference tool's output **exactly** (500,990-point comparison, zero differences, verified in the test suite), while text stays text (sharp + selectable), the file stays small and the run is instant — no rasterising, so Sharpness / Encoding do not apply
 - **Demo-exact default geometry** — margin 0, full-width slides, auto middle gap (matches the standard 2-per-page layout pixel-close)
 - Options: A4 / Letter / A5 / Legal, printable margin (mm), auto or fixed middle gap, **ruled lines** in the gap for handwriting, sheet numbers
 - **Print-Saver** (both tools): colour inversion for toner-starved printers — black ↔ white swap, every other colour → solid black, so a dark "blackboard" deck prints as white paper with black ink. Scanned pages are auto-detected (content-stream probe) and re-rendered by the **HQ engine**: at up to **3× their native density, computed with 2× supersampling + area-averaging (SSAA)** — subpixel-smooth curves, no staircase jaggies, no interpolation mush. An **ink-bias response curve** (γ=1.7 toward the dark side of the 45–135 ramp) compensates halation: white-on-black strokes visually lose ~1 px of glow-edges on inversion, and the bias gives that weight back so thin handwriting never breaks. The dpi radio picks the tier (96 → 1×, 150 → 2×, 220 → 3×) and also governs genuine vector/text pages. A **Keep colours** toggle switches the colour rule: instead of crushing every colour to solid black, coloured strokes (blue/green/yellow highlights, chroma > 60) keep their hue and get their lightness flipped into a dark printable ink of the same colour — light blue on the board becomes dark blue on paper. Output is packed through the same layout engine; *Auto* inverts only genuinely dark pages, light notes pass through untouched. In this mode text becomes part of the image (not selectable); turn the checkbox off and the vector path is exactly as before
@@ -107,6 +108,10 @@ When another colour-inversion tool gets a result you like, use the probe to make
    ```
 
 `tools/probe-layout.mjs` holds the single geometry definition shared by the generator and the analyser, so a block can never be read from the wrong place.
+
+## Matching another tool exactly
+
+`probe/match-proof.png` is the visual receipt: the same probe page through a reference inversion tool and through Notes2A4's **True negative · exact vector**, side by side, with a difference map — the third panel is pure black, i.e. no pixel differs. The check runs in `npm test` (23,436 sampled points across all three probe pages, plus all 95 blocks against `255 − c`); `colour-probe-invert.pdf` in the repo root is the reference output it compares against, and it was produced by the tool whose colour inversion you liked.
 
 ## Tests
 

@@ -296,6 +296,59 @@ console.log('5e) hq-map:');
   r = NC.printSaver.hqMap(big, 1, 1, true);
   check('auto dark page inverts', r.inverted === true && r.darkFrac >= 0.5);
 
+  /* --- vector true-negative: exact 255 - c with nothing rasterised --- */
+  {
+    const { vectorPageSampler, allObjects } = await import('../tools/pdf-vector.mjs');
+    const probeBytes = new Uint8Array(fs.readFileSync(new URL('../probe/colour-probe.pdf', import.meta.url)));
+    const vres = await NC.vectorNegative(probeBytes);
+    const vdoc = await PDFDocument.load(vres.bytes);
+    const srcDoc = await PDFDocument.load(probeBytes);
+    check('vectorNegative: page count and page sizes unchanged',
+      vres.pages === srcDoc.getPageCount() && vdoc.getPageCount() === srcDoc.getPageCount() &&
+      vdoc.getPages().every((p, i) => near(p.getWidth(), srcDoc.getPage(i).getWidth(), .01) && near(p.getHeight(), srcDoc.getPage(i).getHeight(), .01)),
+      `${vres.pages} pages`);
+    check('vectorNegative: stays pure vector (no embedded raster images)', !/\/Subtype\s*\/Image/.test(Buffer.from(vres.bytes).toString('latin1')));
+    check('vectorNegative: uses blend mode Difference (the tool\'s exact trick)',
+      /\/BM\s*\/Difference/.test(Buffer.from(vres.bytes).toString('latin1')) ||
+      [...allObjects(Buffer.from(vres.bytes)).values()].some((t) => /\/BM\s*\/Difference/.test(t)));
+
+    /* every probe block must read back as exactly 255 - c */
+    const { allSwatches } = await import('../tools/probe-layout.mjs');
+    const mine = vectorPageSampler(Buffer.from(vres.bytes), 0);
+    let worstBlock = 0, blocks = 0, wrong = 0;
+    for (const sw of allSwatches()) {
+      const got = mine.sample(sw.x + sw.w / 2, sw.y + sw.h / 2);
+      const want = sw.rgb.map((v) => 255 - v);
+      const d = Math.max(...want.map((v, i) => Math.abs(v - got[i])));
+      blocks++;
+      if (d > worstBlock) worstBlock = d;
+      if (d) wrong++;
+    }
+    check('vectorNegative: all 95 blocks are exactly 255 - c', wrong === 0 && blocks === 95, `worst=${worstBlock}`);
+
+    /* THE MATCH TEST — same input through the other tool vs through Notes2A4 */
+    const refPath = new URL('../colour-probe-invert.pdf', import.meta.url);
+    if (fs.existsSync(refPath)) {
+      const ref = fs.readFileSync(refPath);
+      let diff = 0, n = 0, worst = 0;
+      for (let page = 0; page < 3; page++) {
+        const a = vectorPageSampler(ref, page), b = vectorPageSampler(Buffer.from(vres.bytes), page);
+        for (let x = 5; x < 590; x += 7) for (let y = 5; y < 838; y += 9) {
+          const A = a.sample(x, y), B = b.sample(x, y);
+          n++;
+          const d = Math.max(...A.map((v, i) => Math.abs(v - B[i])));
+          if (d > worst) worst = d;
+          if (d) diff++;
+        }
+      }
+      check('EXACT MATCH vs the reference tool: identical on every sampled point',
+        diff === 0 && n > 20000, `${n} points · differing ${diff} · worst ${worst}`);
+      writeFileSync('/home/user/notes2a4/tmp-colortest/mine-negative.pdf', Buffer.from(vres.bytes));
+    } else {
+      console.log('  SKIP  reference comparison (colour-probe-invert.pdf not present)');
+    }
+  }
+
   /* --- 4-up dotted separators --- */
   {
     const oBoth = NC.normalize({ perSheet: 4, sepLine: 'both' });
