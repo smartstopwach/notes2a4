@@ -60,10 +60,15 @@
      Print-Saver run is only resumed when the colour rule is unchanged too. */
   function printKeepColour() { return !!(printEls.sKeep && printEls.sKeep.checked); }
   /* One entry point for all three colour styles: ink / keep / neg (true negative). */
-  function printMap(idat, W, H) {
+  /* The map is fed one band of the supersampled canvas at a time, and every band
+     hands control back to the browser — this is what keeps the tab responsive
+     while a 33-page print-saver run is binarising pages. Same maths, same output
+     (the Node tests compare the banded result with the one-shot result byte for
+     byte). */
+  async function printMapAsync(provider, bw, bh, W, H, hooks) {
     var st = printStyle();
-    if (st === 'neg') return NotesConverter.printSaver.negMap(idat, W, H, printAuto());
-    return NotesConverter.printSaver.hqMap(idat, W, H, printAuto(), st === 'keep', st === 'pure');
+    if (st === 'neg') return NotesConverter.printSaver.negMapAsync(provider, bw, bh, W, H, printAuto(), hooks);
+    return NotesConverter.printSaver.hqMapAsync(provider, bw, bh, W, H, printAuto(), st === 'keep', st === 'pure', hooks);
   }
   function refreshPrintBadge() {
     var el = $('fbOut'); if (!el) return;
@@ -305,9 +310,11 @@
       pdfPage.cleanup();
       if (printMode()) {
         var octx = off.getContext('2d');
-        var idat = octx.getImageData(0, 0, off.width, off.height);
-        var hmP = printMap(idat, idat.width, idat.height);
-        octx.putImageData(new ImageData(hmP.imageData.data, idat.width, idat.height), 0, 0);
+        var hmP = await printMapAsync(
+          function (y0, rows) { return octx.getImageData(0, y0, off.width, rows); },
+          off.width, off.height, off.width, off.height,
+          { band: 192, progress: function () { return NotesFX.uiYield(); } });
+        octx.putImageData(new ImageData(hmP.imageData.data, off.width, off.height), 0, 0);
       }
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(off, box.x * pxPerPt, (page.h - box.y - box.height) * pxPerPt, box.width * pxPerPt, box.height * pxPerPt);
@@ -380,7 +387,7 @@
      - vector/text pages: full requested dpi, 2× supersampled when it fits
      The map (colours→solid black, dark→white, edges→grey ramp) is
      NotesConverter.printSaver.hqMap — the same function the Node tests run. */
-  async function printRasterPage(pg) {
+  async function printRasterPage(pg, sub) {
     var dpi = printDpi(), want = dpi / 72;
     var cap = await nativePP(pg);
     var mul = dpi >= 200 ? 3 : (dpi >= 120 ? 2 : 1);
@@ -395,9 +402,17 @@
     cv.height = Math.max(2, Math.round(vp1.height * outSc * ss));
     var cx = cv.getContext('2d', { willReadFrequently: true });
     cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+    if (sub) sub(0, 'rendering');
+    await NotesFX.uiPaint(true);                       // let the bar move before the one call we cannot slice
     await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
-    var idat = cx.getImageData(0, 0, cv.width, cv.height);
-    var hm = printMap(idat, W, H);
+    var hm = await printMapAsync(
+      function (y0, rows) { return cx.getImageData(0, y0, cv.width, rows); },
+      cv.width, cv.height, W, H,
+      { band: 192, progress: async function (f, phase) {
+        if (sub) sub(f, phase);
+        await NotesFX.uiPaint();
+      } });
+    cv.width = 0; cv.height = 0;                     // free the 100 MB+ scratch buffer at once
     var small = document.createElement('canvas');
     small.width = W; small.height = H;
     var sx = small.getContext('2d');
@@ -419,7 +434,12 @@
         }
       }
       var pg = await state.doc.getPage(i + 1);
-      var r = await printRasterPage(pg);
+      var r = await printRasterPage(pg, function (f, phase) {
+        pFill.style.width = ((i + f) / n * 60).toFixed(1) + '%';
+        pStatus.textContent = 'page ' + (i + 1) + ' of ' + n + ' · ' +
+          (phase === 'rendering' ? 'rendering the page' : phase === 'downsample' ? 'reading the render' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
+          ' ' + Math.round(f * 100) + '%';
+      });
       pg.cleanup();
       NotesFX.liveShow(r.canvas, 'page ' + (i + 1) + ' / ' + n + ' · ' + r.status);
       items[i] = {

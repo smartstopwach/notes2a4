@@ -381,6 +381,29 @@ console.log('\n=== session.js: reload-proof storage ===\n');
       /\.then\(function \(\) \{[\s\S]{0,220}NotesSession\.runClear\(\)/.test(src) || f === 'app-invert.js');
   }
 
+  // responsiveness: the long pixel work must be driven in bands, never as one
+  // synchronous block — a frozen tab ("Page Unresponsive") is a bug report.
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    check('responsive: ' + f + ' drives the maps in bands (async twin)',
+      /hqMapAsync\(|negMapAsync\(/.test(src), f);
+    check('responsive: ' + f + ' never reads the whole supersampled canvas at once',
+      !/getImageData\(0, 0, cv\.width, cv\.height\)/.test(src));
+    check('responsive: ' + f + ' reads it band by band',
+      /getImageData\(0, y0,/.test(src));
+    check('responsive: ' + f + ' lets the browser paint between bands',
+      /await NotesFX\.uiPaint\(\)/.test(src));
+  }
+  const fxPaint = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
+  check('responsive: enhance.js exposes uiPaint (a yield that really paints)',
+    /NotesFX\.uiPaint = function/.test(fxPaint) && /requestAnimationFrame/.test(fxPaint) && /setTimeout\(fin, 120\)/.test(fxPaint));
+  const conv = readFileSync(new URL('../converter.js', import.meta.url), 'utf8');
+  check('responsive: converter.js exports the banded map twins',
+    /hqMapAsync: hqMapAsync/.test(conv) && /negMapAsync: negMapAsync/.test(conv));
+  check('responsive: the maps share one maths body with the one-shot versions',
+    /function hqFeed\(/.test(conv) && /function hqFinishA\(/.test(conv) && /function hqFinishB\(/.test(conv) &&
+    /function negFeed\(/.test(conv) && /function negFinishB\(/.test(conv));
+
   // previews leave a placeholder grid behind while they render
   const fx = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   const css2 = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');

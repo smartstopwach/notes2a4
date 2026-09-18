@@ -349,6 +349,54 @@ console.log('5e) hq-map:');
     }
   }
 
+  /* --- banded maps: the async twins must be byte-identical to the one-shot ---
+     The browser drives the maps band by band (so the tab stays responsive during
+     a 33-page print-saver run). Band boundaries may only decide WHEN a row is
+     processed, never HOW, so the two must agree exactly. */
+  {
+    const PS = NC.printSaver;
+    const mk = (bw, bh) => {
+      const d = new Uint8ClampedArray(bw * bh * 4);
+      for (let i = 0; i < bw * bh; i++) {
+        const v = (i * 37) % 256;
+        d[i * 4] = v; d[i * 4 + 1] = 255 - v; d[i * 4 + 2] = (v * 3) % 256; d[i * 4 + 3] = 255;
+      }
+      return { data: d, width: bw, height: bh };
+    };
+    const prov = (big) => (y0, rows) => ({
+      data: big.data.subarray(y0 * big.width * 4, (y0 + rows) * big.width * 4),
+      width: big.width, height: rows
+    });
+    const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+    let variants = 0, equal = 0;
+    for (const [bw, bh, ow, oh] of [[64, 9, 32, 4], [300, 200, 149, 97], [512, 257, 333, 167]]) {
+      const big = mk(bw, bh);
+      for (const auto of [false, true]) for (const keep of [false, true]) for (const pure of [false, true]) {
+        const s1 = PS.hqMap(big, ow, oh, auto, keep, pure);
+        const s2 = await PS.hqMapAsync(prov(big), bw, bh, ow, oh, auto, keep, pure, { band: 7 });
+        variants++;
+        if (same(s1.imageData.data, s2.imageData.data) && s1.imageData.width === s2.imageData.width &&
+            s1.darkFrac === s2.darkFrac && s1.inverted === s2.inverted) equal++;
+      }
+      for (const auto of [false, true]) {
+        const s1 = PS.negMap(big, ow, oh, auto);
+        const s2 = await PS.negMapAsync(prov(big), bw, bh, ow, oh, auto, { band: 7 });
+        variants++;
+        if (same(s1.imageData.data, s2.imageData.data) && s1.darkFrac === s2.darkFrac && s1.inverted === s2.inverted) equal++;
+      }
+    }
+    check('banded maps: hqMapAsync/negMapAsync are byte-identical to the one-shot maps',
+      equal === variants && variants >= 30, equal + '/' + variants + ' variants (odd band sizes included)');
+
+    /* and they really do hand control back — once per band, in all three phases */
+    const big = mk(200, 400);
+    let yields = 0, phases = new Set();
+    await PS.hqMapAsync(prov(big), 200, 400, 100, 200, true, true, false,
+      { band: 25, progress: async (f, phase) => { yields++; phases.add(phase); } });
+    check('banded maps: yield between bands (progress hook fires for every band)',
+      yields >= 8 && phases.has('downsample') && phases.has('render'), yields + ' yields · ' + [...phases].join(','));
+  }
+
   /* --- 4-up dotted separators --- */
   {
     const oBoth = NC.normalize({ perSheet: 4, sepLine: 'both' });

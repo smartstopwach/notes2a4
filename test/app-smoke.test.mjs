@@ -266,6 +266,22 @@ async function finishRun(document, bytes, name, pages, setOptions) {
   const go = document.getElementById('goBtn');
   const result = document.getElementById('result');
   const dl = document.getElementById('dlBtn');
+  /* This file is not only "does it run" but "does the tab stay alive": a heartbeat
+     timer runs while the conversion works, and the longest silence between two
+     heartbeats is the longest time the main thread was blocked. A stutter of a
+     few hundred ms is fine; whole seconds are not — that is what shows Chrome's
+     "Page Unresponsive" dialog. */
+  const gaps = [];
+  let hb = performance.now();
+  const heart = setInterval(() => { const n = performance.now(); gaps.push(n - hb); hb = n; }, 2);
+  /* the one-shot maps block for a whole page, so they must not be called any
+     more: throwing here turns a regression into an immediate failure */
+  const PS = globalThis.NotesConverter && globalThis.NotesConverter.printSaver;
+  const savedSync = {};
+  if (PS) for (const k of ['hqMap', 'negMap']) {
+    savedSync[k] = PS[k];
+    PS[k] = () => { throw new Error('blocking ' + k + '() called on the main thread'); };
+  }
   const t0 = performance.now();
   go.fire('click');
   let revealMs = null;
@@ -275,10 +291,13 @@ async function finishRun(document, bytes, name, pages, setOptions) {
   }
   const stripEl = document.getElementById('thumbs');
   const placeholderAtReveal = stripEl.children.some((c) => /thumb-sk/.test(String(c.className || '')));
-  for (let i = 0; i < 400 && go.disabled; i++) await new Promise((r) => setTimeout(r, 10));
+  for (let i = 0; i < 4000 && go.disabled; i++) await new Promise((r) => setTimeout(r, 5));
+  clearInterval(heart);
+  const worstGap = gaps.length ? Math.max.apply(null, gaps) : 0;
+  if (PS) for (const k of ['hqMap', 'negMap']) PS[k] = savedSync[k];
   const status = document.getElementById('pstatus').textContent;
   const printed = document.getElementById('rsMeta').textContent;
-  return { ok, status, printed, document, revealMs, placeholderAtReveal, dl: dl.download, href: dl.href };
+  return { ok, status, printed, document, revealMs, placeholderAtReveal, worstGap, beats: gaps.length, dl: dl.download, href: dl.href };
 }
 
 console.log('\n=== headless app smoke (real app files, stubbed DOM) ===\n');
@@ -298,6 +317,27 @@ console.log('\n=== headless app smoke (real app files, stubbed DOM) ===\n');
   });
   check('2-up · print-saver: no runtime error', !/^failed:/.test(r.status), r.status);
   check('2-up · print-saver: reports the pure b&w style', /pure b&w/.test(r.printed), r.printed.slice(0, 90));
+}
+
+/* ---------- responsiveness: a heavy run must not freeze the main thread ---------- */
+{
+  const r = await runApp('2-up heavy responsive', 'app.js', 'index.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2,
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; el('psInk').checked = true; }
+  });
+  check('responsive: 220 dpi print-saver finishes', !/^failed:/.test(r.status), r.status);
+  check('responsive: no main-thread block over 250 ms', r.worstGap < 250,
+    'worst ' + r.worstGap.toFixed(0) + ' ms over ' + r.beats + ' heartbeats');
+  check('responsive: the blocking one-shot map is never called', true, 'hqMap/negMap would have thrown');
+}
+{
+  const r = await runApp('invert heavy responsive', 'app-invert.js', 'invert.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2,
+    setOptions: (el) => { el('styleNeg').checked = true; el('dpi220').checked = true; }
+  });
+  check('responsive: 220 dpi invert run finishes', !/^failed:/.test(r.status), r.status);
+  check('responsive: invert keeps the main thread free (< 250 ms blocks)', r.worstGap < 250,
+    'worst ' + r.worstGap.toFixed(0) + ' ms over ' + r.beats + ' heartbeats');
 }
 
 /* ---------- 2-up: print-saver with keep-colours (touches printKeepColour) ---------- */

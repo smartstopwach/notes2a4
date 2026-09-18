@@ -105,6 +105,25 @@
       if (r) r();
     };
   }
+  /* A yield that lets the browser actually PAINT. The message-channel yield above
+     only returns to the event loop, which is not enough during a long pixel run:
+     the progress bar and the live preview then look frozen even though input is
+     processed. This one waits for a frame (at most one per ~90 ms, so the run is
+     not slowed down), with a timeout guard so a hidden or throttled tab can never
+     stall the conversion. */
+  var _lastPaint = 0;
+  NotesFX.uiPaint = function (force) {
+    if (typeof requestAnimationFrame !== 'function' || document.hidden) return NotesFX.uiYield();
+    var now = Date.now();
+    if (!force && now - _lastPaint < 90) return NotesFX.uiYield();
+    return new Promise(function (resolve) {
+      var done = false;
+      var fin = function () { if (done) return; done = true; _lastPaint = Date.now(); resolve(); };
+      try { requestAnimationFrame(function () { setTimeout(fin, 0); }); } catch (e) { fin(); }
+      setTimeout(fin, 120);                     // never hang the run on a throttled frame
+    });
+  };
+
   /* ---- result previews ----------------------------------------------------
      Rendering previews of a finished PDF can take tens of seconds (in
      print-saver mode every sheet holds four full-resolution images). Previews

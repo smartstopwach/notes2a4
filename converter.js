@@ -370,14 +370,33 @@
    */
   var PS_BAND = 45;
   var PS_GAMMA = 1.7;   // ink-bias exponent of the edge ramp (>1 → fatter darks)
-  function hqMap(big, outW, outH, auto, keepColour, pure) {
-    var bd = big.data, bw = big.width, bh = big.height;
+  /* ------------------------------------------------------------------------
+     The two maps below are long-running pixel work. They are built out of three
+     pieces so that a browser can drive them a band at a time and hand control
+     back to the UI between bands: hqAcc (buffers) → hqFeed (accumulate one set
+     of input rows) → hqFinishA/hqFinishB (measure, then write output rows).
+     The one-shot hqMap() is the very same code with everything in one go, and
+     the tests compare the two byte for byte.
+
+     Nothing about the maths may change here: band boundaries only decide WHEN a
+     row is processed, never HOW — oy/ox are pure functions of the row/column
+     index, so an output pixel accumulates the same samples in the same order.
+     ------------------------------------------------------------------------ */
+  function hqAcc(outW, outH) {
     var n = outW * outH;
-    var sumL = new Uint16Array(n), cnt = new Uint8Array(n);
-    var sumR = new Uint16Array(n), sumG = new Uint16Array(n), sumB = new Uint16Array(n);
-    var maxC = new Uint8Array(n);
-    for (var y = 0; y < bh; y++) {
-      var oy = (y * outH / bh) | 0, row = y * bw;
+    return {
+      outW: outW, outH: outH, n: n,
+      sumL: new Uint16Array(n), cnt: new Uint8Array(n),
+      sumR: new Uint16Array(n), sumG: new Uint16Array(n), sumB: new Uint16Array(n),
+      maxC: new Uint8Array(n)
+    };
+  }
+  /* rows y0 … y1 of the supersampled image (row stride bw, total height bh) */
+  function hqFeed(acc, px, bw, y0, y1, bh) {
+    var bd = px, outW = acc.outW, outH = acc.outH;
+    var sumL = acc.sumL, sumR = acc.sumR, sumG = acc.sumG, sumB = acc.sumB, maxC = acc.maxC, cnt = acc.cnt;
+    for (var y = y0; y < y1; y++) {
+      var oy = (y * outH / bh) | 0, row = (y - y0) * bw;
       for (var x = 0; x < bw; x++) {
         var j = row + x, i = j * 4;
         var ox = (x * outW / bw) | 0;
@@ -390,18 +409,25 @@
         cnt[k]++;
       }
     }
-    var out = new Uint8ClampedArray(n * 4);
-    var T = PS_DARK_LUM, B = PS_BAND, lo = T - B, hi = T + B;
-    var Ls = new Float32Array(n);
-    var dark = 0;
-    for (var q = 0; q < n; q++) {
-      var cQ = cnt[q] || 1;
-      Ls[q] = sumL[q] / cQ;
-      if (Ls[q] <= T) dark++;
+  }
+  /* pass 1 of the finish: per-pixel luma + the count of dark pixels */
+  function hqFinishA(acc, r0, r1, st) {
+    var outW = acc.outW, cnt = acc.cnt, sumL = acc.sumL, Ls = st.Ls, T = PS_DARK_LUM;
+    for (var r = r0; r < r1; r++) {
+      var base = r * outW;
+      for (var x = 0; x < outW; x++) {
+        var q = base + x;
+        Ls[q] = sumL[q] / (cnt[q] || 1);
+        if (Ls[q] <= T) st.dark++;
+      }
     }
-    var frac = dark / n;
-    var invert = auto ? frac >= 0.5 : true;
-    for (var p = 0; p < n; p++) {
+  }
+  /* pass 2 of the finish: write the output pixels for rows r0 … r1 */
+  function hqFinishB(acc, r0, r1, st, out, keepColour, pure) {
+    var outW = acc.outW, cnt = acc.cnt, Ls = st.Ls, maxC = acc.maxC;
+    var sumR = acc.sumR, sumG = acc.sumG, sumB = acc.sumB;
+    var T = PS_DARK_LUM, B = PS_BAND, lo = T - B, hi = T + B, invert = st.invert;
+    for (var p = r0 * outW, e = r1 * outW; p < e; p++) {
       var cN = cnt[p] || 1, L = Ls[p];
       var o = p * 4;
       if (!invert) {                  // light page: plain area-average downsample, untouched colours
@@ -433,7 +459,51 @@
       }
       out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
     }
-    return { imageData: { data: out, width: outW, height: outH }, darkFrac: frac, inverted: invert };
+  }
+  function hqSt(acc) { return { Ls: new Float32Array(acc.n), dark: 0, invert: true }; }
+  function hqResult(acc, st) {
+    return { imageData: { data: acc.out, width: acc.outW, height: acc.outH }, darkFrac: st.dark / acc.n, inverted: st.invert };
+  }
+  function hqMap(big, outW, outH, auto, keepColour, pure) {
+    var bd = big.data, bw = big.width, bh = big.height;
+    var acc = hqAcc(outW, outH);
+    hqFeed(acc, bd, bw, 0, bh, bh);
+    var st = hqSt(acc);
+    hqFinishA(acc, 0, acc.outH, st);
+    st.invert = auto ? st.dark / acc.n >= 0.5 : true;
+    hqFinishB(acc, 0, acc.outH, st, acc.out = new Uint8ClampedArray(acc.n * 4), keepColour, pure);
+    return hqResult(acc, st);
+  }
+  /**
+   * Same map, driven in bands: `provider(y0, rows)` returns the pixels of those
+   * rows (a canvas getImageData() slice in the browser, a subarray in tests),
+   * and `hooks.progress(fraction, phase)` is awaited between bands — that await
+   * is what keeps the tab interactive during a 33-page print-saver run.
+   */
+  async function hqMapAsync(provider, bw, bh, outW, outH, auto, keepColour, pure, hooks) {
+    var acc = hqAcc(outW, outH);
+    var band = (hooks && hooks.band) || 256;
+    var step = hooks && hooks.progress ? hooks.progress : null;
+    for (var y = 0; y < bh; y += band) {
+      var y1 = Math.min(bh, y + band);
+      var px = provider(y, y1 - y);
+      hqFeed(acc, px.data, bw, y, y1, bh);
+      if (step) await step((y1 / bh) * 0.55, 'downsample');
+    }
+    var st = hqSt(acc);
+    for (var r = 0; r < outH; r += band) {
+      var r1 = Math.min(outH, r + band);
+      hqFinishA(acc, r, r1, st);
+      if (step) await step(0.55 + (r1 / outH) * 0.15, 'measure');
+    }
+    st.invert = auto ? st.dark / acc.n >= 0.5 : true;
+    acc.out = new Uint8ClampedArray(acc.n * 4);
+    for (var r2 = 0; r2 < outH; r2 += band) {
+      var r3 = Math.min(outH, r2 + band);
+      hqFinishB(acc, r2, r3, st, acc.out, keepColour, pure);
+      if (step) await step(0.7 + (r3 / outH) * 0.3, 'render');
+    }
+    return hqResult(acc, st);
   }
 
   /**
@@ -442,13 +512,19 @@
    * dark board → light paper, nothing is forced to black.
    * auto=true: light pages (darkFrac<0.5) are downsampled untouched.
    */
-  function negMap(big, outW, outH, auto) {
-    var bd = big.data, bw = big.width, bh = big.height;
+  function negAcc(outW, outH) {
     var n = outW * outH;
-    var sumL = new Uint32Array(n), cnt = new Uint16Array(n);
-    var sumR = new Uint32Array(n), sumG = new Uint32Array(n), sumB = new Uint32Array(n);
-    for (var y = 0; y < bh; y++) {
-      var oy = (y * outH / bh) | 0, row = y * bw;
+    return {
+      outW: outW, outH: outH, n: n,
+      sumL: new Uint32Array(n), cnt: new Uint16Array(n),
+      sumR: new Uint32Array(n), sumG: new Uint32Array(n), sumB: new Uint32Array(n)
+    };
+  }
+  function negFeed(acc, px, bw, y0, y1, bh) {
+    var bd = px, outW = acc.outW, outH = acc.outH;
+    var sumL = acc.sumL, sumR = acc.sumR, sumG = acc.sumG, sumB = acc.sumB, cnt = acc.cnt;
+    for (var y = y0; y < y1; y++) {
+      var oy = (y * outH / bh) | 0, row = (y - y0) * bw;
       for (var x = 0; x < bw; x++) {
         var i = (row + x) * 4;
         var k = oy * outW + ((x * outW / bw) | 0);
@@ -458,18 +534,54 @@
         cnt[k]++;
       }
     }
-    var dark = 0;
-    for (var q = 0; q < n; q++) if (sumL[q] / (cnt[q] || 1) <= PS_DARK_LUM) dark++;
-    var frac = dark / n;
-    var invert = auto ? frac >= 0.5 : true;
-    var out = new Uint8ClampedArray(n * 4);
-    for (var p = 0; p < n; p++) {
+  }
+  function negFinishA(acc, r0, r1, st) {
+    var outW = acc.outW, cnt = acc.cnt, sumL = acc.sumL, T = PS_DARK_LUM;
+    for (var p = r0 * outW, e = r1 * outW; p < e; p++) if (sumL[p] / (cnt[p] || 1) <= T) st.dark++;
+  }
+  function negFinishB(acc, r0, r1, st, out) {
+    var outW = acc.outW, cnt = acc.cnt, sumR = acc.sumR, sumG = acc.sumG, sumB = acc.sumB;
+    for (var p = r0 * outW, e = r1 * outW; p < e; p++) {
       var cN = cnt[p] || 1, o = p * 4;
       var r2 = sumR[p] / cN, g2 = sumG[p] / cN, b2 = sumB[p] / cN;
-      if (invert) { r2 = 255 - r2; g2 = 255 - g2; b2 = 255 - b2; }
+      if (st.invert) { r2 = 255 - r2; g2 = 255 - g2; b2 = 255 - b2; }
       out[o] = r2; out[o + 1] = g2; out[o + 2] = b2; out[o + 3] = 255;
     }
-    return { imageData: { data: out, width: outW, height: outH }, darkFrac: frac, inverted: invert };
+  }
+  function negMap(big, outW, outH, auto) {
+    var acc = negAcc(outW, outH);
+    negFeed(acc, big.data, big.width, 0, big.height, big.height);
+    var st = { dark: 0, invert: true };
+    negFinishA(acc, 0, acc.outH, st);
+    st.invert = auto ? st.dark / acc.n >= 0.5 : true;
+    negFinishB(acc, 0, acc.outH, st, acc.out = new Uint8ClampedArray(acc.n * 4));
+    return { imageData: { data: acc.out, width: outW, height: outH }, darkFrac: st.dark / acc.n, inverted: st.invert };
+  }
+  /** Banded twin of negMap — same pixels, but the tab stays alive. */
+  async function negMapAsync(provider, bw, bh, outW, outH, auto, hooks) {
+    var acc = negAcc(outW, outH);
+    var band = (hooks && hooks.band) || 256;
+    var step = hooks && hooks.progress ? hooks.progress : null;
+    for (var y = 0; y < bh; y += band) {
+      var y1 = Math.min(bh, y + band);
+      var px = provider(y, y1 - y);
+      negFeed(acc, px.data, bw, y, y1, bh);
+      if (step) await step((y1 / bh) * 0.55, 'downsample');
+    }
+    var st = { dark: 0, invert: true };
+    for (var r = 0; r < outH; r += band) {
+      var r1 = Math.min(outH, r + band);
+      negFinishA(acc, r, r1, st);
+      if (step) await step(0.55 + (r1 / outH) * 0.15, 'measure');
+    }
+    st.invert = auto ? st.dark / acc.n >= 0.5 : true;
+    acc.out = new Uint8ClampedArray(acc.n * 4);
+    for (var r2 = 0; r2 < outH; r2 += band) {
+      var r3 = Math.min(outH, r2 + band);
+      negFinishB(acc, r2, r3, st, acc.out);
+      if (step) await step(0.7 + (r3 / outH) * 0.3, 'render');
+    }
+    return { imageData: { data: acc.out, width: outW, height: outH }, darkFrac: st.dark / acc.n, inverted: st.invert };
   }
 
   /** Shared sheet decoration (ruled lines + sheet number) for both build paths. */
@@ -601,8 +713,9 @@
     for (var e = 0; e < n; e++) {
       if (items[e] && items[e].bytes) {
         try { imgs[e] = await out.embedPng(items[e].bytes); } catch (err) { imgs[e] = null; }
+        items[e].bytes = null;                 // the page image is inside the PDF now — let it go
       }
-      if (onProgress && e % 8 === 7) await onProgress(e + 1, n, 'encoding');
+      if (onProgress && (e % 4 === 3 || e === n - 1)) await onProgress(e + 1, n, 'encoding');
     }
     var page = sheetSize(opts);
     var per = opts.perSheet;
@@ -644,6 +757,6 @@
     numPlace: numPlace,
     vectorNegative: vectorNegative,
     sepLines: sepLines,
-    printSaver: { process: psProcess, hqMap: hqMap, negMap: negMap, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
+    printSaver: { process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, negMap: negMap, negMapAsync: negMapAsync, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
   };
 });

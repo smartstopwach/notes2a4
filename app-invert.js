@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 6;
+  var BUILD = 7;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -225,11 +225,14 @@
     var x2 = c2.getContext('2d', { willReadFrequently: true });
     x2.imageSmoothingEnabled = true; x2.imageSmoothingQuality = 'high';
     x2.drawImage(c1, 0, 0);
-    var id = x2.getImageData(0, 0, c2.width, c2.height);
     if (inkMode() && !vectorMode()) {                 // vector mode = plain 255 - c, same as the PDF it produces
-      var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true, keepColour(), pureMode());
+      var hm = await NotesConverter.printSaver.hqMapAsync(
+        function (y0, rows) { return x2.getImageData(0, y0, c2.width, rows); },
+        c2.width, c2.height, c2.width, c2.height, true, keepColour(), pureMode(),
+        { band: 192, progress: function () { return NotesFX.uiYield(); } });   // banded: previews stay snappy too
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else {
+      var id = x2.getImageData(0, 0, c2.width, c2.height);
       invertPixels(id, true);
       x2.putImageData(id, 0, 0);
     }
@@ -284,7 +287,7 @@
   }
 
   /* ---------- per-page raster + invert (same SSAA guard as the print engine) ---------- */
-  async function rasterInverted(pgNum) {
+  async function rasterInverted(pgNum, sub) {
     var pg = await state.doc.getPage(pgNum);
     var vp1 = pg.getViewport({ scale: 1 });
     var outSc = dpi() / 72;
@@ -296,18 +299,35 @@
     cv.height = Math.max(2, Math.round(vp1.height * outSc * ss));
     var cx = cv.getContext('2d', { willReadFrequently: true });
     cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+    if (sub) sub(0, 'rendering');
+    await NotesFX.uiPaint(true);                       // let the bar move before the one call we cannot slice
     await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
     pg.cleanup();
-    var idat = cx.getImageData(0, 0, cv.width, cv.height);
-    var blank = invertPixels(idat, false);            // scan-only: is the page pure white?
+    /* The page is processed band by band, handing control back to the browser
+       after each one. Every pixel still goes through exactly the same code as
+       before, so the output is unchanged — the run just no longer freezes the
+       tab (a 150-220 dpi page is ~30 Mpx of supersampled pixels). */
+    var band = 192, blank = true;
     var out = document.createElement('canvas');
     out.width = W; out.height = H;
+    var scan = function (y0, rows) {                  // read one band + the pure-white test
+      var b = cx.getImageData(0, y0, cv.width, rows);
+      if (blank) blank = invertPixels(b, false);
+      return b;
+    };
     if (inkMode()) {                                  // same ink-bias mapping the Print-Saver engine uses
-      var hm = NotesConverter.printSaver.hqMap(idat, W, H, true, keepColour(), pureMode());
+      var hm = await NotesConverter.printSaver.hqMapAsync(scan, cv.width, cv.height, W, H, true, keepColour(), pureMode(),
+        { band: band, progress: async function (f, phase) { if (sub) sub(f, phase); await NotesFX.uiPaint(); } });
       out.getContext('2d').putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
     } else {
-      invertPixels(idat, true);                       // true negative — colours included
-      cx.putImageData(idat, 0, 0);
+      for (var y = 0; y < cv.height; y += band) {      // true negative, in place: colours included
+        var rows = Math.min(band, cv.height - y);
+        var bd = scan(y, rows);
+        invertPixels(bd, true);
+        cx.putImageData(bd, 0, y);
+        if (sub) sub((y + rows) / cv.height, 'flip');
+        await NotesFX.uiPaint();
+      }
       var ox = out.getContext('2d');
       ox.imageSmoothingEnabled = true; ox.imageSmoothingQuality = 'high';
       ox.drawImage(cv, 0, 0, W, H);
@@ -384,7 +404,12 @@
         var r = null, blank = false;
         if (bytes) { reused++; }
         else {
-          r = await rasterInverted(i);
+          r = await rasterInverted(i, function (f, phase) {
+            pFill.style.width = ((i - 1 + f) / n * 88).toFixed(1) + '%';
+            pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' +
+              (phase === 'rendering' ? 'rendering the page' : phase === 'flip' ? 'flipping colours' : phase === 'downsample' ? 'reading the render' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
+              ' ' + Math.round(f * 100) + '%';
+          });
           bytes = await canvasBytes(r.canvas);
           blank = !!r.blank;
           if (skip && blank) {          // blank page stays white: embed the un-inverted look (white sheet)
