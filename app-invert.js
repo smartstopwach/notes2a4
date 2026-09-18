@@ -517,27 +517,41 @@
     var prevCard = document.querySelector('.card.prev');
     if (prevCard) prevCard.classList.add('busy');
     var t0 = performance.now();
-    /* how much longer: measured from the work already done, so the wait has a
-       number instead of just a crawling bar */
+    /* ---- progress: one place writes the bar, the status line and the tab title,
+       so every phase reports the same way and they can never disagree. The
+       estimate is smoothed (one slow page must not make it jump) and refreshed
+       once a second, so it stays honest during a long phase as well. */
+    var etaSmooth = null, lastStep = null, ticker = null;
     var etaOf = function (frac) {
-      if (!(frac > 0.01)) return '';
-      var left = NotesFX.eta ? NotesFX.eta((performance.now() - t0) / frac * (1 - frac)) : '';
-      return left ? ' · ' + left : '';
+      if (frac >= 0.999) return '';                      // finished: no estimate needed
+      var elapsed = performance.now() - t0;
+      if (!(frac > 0.005) || elapsed < 1500) return ' · estimating time left…';
+      var left = (elapsed / frac) * (1 - frac);
+      etaSmooth = (etaSmooth === null) ? left : (etaSmooth * 0.7 + left * 0.3);
+      var txt = NotesFX.eta ? NotesFX.eta(etaSmooth) : '';
+      return txt ? ' · ' + txt : '';
     };
-    /* how much longer: measured from the work already done, so the wait has a
-       number instead of just a crawling bar */
-    var etaOf = function (frac) {
-      if (!(frac > 0.01)) return '';
-      var left = NotesFX.eta ? NotesFX.eta((performance.now() - t0) / frac * (1 - frac)) : '';
-      return left ? ' \u00b7 ' + left : '';
+    var setStep = function (frac, text, label) {
+      lastStep = { frac: frac, text: text, label: label };
+      pFill.style.width = (frac * 100).toFixed(1) + '%';
+      pStatus.textContent = text + etaOf(frac);
+      NotesFX.titleProgress(frac, 1, label);
     };
+    var stopTicker = function () { if (ticker) { clearInterval(ticker); ticker = null; } };
+    /* once a second: refresh the estimate (and the tab title) — this is what makes
+       the run look alive from another tab, and it stays correct even while a long
+       synchronous phase is in progress */
+    ticker = setInterval(function () {
+      if (lastStep && goBtn.disabled) setStep(lastStep.frac, lastStep.text, lastStep.label);
+    }, 1000);
     var skip = opt.skip.checked, n = state.pages;
+    setStep(0.02, 'measuring pages…', '');
     if (vectorMode()) {                              // exact vector 255 - c: instant, no raster, no checkpoints
       try {
         pStatus.textContent = 'applying 255 - c to the PDF itself…';
         if (sessReady()) { await NotesSession.runClear(); }
         var vres = await NotesConverter.vectorNegative(state.bytes);
-        pFill.style.width = '100%'; pStatus.textContent = 'done';
+        setStep(1, 'done', '');
         if (state.out.url) URL.revokeObjectURL(state.out.url);
         state.out.url = URL.createObjectURL(new Blob([vres.bytes], { type: 'application/pdf' }));
         var baseV = state.name.replace(/\.pdf$/i, '');
@@ -563,10 +577,12 @@
           });
         }
       } catch (err) {
+        stopTicker();
         pStatus.textContent = 'failed: ' + (err && err.message || err);
         if (prevCard) prevCard.classList.remove('busy');
         console.error(err);
       }
+      stopTicker();
       state.running = false;
       goBtn.disabled = false;
       return;
@@ -585,10 +601,9 @@
         if (bytes) { reused++; }
         else {
           r = await rasterInverted(i, function (f, phase) {
-            pFill.style.width = ((i - 1 + f) / n * 88).toFixed(1) + '%';
-            pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' +
+            setStep((i - 1 + f) / n * 0.88, 'page ' + i + ' of ' + n + ' · ' +
               (phase === 'rendering' || phase === 'downsample' ? 'rendering the page' : phase === 'flip' ? 'flipping colours' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
-              ' ' + Math.round(f * 100) + '%' + etaOf((i - 1 + f) / n);
+              ' ' + Math.round(f * 100) + '%', 'page ' + i + ' of ' + n);
           });
           bytes = r.bytes || await canvasBytes(r.canvas);
           blank = !!r.blank;
@@ -612,14 +627,13 @@
           if (liveCv) NotesFX.liveShow(liveCv, 'page ' + i + ' / ' + n + ' · ' + styleName() + (blank && skip ? ' · blank' : ''));
           if (r.canvas) { r.canvas.width = r.canvas.height = 0; }
         }
-        pFill.style.width = (4 + i / n * 90).toFixed(1) + '%';
-        pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + styleName() + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' +
-          (r ? (blank && skip ? ' · blank kept white' : '') : ' · from checkpoint');
+        setStep(0.04 + i / n * 0.90, 'page ' + i + ' of ' + n + ' · ' + styleName() + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' +
+          (r ? (blank && skip ? ' · blank kept white' : '') : ' · from checkpoint'), 'page ' + i + ' of ' + n);
         NotesFX.titleProgress(i, n);
         await NotesFX.uiYield();                                      // throttle-proof: full speed in background tabs
       }
       state.reusedPages = reused;
-      pStatus.textContent = 'writing file…';
+      setStep(0.96, 'writing the file…', 'writing the file');
       var saved = await outDoc.save({ useObjectStreams: true });
       pFill.style.width = '100%'; pStatus.textContent = 'done';
       NotesFX.titleDone(); NotesFX.liveDone();
@@ -663,6 +677,7 @@
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }
+    stopTicker();
     state.running = false;
     goBtn.disabled = false;
   }

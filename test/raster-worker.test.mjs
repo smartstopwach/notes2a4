@@ -120,6 +120,19 @@ console.log('\n=== raster worker ===\n');
   });
   check('client: progress from the worker is delivered', seen.length > 0 && seen[seen.length - 1] === bh,
     seen.join(','));
+  /* the bug the user saw: "binarising NaN%" — the worker used to report the total
+     of the *message* (a strip message has none), so every percentage was NaN */
+  const totals = [];
+  await R.mapPage({
+    kind: 'hq', auto: true, bw, bh, W, H, band: 60, trackBlank: false,
+    provider(y0, rows) { return { data: big.data.slice(y0 * bw * 4, (y0 + rows) * bw * 4), width: bw, height: rows }; },
+    encode: { mime: 'image/png' },
+    onProgress: (done, total) => { totals.push([done, total]); }
+  });
+  check('client: every progress report carries a real total (never NaN percent)',
+    totals.length > 2 && totals.every(([d, t]) => Number.isFinite(d) && Number.isFinite(t) && t === bh) &&
+    totals.every(([d, t]) => Number.isFinite(d / t * 100)),
+    totals.map(([d, t]) => d + '/' + t).join(' '));
 }
 
 /* ------------------------------------------------------ 3 · failure paths --- */

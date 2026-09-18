@@ -202,10 +202,17 @@
 
   /* ---------- tab-title progress (visible from other tabs) ---------- */
   var _title0 = null;
-  NotesFX.titleProgress = function (done, total) {
-    if (document.hidden) return;                       // nobody can see the title now
+  var _titleAt = 0;
+  NotesFX.titleProgress = function (done, total, label) {
+    /* The tab title is the ONLY progress a background tab can show, so it keeps
+       updating while hidden — a string assignment costs nothing next to a frame.
+       Throttled to 4/s: alive enough to trust, cheap enough to ignore. */
+    var now = Date.now();
+    if (now - _titleAt < 250) return;
+    _titleAt = now;
     if (_title0 === null) _title0 = document.title;
-    document.title = '\u23f3 ' + Math.round(done / total * 100) + '% \u00b7 ' + _title0;
+    var pct = total > 0 ? Math.round(done / total * 100) : 0;
+    document.title = '\u23f3 ' + pct + '%' + (label ? ' \u00b7 ' + label : '') + ' \u00b7 ' + _title0;
   };
   NotesFX.titleDone = function (ok) {
     if (_title0 === null) return;

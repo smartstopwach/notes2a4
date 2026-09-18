@@ -471,9 +471,10 @@ console.log('\n=== session.js: reload-proof storage ===\n');
   check('background: helpers exist to park cosmetic work until the tab returns',
     /NotesFX\.whenVisible = function/.test(fxBg) && /NotesFX\.parkWhileHidden = function/.test(fxBg) &&
     /visibilitychange/.test(fxBg));
-  check('background: the live preview and the tab title are skipped while hidden',
-    /if \(document\.hidden\) return;\s+\/\/ hidden tab/.test(fxBg) &&
-    /if \(document\.hidden\) return;\s+\/\/ nobody can see the title now/.test(fxBg));
+  check('background: the live preview is skipped while hidden (nothing to show)',
+    /if \(document\.hidden\) return;\s+\/\/ hidden tab/.test(fxBg));
+  check('background: the tab title is NOT skipped (it is the only progress a hidden tab shows)',
+    !/nobody can see the title now/.test(fxBg) && /_titleAt/.test(fxBg));
   for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
     const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
     check('background: ' + f + ' parks the sheet/page strip while the tab is hidden',
@@ -482,6 +483,31 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     check('background: ' + f + ' parks the result thumbnails too',
       /await NotesFX\.parkWhileHidden\(\)/.test(src));
   }
+
+  // the tab title is the only progress a background tab can show: it must keep
+  // updating while hidden (it used to bail out, which looked like a frozen run)
+  const fxT = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
+  check('wait: the tab title is not gated on visibility (it is the cross-tab dial)',
+    /NotesFX\.titleProgress = function \(done, total, label\)/.test(fxT) &&
+    !/titleProgress = function[\s\S]{0,220}if \(document\.hidden\) return;/.test(fxT) &&
+    /_titleAt/.test(fxT) && /if \(now - _titleAt < 250\) return;/.test(fxT));
+  check('wait: the title never prints NaN when a total is missing',
+    /total > 0 \? Math\.round\(done \/ total \* 100\) : 0/.test(fxT));
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    check('wait: ' + f + ' reports every phase through one setStep (bar + status + title agree)',
+      (src.match(/setStep\(/g) || []).length >= 4 && (src.match(/etaOf\(/g) || []).length === 1);
+    check('wait: ' + f + ' refreshes the estimate once a second',
+      /ticker = setInterval\(function \(\) \{[\s\S]{0,160}setStep\(lastStep\.frac/.test(src));
+    const exits = (src.match(/goBtn\.disabled = false;/g) || []).length;
+    check('wait: ' + f + ' stops the ticker on every exit (' + exits + ' exits)',
+      (src.match(/stopTicker\(\);/g) || []).length >= exits - 1);
+    check('wait: ' + f + ' never appends an estimate to "done"',
+      /if \(frac >= 0\.999\) return '';/.test(src));
+  }
+  const wrkSrc = readFileSync(new URL('../worker-raster.js', import.meta.url), 'utf8');
+  check('wait: worker progress reports the page height, not the message (the NaN bug)',
+    /total: job\.o\.bh/.test(wrkSrc) && !/progress', id: m\.id, done: job\.fed, total: m\.bh/.test(wrkSrc));
 
   const fx2 = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   check('wait: NotesFX.eta formats seconds and minutes, and never prints NaN',

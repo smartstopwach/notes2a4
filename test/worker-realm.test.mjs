@@ -93,6 +93,10 @@ console.log('\n=== raster worker, run like a real Worker ===\n');
 
   check('worker realm: the worker loaded converter.js through importScripts (pdf-lib first)',
     !!R.realm.NotesConverter && !!R.realm.PDFLib, 'PDFLib ' + (R.realm.PDFLib && typeof R.realm.PDFLib) + ' · converter ' + typeof R.realm.NotesConverter);
+  const prog = R.inbox.filter((m) => m.cmd === 'progress' && m.id === 7);
+  check('worker realm: progress messages carry a numeric total (the NaN%% bug)',
+    prog.length >= 4 && prog.every((m) => Number.isFinite(m.done) && Number.isFinite(m.total) && m.total === bh),
+    prog.map((m) => m.done + '/' + m.total).join(' '));
   check('worker realm: strips are reported back as progress',
     R.inbox.filter((m) => m.cmd === 'progress' && m.id === 7).length >= 4,
     R.inbox.filter((m) => m.cmd === 'progress' && m.id === 7).length + ' progress messages');

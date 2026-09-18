@@ -133,7 +133,7 @@
           var job = jobs[m.id];
           if (!job) return;
           job.feed(m.y0, m.rows, new Uint8ClampedArray(m.data));
-          root.postMessage({ cmd: 'progress', id: m.id, done: job.fed, total: m.bh });
+          root.postMessage({ cmd: 'progress', id: m.id, done: job.fed, total: job.o.bh });   // a strip message has no bh
           return;
         }
         if (m.cmd === 'finish') {

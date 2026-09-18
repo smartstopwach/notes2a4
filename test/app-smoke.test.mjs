@@ -173,7 +173,7 @@ function makeDocument() {
 }
 
 /* -------------------------------------------------------------- pdf.js stub --- */
-function makePdfStub(delay = 0) {
+function makePdfStub(delay = 0, sourceDelay = 0) {
   const calls = [];                       // every render() the apps asked for
   const page = (isSource) => ({
     getViewport({ scale, offsetY }) {
@@ -186,7 +186,7 @@ function makePdfStub(delay = 0) {
       });
       /* strips render immediately; a rendered page of the OUTPUT pdf is slowed
          down so tests can prove previews never hold the result back */
-      return { promise: new Promise((r) => setTimeout(r, isSource ? 0 : delay)) };
+      return { promise: new Promise((r) => setTimeout(r, isSource ? sourceDelay : delay)) };
     },
     cleanup() {},
     getOperatorList: async () => ({ fnArray: [], argsArray: [] })
@@ -212,7 +212,7 @@ function makePdfStub(delay = 0) {
 }
 
 /* ------------------------------------------------------------------ harness --- */
-async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = 'none' } = {}) {
+async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = 'none', sourceDelay = 0 } = {}) {
   /* 'none'   → no worker (the apps must run their main-thread pipeline)
      'real'   → the actual raster-client.js + worker-raster.js core, driven through
                 a stand-in Worker, so the app's worker path is really exercised
@@ -243,7 +243,7 @@ async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = '
   set('innerHeight', 900);
   set('location', { href: 'http://localhost:8080/' + html });
   set('navigator', { userAgent: 'node', storage: undefined });
-  const pdfStub = makePdfStub(thumbsDelay);
+  const pdfStub = makePdfStub(thumbsDelay, sourceDelay);
   set('pdfjsLib', pdfStub);
   set('PDFLib', require('pdf-lib'));
   set('matchMedia', () => ({ matches: false, addEventListener() {} }));
@@ -292,9 +292,9 @@ function fixtureFile(bytes, name, pages) {
 }
 
 async function runApp(label, appFile, html, {
-  bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0, raster = 'none'
+  bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0, raster = 'none', sourceDelay = 0
 } = {}) {
-  const { document, restore, pdfStub } = await boot(appFile, { pages, html, thumbsDelay, raster });
+  const { document, restore, pdfStub } = await boot(appFile, { pages, html, thumbsDelay, raster, sourceDelay });
   try { return await finishRun(document, bytes, name, pages, setOptions, pdfStub); }
   finally { restore(); }
 }
@@ -458,6 +458,33 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
     'hidden ' + hiddenMs.toFixed(0) + ' ms vs visible ' + vis.runMs.toFixed(0) + ' ms');
 }
 
+/* ---------- the tab title must keep moving while the tab is hidden ---------- */
+{
+  const { document, restore } = await boot('app4up.js', { pages: 2, html: '4up.html', sourceDelay: 40 });
+  try {
+    document.hidden = true;                                   // the user is on another tab
+    document.title = 'Notes2A4 · 4-up Studio';
+    const fileInput = document.getElementById('fileInput');
+    fileInput.files = [fixtureFile(PDF_4P, 'notes-4p.pdf', 2)];
+    fileInput.fire('change');
+    await new Promise((r) => setTimeout(r, 100));
+    for (const id of ['optPrint', 'dpi220']) { document.getElementById(id).checked = true; document.getElementById(id).fire('change'); }
+    const titles = [];
+    const watch = setInterval(() => {
+      const t = document.title;
+      if (titles[titles.length - 1] !== t) titles.push(t);
+    }, 100);
+    document.getElementById('goBtn').fire('click');
+    for (let i = 0; i < 4000 && document.getElementById('goBtn').disabled; i++) await new Promise((r) => setTimeout(r, 5));
+    clearInterval(watch);
+    const pcts = titles.map((t) => parseInt((t.match(/(\d+)%/) || [])[1], 10)).filter((n) => !isNaN(n));
+    check('background: the tab title keeps counting up while the tab is hidden',
+      new Set(pcts).size >= 3 && pcts[pcts.length - 1] > pcts[0],
+      titles.slice(0, 5).join(' → ').slice(0, 160));
+    check('background: no title ever shows NaN', !/NaN/.test(titles.join(' ')), titles.length + ' titles seen');
+  } finally { restore(); }
+}
+
 /* ---------- the wait must be legible: percentage + time left ---------- */
 {
   const r = await runApp('2-up wait legible', 'app.js', 'index.html', {
@@ -474,12 +501,12 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
 {
   /* a "time left" string appears as soon as there is something to extrapolate */
   const r = await runApp('4-up wait', 'app4up.js', '4up.html', {
-    bytes: PDF_4P, name: 'notes-4p.pdf', pages: 2,
+    bytes: PDF_4P, name: 'notes-4p.pdf', pages: 2, sourceDelay: 45,     // ~2.5 s of rendering: long enough to estimate
     setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; }
   });
   const seen = (r.statusSeen || []).join(' | ');
-  check('wait: a "time left" estimate shows up during the run',
-    /s left|min|almost done/.test(seen), seen.slice(0, 150) || '(nothing seen)');
+  check('wait: it says it is still working out the estimate, then gives one',
+    /estimating time left/.test(seen) && /s left|min|almost done/.test(seen), seen.slice(0, 190) || '(nothing seen)');
   check('wait: the estimate never contradicts the phase text',
     !/undefined|NaN/.test(seen), seen.slice(0, 90));
 }
