@@ -487,6 +487,7 @@
     for (var y = 0; y < bh; y += band) {
       var y1 = Math.min(bh, y + band);
       var px = provider(y, y1 - y);
+      if (px && typeof px.then === 'function') px = await px;      // a strip renderer is async
       hqFeed(acc, px.data, bw, y, y1, bh);
       if (step) await step((y1 / bh) * 0.55, 'downsample');
     }
@@ -565,6 +566,7 @@
     for (var y = 0; y < bh; y += band) {
       var y1 = Math.min(bh, y + band);
       var px = provider(y, y1 - y);
+      if (px && typeof px.then === 'function') px = await px;      // a strip renderer is async
       negFeed(acc, px.data, bw, y, y1, bh);
       if (step) await step((y1 / bh) * 0.55, 'downsample');
     }
@@ -738,6 +740,9 @@
       decorateSheet(pg, L, opts, font, s, nSheets, page);
       if (onProgress && (s % 4 === 3 || s === nSheets - 1)) await onProgress(s + 1, nSheets, 'packing');
     }
+    /* pdf-lib writes the whole file in one synchronous pass, so give the UI one
+       last frame before it starts — the bar can then say "writing the file…". */
+    if (onProgress) await onProgress(nSheets, nSheets, 'writing');
     var saved = await out.save({ useObjectStreams: true });
     return { bytes: saved, sheets: nSheets, sourcePages: n, pageWH: { w: page.w, h: page.h }, printSaver: true };
   }

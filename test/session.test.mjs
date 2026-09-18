@@ -394,6 +394,13 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     check('responsive: ' + f + ' lets the browser paint between bands',
       /await NotesFX\.uiPaint\(\)/.test(src));
   }
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    check('strips: ' + f + ' renders the page in whole-pixel strips (offsetY), not one 32 Mpx draw',
+      /offsetY: -y0/.test(src) && /stripRows/.test(src));
+    check('strips: ' + f + ' keeps a full-page fallback if a strip render fails',
+      /falling back to a full-page render|strip rendering unavailable/.test(src) || f === 'app-invert.js');
+  }
   const fxPaint = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   check('responsive: enhance.js exposes uiPaint (a yield that really paints)',
     /NotesFX\.uiPaint = function/.test(fxPaint) && /requestAnimationFrame/.test(fxPaint) && /setTimeout\(fin, 120\)/.test(fxPaint));

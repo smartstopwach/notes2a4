@@ -428,22 +428,42 @@
     var ss = (lW * lH <= 34000000 && lW <= 16000 && lH <= 16000) ? 2 : 1;   // area-based: 220 tier keeps SSAA
     var outW = pg.getViewport({ scale: outSc });
     var W = Math.max(2, Math.round(outW.width)), H = Math.max(2, Math.round(outW.height));
-    var cv = document.createElement('canvas');
-    cv.width = Math.max(2, Math.round(vp1.width * outSc * ss));
-    cv.height = Math.max(2, Math.round(vp1.height * outSc * ss));
-    var cx = cv.getContext('2d', { willReadFrequently: true });
-    cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+    var bw = Math.max(2, Math.round(vp1.width * outSc * ss));       // supersampled size
+    var bh = Math.max(2, Math.round(vp1.height * outSc * ss));
+    /* Render the supersampled page in horizontal STRIPS instead of one giant
+       canvas. A 220 dpi A4 page is 4762×6736 = 32 Mpx — drawing that in a single
+       pdf.js call blocks the main thread for seconds, which is what produces the
+       "Page Unresponsive" dialog. offsetY counts whole device pixels, so a strip
+       is rasterised exactly like those rows of the full page: the pixels are the
+       same, only the timing changes (and the 128 MB canvas is never allocated). */
+    var stripRows = Math.max(ss, ss * 96);
+    var hook = { band: stripRows, progress: async function (f, phase) { if (sub) sub(f, phase); await NotesFX.uiPaint(); } };
+    var renderStrip = async function (y0, rows) {
+      var cv = document.createElement('canvas');
+      cv.width = bw; cv.height = rows;
+      var cx = cv.getContext('2d', { willReadFrequently: true });
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, bw, rows);
+      await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss, offsetY: -y0 }) }).promise;
+      var id = cx.getImageData(0, 0, bw, rows);
+      cv.width = 0; cv.height = 0;                                  // release the strip immediately
+      return id;
+    };
+    var hm;
     if (sub) sub(0, 'rendering');
-    await NotesFX.uiPaint(true);                       // let the bar move before the one call we cannot slice
-    await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
-    var hm = await printMapAsync(
-      function (y0, rows) { return cx.getImageData(0, y0, cv.width, rows); },
-      cv.width, cv.height, W, H,
-      { band: 192, progress: async function (f, phase) {
-        if (sub) sub(f, phase);
-        await NotesFX.uiPaint();
-      } });
-    cv.width = 0; cv.height = 0;                     // free the 100 MB+ scratch buffer at once
+    await NotesFX.uiPaint(true);                // let the bar move before the first strip
+    try {
+      hm = await printMapAsync(renderStrip, bw, bh, W, H, hook);
+    } catch (err) {                             // older pdf.js / odd page: one canvas, the old way
+      console.warn('strip rendering unavailable, falling back to a full-page render:', err);
+      var cvF = document.createElement('canvas');
+      cvF.width = bw; cvF.height = bh;
+      var cxF = cvF.getContext('2d', { willReadFrequently: true });
+      cxF.fillStyle = '#fff'; cxF.fillRect(0, 0, bw, bh);
+      await NotesFX.uiPaint(true);
+      await pg.render({ canvasContext: cxF, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
+      hm = await printMapAsync(function (y0, rows) { return cxF.getImageData(0, y0, bw, rows); }, bw, bh, W, H, hook);
+      cvF.width = 0; cvF.height = 0;
+    }
     var small = document.createElement('canvas');
     small.width = W; small.height = H;
     var sx = small.getContext('2d');
@@ -468,7 +488,7 @@
       var r = await printRasterPage(pg, function (f, phase) {
         pFill.style.width = ((i + f) / n * 60).toFixed(1) + '%';
         pStatus.textContent = 'page ' + (i + 1) + ' of ' + n + ' · ' +
-          (phase === 'rendering' ? 'rendering the page' : phase === 'downsample' ? 'reading the render' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
+          (phase === 'writing' ? 'writing the file' : (phase === 'rendering' || phase === 'downsample') ? 'rendering the page' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
           ' ' + Math.round(f * 100) + '%';
       });
       pg.cleanup();

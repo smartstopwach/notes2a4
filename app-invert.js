@@ -294,45 +294,97 @@
     var bigW = Math.round(vp1.width * outSc * 2), bigH = Math.round(vp1.height * outSc * 2);
     var ss = (bigW * bigH <= 34000000 && bigW <= 16000 && bigH <= 16000) ? 2 : 1;   // 2× supersample → area-averaged down
     var W = Math.max(2, Math.round(vp1.width * outSc)), H = Math.max(2, Math.round(vp1.height * outSc));
-    var cv = document.createElement('canvas');
-    cv.width = Math.max(2, Math.round(vp1.width * outSc * ss));
-    cv.height = Math.max(2, Math.round(vp1.height * outSc * ss));
-    var cx = cv.getContext('2d', { willReadFrequently: true });
-    cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
-    if (sub) sub(0, 'rendering');
-    await NotesFX.uiPaint(true);                       // let the bar move before the one call we cannot slice
-    await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
-    pg.cleanup();
-    /* The page is processed band by band, handing control back to the browser
-       after each one. Every pixel still goes through exactly the same code as
-       before, so the output is unchanged — the run just no longer freezes the
-       tab (a 150-220 dpi page is ~30 Mpx of supersampled pixels). */
-    var band = 192, blank = true;
-    var out = document.createElement('canvas');
-    out.width = W; out.height = H;
-    var scan = function (y0, rows) {                  // read one band + the pure-white test
-      var b = cx.getImageData(0, y0, cv.width, rows);
-      if (blank) blank = invertPixels(b, false);
-      return b;
+    var bw = Math.max(2, Math.round(vp1.width * outSc * ss)), bh = Math.max(2, Math.round(vp1.height * outSc * ss));
+    /* The page is rendered in horizontal strips — one giant 32 Mpx pdf.js call was
+       the longest block in the whole run (that is what froze the tab). offsetY is
+       a whole number of device pixels, so the strips are rasterised exactly like
+       the rows of a full-page render; the pixels do not change. */
+    var stripRows = Math.max(ss, ss * 96);
+    var renderStrip = async function (y0, rows) {
+      var cv = document.createElement('canvas');
+      cv.width = bw; cv.height = rows;
+      var cx = cv.getContext('2d', { willReadFrequently: true });
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, bw, rows);
+      await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss, offsetY: -y0 }) }).promise;
+      var id = cx.getImageData(0, 0, bw, rows);
+      cv.width = 0; cv.height = 0;                                  // release the strip immediately
+      return id;
     };
-    if (inkMode()) {                                  // same ink-bias mapping the Print-Saver engine uses
-      var hm = await NotesConverter.printSaver.hqMapAsync(scan, cv.width, cv.height, W, H, true, keepColour(), pureMode(),
-        { band: band, progress: async function (f, phase) { if (sub) sub(f, phase); await NotesFX.uiPaint(); } });
+    var blank = true, out = document.createElement('canvas');
+    out.width = W; out.height = H;
+    var hook = { band: stripRows, progress: async function (f, phase) { if (sub) sub(f, phase); await NotesFX.uiPaint(); } };
+    /* the old behaviour, kept as a safety net: one canvas, one render call */
+    var fullCanvas = async function () {
+      var cv = document.createElement('canvas');
+      cv.width = bw; cv.height = bh;
+      var cx = cv.getContext('2d', { willReadFrequently: true });
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, bw, bh);
+      await NotesFX.uiPaint(true);
+      await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
+      return { canvas: cv, ctx: cx };
+    };
+    if (sub) sub(0, 'rendering');
+    await NotesFX.uiPaint(true);                // let the bar move before the first strip
+    if (inkMode()) {                            // same ink-bias mapping the Print-Saver engine uses
+      var stripFeed = function (y0, rows) {
+        return renderStrip(y0, rows).then(function (id) {
+          if (blank) blank = invertPixels(id, false);              // scan-only: is the page pure white?
+          return id;
+        });
+      };
+      var hm;
+      try {
+        hm = await NotesConverter.printSaver.hqMapAsync(stripFeed, bw, bh, W, H, true, keepColour(), pureMode(), hook);
+      } catch (err) {
+        console.warn('strip rendering unavailable, falling back to a full-page render:', err);
+        blank = true;
+        var fat = await fullCanvas();
+        hm = await NotesConverter.printSaver.hqMapAsync(function (y0, rows) {
+          var id = fat.ctx.getImageData(0, y0, bw, rows);
+          if (blank) blank = invertPixels(id, false);
+          return id;
+        }, bw, bh, W, H, true, keepColour(), pureMode(), hook);
+        fat.canvas.width = 0; fat.canvas.height = 0;
+      }
       out.getContext('2d').putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
     } else {
-      for (var y = 0; y < cv.height; y += band) {      // true negative, in place: colours included
-        var rows = Math.min(band, cv.height - y);
-        var bd = scan(y, rows);
-        invertPixels(bd, true);
-        cx.putImageData(bd, 0, y);
-        if (sub) sub((y + rows) / cv.height, 'flip');
-        await NotesFX.uiPaint();
+      /* true negative — colours included. The flipped page is assembled at full
+         supersampled size and scaled down once at the end, exactly as before. */
+      var big = document.createElement('canvas');
+      big.width = bw; big.height = bh;
+      var bx = big.getContext('2d', { willReadFrequently: true });
+      try {
+        for (var y0 = 0; y0 < bh; y0 += stripRows) {
+          var rows = Math.min(stripRows, bh - y0);
+          var id2 = await renderStrip(y0, rows);
+          if (blank) blank = invertPixels(id2, false);
+          invertPixels(id2, true);
+          bx.putImageData(id2, 0, y0);
+          if (sub) sub((y0 + rows) / bh, 'flip');
+          await NotesFX.uiPaint();
+        }
+      } catch (err) {
+        console.warn('strip rendering unavailable, falling back to a full-page render:', err);
+        blank = true;
+        var fat2 = await fullCanvas();
+        bx.fillStyle = '#fff'; bx.fillRect(0, 0, bw, bh);
+        for (var y1 = 0; y1 < bh; y1 += stripRows) {
+          var rows2 = Math.min(stripRows, bh - y1);
+          var id3 = fat2.ctx.getImageData(0, y1, bw, rows2);
+          if (blank) blank = invertPixels(id3, false);
+          invertPixels(id3, true);
+          bx.putImageData(id3, 0, y1);
+          if (sub) sub((y1 + rows2) / bh, 'flip');
+          await NotesFX.uiPaint();
+        }
+        fat2.canvas.width = 0; fat2.canvas.height = 0;
       }
       var ox = out.getContext('2d');
       ox.imageSmoothingEnabled = true; ox.imageSmoothingQuality = 'high';
-      ox.drawImage(cv, 0, 0, W, H);
+      ox.drawImage(big, 0, 0, W, H);
+      big.width = big.height = 0;                                  // release big buffer early
     }
-    cv.width = cv.height = 0;                          // release big buffer early
+    pg.cleanup();
     return { canvas: out, blank: blank };
   }
 
@@ -407,7 +459,7 @@
           r = await rasterInverted(i, function (f, phase) {
             pFill.style.width = ((i - 1 + f) / n * 88).toFixed(1) + '%';
             pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' +
-              (phase === 'rendering' ? 'rendering the page' : phase === 'flip' ? 'flipping colours' : phase === 'downsample' ? 'reading the render' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
+              (phase === 'rendering' || phase === 'downsample' ? 'rendering the page' : phase === 'flip' ? 'flipping colours' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
               ' ' + Math.round(f * 100) + '%';
           });
           bytes = await canvasBytes(r.canvas);

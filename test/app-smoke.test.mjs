@@ -127,6 +127,7 @@ function makeEl(id, tag = 'div') {
 function makeDocument() {
   const byId = new Map();
   const doc = {
+    title: '', hidden: false,
     getElementById(id) {
       if (!byId.has(id)) {
         const el = makeEl(id);
@@ -161,24 +162,39 @@ function makeDocument() {
 
 /* -------------------------------------------------------------- pdf.js stub --- */
 function makePdfStub(delay = 0) {
-  const page = () => ({
-    getViewport: ({ scale }) => ({ width: 595.28 * scale, height: 841.89 * scale, scale }),
-    render: () => ({ promise: new Promise((r) => setTimeout(r, delay)) }),
+  const calls = [];                       // every render() the apps asked for
+  const page = (isSource) => ({
+    getViewport({ scale, offsetY }) {
+      return { width: 595.28 * scale, height: 841.89 * scale, scale, offsetY: offsetY || 0 };
+    },
+    render({ canvasContext, viewport }) {
+      calls.push({
+        isSource, area: canvasContext.canvas.width * canvasContext.canvas.height,
+        w: canvasContext.canvas.width, h: canvasContext.canvas.height, offsetY: viewport.offsetY || 0
+      });
+      /* strips render immediately; a rendered page of the OUTPUT pdf is slowed
+         down so tests can prove previews never hold the result back */
+      return { promise: new Promise((r) => setTimeout(r, isSource ? 0 : delay)) };
+    },
     cleanup() {},
     getOperatorList: async () => ({ fnArray: [], argsArray: [] })
   });
-  const doc = (pageCount) => ({
+  const doc = (pageCount, isSource) => ({
     numPages: pageCount,
-    getPage: async () => page(),
+    getPage: async () => page(isSource),
     destroy() {}
   });
+  let opened = 0;
   return {
+    calls,
     GlobalWorkerOptions: {},
     OPS: { paintImageXObject: 85, transform: 12 },
     getDocument: ({ data }) => {
-      // page count from the fixture name marker: real pdf.js is not needed here
-      const n = data && data._pages ? data._pages : 2;
-      return { promise: Promise.resolve(doc(n)) };
+      /* the app always opens the file the user picked first — everything opened
+         after that is an output PDF (result previews, restored result) */
+      const isSource = opened++ === 0;
+      const n = (data && data._pages) || 2;
+      return { promise: Promise.resolve(doc(n, isSource)) };
     }
   };
 }
@@ -205,7 +221,8 @@ async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0 } = {}) {
   set('innerHeight', 900);
   set('location', { href: 'http://localhost:8080/' + html });
   set('navigator', { userAgent: 'node', storage: undefined });
-  set('pdfjsLib', makePdfStub(thumbsDelay));
+  const pdfStub = makePdfStub(thumbsDelay);
+  set('pdfjsLib', pdfStub);
   set('PDFLib', require('pdf-lib'));
   set('matchMedia', () => ({ matches: false, addEventListener() {} }));
   set('scrollTo', () => {});
@@ -229,11 +246,14 @@ async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0 } = {}) {
   const restore = () => {
     for (const [key, had, prev] of installed.reverse()) {
       if (key === '__urlRestore') { Object.assign(globalThis.URL, prev); continue; }
+      /* the apps leave a few timers behind (title reset, toast removal). They must
+         not hit a deleted global, so a harmless stub document stays installed. */
+      if (key === 'document') { globalThis.document = makeDocument(); continue; }
       if (had && prev) Object.defineProperty(globalThis, key, prev);
       else delete globalThis[key];
     }
   };
-  return { document, restore };
+  return { document, restore, pdfStub };
 }
 
 /* a File-ish object the apps accept */
@@ -246,11 +266,11 @@ function fixtureFile(bytes, name, pages) {
 async function runApp(label, appFile, html, {
   bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0
 } = {}) {
-  const { document, restore } = await boot(appFile, { pages, html, thumbsDelay });
-  try { return await finishRun(document, bytes, name, pages, setOptions); }
+  const { document, restore, pdfStub } = await boot(appFile, { pages, html, thumbsDelay });
+  try { return await finishRun(document, bytes, name, pages, setOptions, pdfStub); }
   finally { restore(); }
 }
-async function finishRun(document, bytes, name, pages, setOptions) {
+async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
   const ok = { loaded: true };
   /* set the option elements before the file arrives, then fire the same change
      events a user's click would fire (the apps reveal panels on those) */
@@ -297,7 +317,10 @@ async function finishRun(document, bytes, name, pages, setOptions) {
   if (PS) for (const k of ['hqMap', 'negMap']) PS[k] = savedSync[k];
   const status = document.getElementById('pstatus').textContent;
   const printed = document.getElementById('rsMeta').textContent;
-  return { ok, status, printed, document, revealMs, placeholderAtReveal, worstGap, beats: gaps.length, dl: dl.download, href: dl.href };
+  return {
+    ok, status, printed, document, revealMs, placeholderAtReveal, worstGap, beats: gaps.length,
+    dl: dl.download, href: dl.href, calls: (pdfStub && pdfStub.calls) || []
+  };
 }
 
 console.log('\n=== headless app smoke (real app files, stubbed DOM) ===\n');
@@ -317,6 +340,51 @@ console.log('\n=== headless app smoke (real app files, stubbed DOM) ===\n');
   });
   check('2-up · print-saver: no runtime error', !/^failed:/.test(r.status), r.status);
   check('2-up · print-saver: reports the pure b&w style', /pure b&w/.test(r.printed), r.printed.slice(0, 90));
+}
+
+/* ---------- strips: a page is rendered in small pieces, not one 32 Mpx draw ---------- */
+{
+  const r = await runApp('2-up strips', 'app.js', 'index.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2,
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; el('psInk').checked = true; }
+  });
+  const src = r.calls.filter((c) => c.isSource);
+  const biggest = src.reduce((m, c) => Math.max(m, c.area), 0);
+  const wholePage = 595.28 * 4 * 2 * 841.89 * 4 * 2;             // 220 dpi × 2 SSAA, one piece
+  check('strips: the source page is drawn in many pieces', src.length >= 8,
+    src.length + ' render calls for 2 pages');
+  check('strips: every piece carries a whole-pixel strip offset (pixel-exact)',
+    src.every((c) => Number.isInteger(c.offsetY)), 'offsets ' + [...new Set(src.map((c) => c.offsetY))].slice(0, 6).join(','));
+  check('strips: no piece is anywhere near a full supersampled page', biggest > 0 && biggest < wholePage / 8,
+    'biggest ' + (biggest / 1e6).toFixed(1) + ' Mpx vs ' + (wholePage / 1e6).toFixed(0) + ' Mpx full page');
+
+  /* the pieces must tile each page exactly once, in order, on whole pixels —
+     that is the property that makes strip rendering pixel-identical */
+  const stripW = Math.max(...src.map((c) => c.w));      // the supersampled page width (previews are small)
+  const groups = [];
+  for (const c of src.filter((x) => x.w === stripW)) {
+    if (c.offsetY === 0 || !groups.length) groups.push([]);
+    groups[groups.length - 1].push(c);
+  }
+  const everyGroupTilesExactly = groups.every((g) => {
+    let acc = 0;
+    return g.every((c) => {
+      const ok = c.offsetY === -acc && c.w === g[0].w;
+      acc += c.h;
+      return ok;
+    }) && g.every((c, i) => i === g.length - 1 || c.h === g[0].h);
+  });
+  const pageHeights = groups.map((g) => g.reduce((a, c) => a + c.h, 0));
+  if (process.env.STRIP_DEBUG) {
+    for (const [i, g] of groups.entries()) {
+      console.log('  page ' + (i + 1) + ' pieces: ' + g.length + ' heights ' + JSON.stringify(g.slice(0, 4).map((c) => c.h)) +
+        ' … ' + JSON.stringify(g.slice(-3).map((c) => c.h)) + ' offsets ' + JSON.stringify(g.slice(0, 3).map((c) => c.offsetY)) +
+        ' … ' + JSON.stringify(g.slice(-2).map((c) => c.offsetY)) + ' w=' + g[0].w);
+    }
+  }
+  check('strips: pieces tile each page exactly once, in order, on whole-pixel offsets',
+    groups.length === 2 && everyGroupTilesExactly && pageHeights[0] === pageHeights[1] && pageHeights[0] > 4000,
+    groups.length + ' pages · rows ' + pageHeights.join('/') + ' · widest piece ' + (groups[0] ? groups[0][0].w : 0) + 'px');
 }
 
 /* ---------- responsiveness: a heavy run must not freeze the main thread ---------- */

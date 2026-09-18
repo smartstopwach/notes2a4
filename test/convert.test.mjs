@@ -388,6 +388,28 @@ console.log('5e) hq-map:');
     check('banded maps: hqMapAsync/negMapAsync are byte-identical to the one-shot maps',
       equal === variants && variants >= 30, equal + '/' + variants + ' variants (odd band sizes included)');
 
+    /* strips arrive from pdf.js asynchronously, so the provider may return a promise */
+    {
+      const big = mk(600, 400);
+      const strips = async (y0, rows) => {
+        await new Promise((r) => setTimeout(r, 0));
+        return { data: big.data.subarray(y0 * big.width * 4, (y0 + rows) * big.width * 4), width: big.width, height: rows };
+      };
+      let allSame = true, n = 0;
+      for (const [keep, pure] of [[false, false], [true, false], [false, true], [true, true]]) {
+        const one = PS.hqMap(big, 301, 201, true, keep, pure);
+        const band = await PS.hqMapAsync(strips, 600, 400, 301, 201, true, keep, pure, { band: 192 });
+        n++;
+        if (!same(one.imageData.data, band.imageData.data)) allSame = false;
+      }
+      const oneN = PS.negMap(big, 301, 201, true);
+      const bandN = await PS.negMapAsync(strips, 600, 400, 301, 201, true, { band: 192 });
+      n++;
+      if (!same(oneN.imageData.data, bandN.imageData.data)) allSame = false;
+      check('banded maps: an ASYNC strip provider (what pdf.js gives us) is identical too',
+        allSame && n === 5, n + ' variants');
+    }
+
     /* and they really do hand control back — once per band, in all three phases */
     const big = mk(200, 400);
     let yields = 0, phases = new Set();
