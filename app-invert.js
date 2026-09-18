@@ -260,6 +260,18 @@
   /* ---------- every page of the result as a small tile ----------
      Fills the preview column (it used to be one tall empty card) and shows what the
      flip does to every page, not just the first one. Cancelled on any change. */
+
+  /* a run and the preview strip must not fight over the CPU: the strip stops,
+     says so, and is finished off once the result is on screen */
+  function resumePreviewStrip() {
+    if (!state.stripPaused) return;
+    state.stripPaused = false;
+    setTimeout(function () {
+      if (!state.doc || goBtn.disabled) return;
+      if (typeof renderSheetStrip === 'function') renderSheetStrip(state.gen);
+      else if (typeof renderPageStrip === 'function') renderPageStrip(state.gen);
+    }, 400);
+  }
   var stripToken = 0;
   async function renderPageStrip(gen) {
     var host = $('prevStrip');
@@ -272,7 +284,12 @@
       : null;
     var scratch = document.createElement('canvas');
     for (var i = 1; i <= show; i++) {
-      if (my !== stripToken || gen !== state.gen || goBtn.disabled) return;
+      if (my !== stripToken || gen !== state.gen) return;                     // changed under us
+      if (goBtn.disabled || state.running) {                                  // a run has started: stop cleanly
+        if (strip) strip.prune('previews paused while the PDF is being made \u2014 they come back when it finishes');
+        state.stripPaused = true;
+        return;
+      }
       var fig = document.createElement('figure');
       var cv = document.createElement('canvas');
       var cap = document.createElement('figcaption');
@@ -487,11 +504,25 @@
 
   async function convert() {
     if (!state.bytes || goBtn.disabled) return;
-    goBtn.disabled = true; result.hidden = true;
+    goBtn.disabled = true; result.hidden = true; state.running = true;
     pBox.hidden = false; pFill.style.width = '2%'; pStatus.textContent = 'measuring pages…';
     var prevCard = document.querySelector('.card.prev');
     if (prevCard) prevCard.classList.add('busy');
     var t0 = performance.now();
+    /* how much longer: measured from the work already done, so the wait has a
+       number instead of just a crawling bar */
+    var etaOf = function (frac) {
+      if (!(frac > 0.01)) return '';
+      var left = NotesFX.eta ? NotesFX.eta((performance.now() - t0) / frac * (1 - frac)) : '';
+      return left ? ' · ' + left : '';
+    };
+    /* how much longer: measured from the work already done, so the wait has a
+       number instead of just a crawling bar */
+    var etaOf = function (frac) {
+      if (!(frac > 0.01)) return '';
+      var left = NotesFX.eta ? NotesFX.eta((performance.now() - t0) / frac * (1 - frac)) : '';
+      return left ? ' \u00b7 ' + left : '';
+    };
     var skip = opt.skip.checked, n = state.pages;
     if (vectorMode()) {                              // exact vector 255 - c: instant, no raster, no checkpoints
       try {
@@ -528,6 +559,7 @@
         if (prevCard) prevCard.classList.remove('busy');
         console.error(err);
       }
+      state.running = false;
       goBtn.disabled = false;
       return;
     }
@@ -548,7 +580,7 @@
             pFill.style.width = ((i - 1 + f) / n * 88).toFixed(1) + '%';
             pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' +
               (phase === 'rendering' || phase === 'downsample' ? 'rendering the page' : phase === 'flip' ? 'flipping colours' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
-              ' ' + Math.round(f * 100) + '%';
+              ' ' + Math.round(f * 100) + '%' + etaOf((i - 1 + f) / n);
           });
           bytes = r.bytes || await canvasBytes(r.canvas);
           blank = !!r.blank;
@@ -602,6 +634,7 @@
       /* show the result immediately; previews + the reload-proof save follow */
       renderThumbsSoon(saved, n);
       result.hidden = false;
+      resumePreviewStrip();                        // previews paused for the run? finish them now
       if (prevCard) prevCard.classList.remove('busy');
       if (window.NotesFX) NotesFX.toast(n + ' pages flipped · sizes identical · still on-device');
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -622,6 +655,7 @@
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }
+    state.running = false;
     goBtn.disabled = false;
   }
 

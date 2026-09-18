@@ -124,6 +124,18 @@
     });
   };
 
+  /* ---- "time left" -------------------------------------------------------
+     A run makes a promise the user can hold on to: "page 12 of 34 · ~40 s
+     left" instead of a bar that just crawls. */
+  NotesFX.eta = function (ms) {
+    if (ms === null || ms === undefined || !isFinite(ms) || ms <= 0) return '';
+    var s = Math.round(ms / 1000);
+    if (s <= 2) return 'almost done';
+    if (s < 60) return '~' + s + ' s left';
+    var m = Math.floor(s / 60), r = s - m * 60;
+    return '~' + m + ' min' + (r >= 5 ? ' ' + r + ' s' : '') + ' left';
+  };
+
   /* ---- result previews ----------------------------------------------------
      Rendering previews of a finished PDF can take tens of seconds (in
      print-saver mode every sheet holds four full-resolution images). Previews
@@ -150,7 +162,13 @@
         else host.appendChild(img);
         if (sk && sk.parentElement === host) host.removeChild(sk);
       },
-      note: function (text) { note.textContent = text; }
+      note: function (text) { note.textContent = text; },
+      prune: function (text) {                        // drop the still-empty slots
+        for (var j = 0; j < sks.length; j++) {
+          if (sks[j].parentElement === host) host.removeChild(sks[j]);
+        }
+        if (text !== undefined) note.textContent = text;
+      }
     };
   };
 
@@ -191,13 +209,15 @@
       '.nfx-live-lab{color:#cdd7e8;font:600 .78rem system-ui;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
       '.nfx-live-x{cursor:pointer;border:0;background:none;color:#7b879c;font:700 .9rem system-ui;padding:0 .2rem}',
       '.nfx-live-x:hover{color:#e8ecf5}',
-      '.nfx-live canvas{display:block;width:100%;border-radius:8px;background:#fff}'
+      '.nfx-live canvas{display:block;width:100%;border-radius:8px;background:#fff}',
+      '.nfx-live-sub{color:#8b96ad;font:500 .68rem system-ui;padding:.35rem .2rem 0;line-height:1.3}'
     ].join('\n');
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
     var root = document.createElement('div');
     root.className = 'nfx-live'; root.hidden = true;
     root.innerHTML = '<div class="nfx-live-head"><span class="nfx-live-dot"></span>' +
-      '<span class="nfx-live-lab"></span><button class="nfx-live-x" type="button" title="hide">✕</button></div><canvas></canvas>';
+      '<span class="nfx-live-lab"></span><button class="nfx-live-x" type="button" title="hide">✕</button></div><canvas></canvas>' +
+      '<div class="nfx-live-sub">this is the page going into the PDF at full resolution — the small tiles on the page are quick thumbnails</div>';
     document.body.appendChild(root);
     var closed = { v: false };
     root.querySelector('.nfx-live-x').addEventListener('click', function (e) {

@@ -123,6 +123,14 @@ function makeEl(id, tag = 'div') {
     toDataURL: () => 'data:image/png;base64,AAAA',
     captureStream: null
   };
+  /* innerHTML = '' really empties the element — several code paths (the preview
+     strips, the result thumbnails) rely on that to clear before they fill */
+  let _html = '';
+  Object.defineProperty(el, 'innerHTML', {
+    get: () => _html,
+    set: (v) => { _html = String(v == null ? '' : v); if (_html === '') el.children = []; },
+    configurable: true
+  });
   return el;
 }
 function makeDocument() {
@@ -259,7 +267,13 @@ async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = '
       if (key === '__urlRestore') { Object.assign(globalThis.URL, prev); continue; }
       /* the apps leave a few timers behind (title reset, toast removal). They must
          not hit a deleted global, so a harmless stub document stays installed. */
-      if (key === 'document') { globalThis.document = makeDocument(); continue; }
+      /* a boot's own timers (title reset, the preview strip finishing after a run)
+         may still fire after the test moves on — browser-API stubs stay installed
+         so a late callback cannot crash the run; app-specific globals (pdfjsLib,
+         the fixture pdf, location) are restored normally */
+      if (['document', 'window', 'self', 'ImageData', 'Blob', 'URL', 'requestAnimationFrame',
+        'cancelAnimationFrame', 'matchMedia', 'scrollTo', 'devicePixelRatio', 'innerWidth',
+        'innerHeight'].indexOf(key) >= 0) { continue; }
       if (had && prev) Object.defineProperty(globalThis, key, prev);
       else delete globalThis[key];
     }
@@ -314,6 +328,12 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
     PS[k] = () => { throw new Error('blocking ' + k + '() called on the main thread'); };
   }
   const t0 = performance.now();
+  const statusSeen = [];
+  globalThis.__statusSeen = statusSeen;
+  const watchStatus = setInterval(() => {
+    const t = document.getElementById('pstatus').textContent;
+    if (statusSeen[statusSeen.length - 1] !== t) statusSeen.push(t);
+  }, 3);
   go.fire('click');
   let revealMs = null;
   for (let i = 0; i < 4000; i++) {
@@ -324,13 +344,15 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
   const placeholderAtReveal = stripEl.children.some((c) => /thumb-sk/.test(String(c.className || '')));
   for (let i = 0; i < 4000 && go.disabled; i++) await new Promise((r) => setTimeout(r, 5));
   clearInterval(heart);
+  clearInterval(watchStatus);
   const worstGap = gaps.length ? Math.max.apply(null, gaps) : 0;
   if (PS) for (const k of ['hqMap', 'negMap']) PS[k] = savedSync[k];
   const status = document.getElementById('pstatus').textContent;
   const printed = document.getElementById('rsMeta').textContent;
   return {
     ok, status, printed, document, revealMs, placeholderAtReveal, worstGap, beats: gaps.length,
-    dl: dl.download, href: dl.href, calls: (pdfStub && pdfStub.calls) || []
+    dl: dl.download, href: dl.href, calls: (pdfStub && pdfStub.calls) || [],
+    statusSeen: statusSeen
   };
 }
 
@@ -354,6 +376,60 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   });
   check('2-up · print-saver: no runtime error', !/^failed:/.test(r.status), r.status);
   check('2-up · print-saver: reports the pure b&w style', /pure b&w/.test(r.printed), r.printed.slice(0, 90));
+}
+
+/* ---------- the wait must be legible: percentage + time left ---------- */
+{
+  const r = await runApp('2-up wait legible', 'app.js', 'index.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2,
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; el('psInk').checked = true; }
+  });
+  const seen = (r.statusSeen || []).join(' | ');
+  check('wait: the status reports the page and the phase while it runs',
+    /page \d+ of \d+/.test(seen) && /binarising|rendering the page|placing page images|writing the file/.test(seen),
+    seen.slice(0, 130) || '(nothing seen)');
+  check('wait: it ends on the finished result', /done/.test(r.status), r.status);
+  void seen;
+}
+{
+  /* a "time left" string appears as soon as there is something to extrapolate */
+  const r = await runApp('4-up wait', 'app4up.js', '4up.html', {
+    bytes: PDF_4P, name: 'notes-4p.pdf', pages: 2,
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; }
+  });
+  const seen = (r.statusSeen || []).join(' | ');
+  check('wait: a "time left" estimate shows up during the run',
+    /s left|min|almost done/.test(seen), seen.slice(0, 150) || '(nothing seen)');
+  check('wait: the estimate never contradicts the phase text',
+    !/undefined|NaN/.test(seen), seen.slice(0, 90));
+}
+
+/* ---------- previews pause during a run, then finish themselves ---------- */
+{
+  const { document, restore } = await boot('app4up.js', { pages: 2, html: '4up.html' });
+  try {
+    const strip = document.getElementById('prevStrip');
+    const stripApi = globalThis.NotesFX.thumbStrip(strip, 3, 'drawing…');
+    stripApi.place(Object.assign(document.createElement('figure'), { tagName: 'FIGURE' }), 0);
+    stripApi.prune('previews paused while the PDF is being made — they come back when it finishes');
+    const skeletons = strip.children.filter((c) => /thumb-sk/.test(String(c.className))).length;
+    const note = (strip.children.find((c) => /thumb-note/.test(String(c.className))) || {}).textContent || '';
+    check('pause: pruning drops the empty slots but keeps the drawn ones',
+      skeletons === 0 && /previews paused while the PDF is being made/.test(note), note);
+  } finally { restore(); }
+}
+{
+  const r = await runApp('4-up resume', 'app4up.js', '4up.html', {
+    bytes: PDF_4P, name: 'notes-4p.pdf', pages: 2,
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi150').checked = true; }
+  });
+  await new Promise((r2) => setTimeout(r2, 700));           // the resume runs 400 ms after the result
+  const strip = r.document.getElementById('prevStrip');
+  const tiles = strip.children.filter((c) => c.tagName === 'FIGURE').length;
+  const note = (strip.children.find((c) => /thumb-note/.test(String(c.className))) || {}).textContent || '';
+  check('pause: after the run the strip ends up complete (no paused note, no skeletons)',
+    tiles === 1 && !/paused/.test(note) && /1 sheet in the finished PDF/.test(note),
+    tiles + ' tiles · ' + note);
 }
 
 /* ---------- the preview column fills with every sheet/page ---------- */

@@ -260,6 +260,18 @@
      The preview column used to be one tall empty card (the options column is much
      longer), which looked broken. It now shows all sheets: tiny, in order, drawn
      one at a time so the UI stays free, and cancelled the moment anything changes. */
+
+  /* a run and the preview strip must not fight over the CPU: the strip stops,
+     says so, and is finished off once the result is on screen */
+  function resumePreviewStrip() {
+    if (!state.stripPaused) return;
+    state.stripPaused = false;
+    setTimeout(function () {
+      if (!state.doc || goBtn.disabled) return;
+      if (typeof renderSheetStrip === 'function') renderSheetStrip(state.gen);
+      else if (typeof renderPageStrip === 'function') renderPageStrip(state.gen);
+    }, 400);
+  }
   var stripToken = 0;
   async function renderSheetStrip(gen) {
     var host = $('prevStrip');
@@ -272,7 +284,12 @@
       ? NotesFX.thumbStrip(host, show, 'drawing all ' + total + ' sheet' + (total === 1 ? '' : 's') + '…')
       : null;
     for (var s = 0; s < show; s++) {
-      if (my !== stripToken || gen !== state.gen || goBtn.disabled) return;   // changed, or a run is busy
+      if (my !== stripToken || gen !== state.gen) return;                     // changed under us
+      if (goBtn.disabled || state.running) {                                  // a run has started: stop cleanly
+        if (strip) strip.prune('previews paused while the PDF is being made \— they come back when it finishes');
+        state.stripPaused = true;
+        return;
+      }
       var fig = document.createElement('figure');
       var cv = document.createElement('canvas');
       var cap = document.createElement('figcaption');
@@ -495,7 +512,7 @@
     return { canvas: small, status: tag2, blank: false, bytes: null, preview: null };
   }
 
-  async function buildPrintItems(onPage, checkpoint) {
+  async function buildPrintItems(onPage, checkpoint, eta) {      // eta comes from convert(): it owns the clock
     var n = state.pages, items = new Array(n), reused = 0;
     for (var i = 0; i < n; i++) {
       if (checkpoint) {
@@ -512,7 +529,7 @@
         pFill.style.width = ((i + f) / n * 60).toFixed(1) + '%';
         pStatus.textContent = 'page ' + (i + 1) + ' of ' + n + ' · ' +
           (phase === 'writing' ? 'writing the file' : (phase === 'rendering' || phase === 'downsample') ? 'rendering the page' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
-          ' ' + Math.round(f * 100) + '%';
+          ' ' + Math.round(f * 100) + '%' + (eta ? eta((i + f) / n) : '');
       });
       pg.cleanup();
       var liveCv = r.canvas || (r.preview ? previewCanvas(r.preview) : null);
@@ -552,11 +569,25 @@
   goBtn.addEventListener('click', convert);
   async function convert() {
     if (!state.bytes || goBtn.disabled) return;
-    goBtn.disabled = true; result.hidden = true;
+    goBtn.disabled = true; result.hidden = true; state.running = true;
     pBox.hidden = false; pFill.style.width = '2%'; pStatus.textContent = 'embedding pages…';
     var prevCard = document.querySelector('.card.prev');
     if (prevCard) prevCard.classList.add('busy');
     var t0 = performance.now();
+    /* how much longer: measured from the work already done, so the wait has a
+       number instead of just a crawling bar */
+    var etaOf = function (frac) {
+      if (!(frac > 0.01)) return '';
+      var left = NotesFX.eta ? NotesFX.eta((performance.now() - t0) / frac * (1 - frac)) : '';
+      return left ? ' · ' + left : '';
+    };
+    /* how much longer: measured from the work already done, so the wait has a
+       number instead of just a crawling bar */
+    var etaOf = function (frac) {
+      if (!(frac > 0.01)) return '';
+      var left = NotesFX.eta ? NotesFX.eta((performance.now() - t0) / frac * (1 - frac)) : '';
+      return left ? ' \u00b7 ' + left : '';
+    };
     try {
       var res;
       var sig = printSig();
@@ -573,22 +604,23 @@
           pStatus.textContent = 'page ' + d + ' of ' + t + ' · ' + (cached ? 'from checkpoint' : 'binarising ' + (st || 'at ' + printDpi() + ' dpi…'));
           NotesFX.titleProgress(d * 0.6, t);
           return NotesFX.uiPaint();
-        }, ck);
+        }, ck, etaOf);
         pFill.style.width = '65%'; pStatus.textContent = 'packing sheets…';
         if (sessReady()) await NotesSession.runSave({ phase: 'pack', page: state.pages, pages: state.pages, kind: 'print' });
         res = await NotesConverter.buildFromImages(items, readOptions(), function (d, t, phase) {
-          pFill.style.width = (65 + d / t * 32).toFixed(1) + '%';
-          pStatus.textContent = phase === 'writing' ? 'writing the file…'
-            : phase === 'encoding' ? 'placing page images… ' + d + ' / ' + t
-            : 'sheet ' + d + ' of ' + t + '…';
-          NotesFX.titleProgress(65 + d / t * 32, 100);
+          var frac = d / t;
+          pFill.style.width = (65 + frac * 32).toFixed(1) + '%';
+          pStatus.textContent = (phase === 'writing' ? 'writing the file'
+            : phase === 'encoding' ? 'placing page images ' + d + ' / ' + t
+            : 'sheet ' + d + ' of ' + t) + etaOf(0.65 + frac * 0.32);
+          NotesFX.titleProgress(65 + frac * 32, 100);
           return NotesFX.uiPaint();                      // real frames, not just event-loop turns
         });
       } else {
         if (sessReady()) await NotesSession.runBegin(sig + '|vector', state.pages, 'vector');
         res = await NotesConverter.build(state.bytes, readOptions(), function (d, t) {
           pFill.style.width = (6 + d / t * 88).toFixed(1) + '%';
-          pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
+          pStatus.textContent = 'sheet ' + d + ' of ' + t + etaOf(d / t);
           if (sessReady() && (d === t || d % 4 === 0)) NotesSession.runSave({ phase: 'build', page: d, pages: t, kind: 'vector' });
           NotesFX.titleProgress(d, t);
           return NotesFX.uiPaint();                      // real frames, not just event-loop turns
@@ -614,6 +646,7 @@
          immediately, then fill in previews and the reload-proof save behind it */
       renderThumbsSoon(res.bytes, res.sheets);
       result.hidden = false;
+      resumePreviewStrip();                        // previews paused for the run? finish them now
       if (prevCard) prevCard.classList.remove('busy');
       if (window.NotesFX) NotesFX.toast(res.sheets + ' landscape sheets ready · ' + (printMode() ? 'print-saver ' + printDpi() + ' dpi' : 'pure vector'));
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -634,6 +667,7 @@
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }
+    state.running = false;
     goBtn.disabled = false;
   }
 

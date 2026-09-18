@@ -451,6 +451,27 @@ console.log('\n=== session.js: reload-proof storage ===\n');
       /goBtn\.disabled\) return;/.test(src));
   }
 
+  // the wait must be legible, and the preview strip must not fight a running job
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    check('wait: ' + f + ' shows a time-left estimate in its status line',
+      /var etaOf = function/.test(src) && /NotesFX\.eta/.test(src) && /etaOf\(/.test(src));
+    check('wait: ' + f + ' marks a running conversion and pauses the strip for it',
+      /state\.running = true/.test(src) && /state\.running\) \{[\s\S]{0,160}strip\.prune\(/.test(src));
+    check('wait: ' + f + ' finishes the paused strip once the result is on screen',
+      /resumePreviewStrip\(\);/.test(src) && /state\.stripPaused = false/.test(src));
+    check('wait: ' + f + ' clears the running flag on every exit (success and failure)',
+      (src.match(/goBtn\.disabled = false;/g) || []).length >= 1 &&
+      (src.match(/state\.running = false;/g) || []).length >= 1);
+  }
+  const fx2 = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
+  check('wait: NotesFX.eta formats seconds and minutes, and never prints NaN',
+    /NotesFX\.eta = function/.test(fx2) && /almost done/.test(fx2) && /s left/.test(fx2) && /min/.test(fx2));
+  check('wait: the live panel explains that the tiles are thumbnails',
+    /nfx-live-sub/.test(fx2) && /quick thumbnails/.test(fx2));
+  check('wait: thumbStrip can prune the slots it did not fill',
+    /prune: function/.test(fx2) && /drop the still-empty slots/.test(fx2));
+
   const fxPaint = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   check('responsive: enhance.js exposes uiPaint (a yield that really paints)',
     /NotesFX\.uiPaint = function/.test(fxPaint) && /requestAnimationFrame/.test(fxPaint) && /setTimeout\(fin, 120\)/.test(fxPaint));
