@@ -412,7 +412,7 @@
     if (!sessReady()) return;
     if (sessGo) sessGo.addEventListener('click', function () { sessGo.hidden = true; convert(); });
     var forget = $('sessForget');
-    if (forget) forget.addEventListener('click', function () { sessKill(); NotesFX.toast('This browser no longer keeps anything'); });
+    if (forget) forget.addEventListener('click', function () { sessKill(); if (window.NotesFX) NotesFX.toast('This browser no longer keeps anything'); });
     NotesSession.autoSaveOpts($('workbench'), SESS_SEL);
     var savedOpts = await NotesSession.loadOpts();
     if (savedOpts && NotesSession.apply(savedOpts, NotesSession.collect(SESS_SEL))) syncAfterRestore();
