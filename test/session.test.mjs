@@ -425,6 +425,32 @@ console.log('\n=== session.js: reload-proof storage ===\n');
   check('worker: buffers are transferred, not copied',
     /\[buf\]/.test(cli) && /\[cfg\.rgba\.buffer\]/.test(cli));
 
+  // the preview column must not be one tall empty card next to the long options
+  // column: it sticks to the viewport and lists every sheet/page underneath
+  for (const h of ['index.html', '4up.html', 'invert.html']) {
+    const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');
+    const prevCard = src.slice(src.indexOf('<div class="card prev">'));
+    check('preview column: ' + h + ' has the strip of every sheet/page inside the preview card',
+      /<div class="prev-strip" id="prevStrip"/.test(prevCard.slice(0, 1200)), h);
+  }
+  const cssPrev = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  check('preview column: the options column no longer stretches the preview card',
+    /\.cols\{[^}]*align-items:start/.test(cssPrev));
+  check('preview column: the preview card sticks below the topbar (and stops on small screens)',
+    /\.card\.prev\{position:sticky;top:calc\(var\(--topbar/.test(cssPrev) &&
+    /@media \(max-width:920px\)\{\.card\.prev\{position:static\}\}/.test(cssPrev));
+  check('preview column: the strip has its own tile grid, skeletons and note styling',
+    /\.prev-strip\{display:grid/.test(cssPrev) && /\.prev-strip \.thumb-sk/.test(cssPrev) && /\.prev-strip \.thumb-note/.test(cssPrev));
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    check('preview column: ' + f + ' fills the strip one tile at a time, cancellable',
+      /renderSheetStrip\(gen\)|renderPageStrip\(gen\)/.test(src) &&
+      /my !== stripToken \|\| gen !== state\.gen/.test(src) &&
+      /strip\.place\(fig, /.test(src));
+    check('preview column: ' + f + ' pauses the strip while a conversion is running',
+      /goBtn\.disabled\) return;/.test(src));
+  }
+
   const fxPaint = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   check('responsive: enhance.js exposes uiPaint (a yield that really paints)',
     /NotesFX\.uiPaint = function/.test(fxPaint) && /requestAnimationFrame/.test(fxPaint) && /setTimeout\(fin, 120\)/.test(fxPaint));
@@ -441,7 +467,8 @@ console.log('\n=== session.js: reload-proof storage ===\n');
   check('previews: NotesFX.thumbStrip builds placeholders + a hint line',
     /NotesFX\.thumbStrip = function/.test(fx) && /thumb-sk/.test(fx) && /thumb-note/.test(fx));
   check('previews: skeletons are styled (and animation respects reduced motion)',
-    /\.thumbs \.thumb-sk\{/.test(css2) && /@keyframes thumbshine/.test(css2) && /prefers-reduced-motion[\s\S]{0,80}\.thumb-sk/.test(css2));
+    /\.thumbs \.thumb-sk,?\.prev-strip \.thumb-sk\{|\.thumbs \.thumb-sk,\.prev-strip \.thumb-sk\{/.test(css2) &&
+    /@keyframes thumbshine/.test(css2) && /prefers-reduced-motion[\s\S]{0,120}\.thumb-sk/.test(css2));
 }
 
 console.log('\n' + (fail === 0 ? 'ALL SESSION CHECKS PASSED' : fail + ' SESSION CHECK(S) FAILED') +

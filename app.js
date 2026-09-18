@@ -291,6 +291,40 @@
       wireZoom();
       if (gen !== state.gen) return; // superseded
     }
+    renderSheetStrip(gen);                       // then every sheet, small, in the background
+  }
+
+  /* ---------- every sheet as a small tile ----------
+     The preview column used to be one tall empty card (the options column is much
+     longer), which looked broken. It now shows all sheets: tiny, in order, drawn
+     one at a time so the UI stays free, and cancelled the moment anything changes. */
+  var stripToken = 0;
+  async function renderSheetStrip(gen) {
+    var host = $('prevStrip');
+    if (!host || !state.doc) return;
+    var my = ++stripToken;
+    var total = Math.ceil(state.pages / 2);
+    var show = Math.min(total, 24);
+    var opts = readOptions(), page = NotesConverter.PAPERS[opts.paper];
+    var strip = (window.NotesFX && NotesFX.thumbStrip)
+      ? NotesFX.thumbStrip(host, show, 'drawing all ' + total + ' sheet' + (total === 1 ? '' : 's') + '\u2026')
+      : null;
+    for (var s = 0; s < show; s++) {
+      if (my !== stripToken || gen !== state.gen || goBtn.disabled) return;   // changed, or a run is busy
+      var fig = document.createElement('figure');
+      var cv = document.createElement('canvas');
+      var cap = document.createElement('figcaption');
+      var aIdx = 2 * s, bIdx = 2 * s + 1;
+      var last = Math.min(state.pages, aIdx + 2);
+      cap.textContent = 'sheet ' + (s + 1) + ' \u00b7 ' + (aIdx + 1 === last ? 'page ' + (aIdx + 1) : 'pages ' + (aIdx + 1) + '\u2013' + last);
+      fig.appendChild(cv); fig.appendChild(cap);
+      await paintSheetPreview(cv, page, opts, aIdx, bIdx, 168);
+      if (my !== stripToken || gen !== state.gen) return;
+      if (strip) strip.place(fig, s);
+      await NotesFX.uiYield();
+    }
+    if (strip) strip.note(total + ' sheet' + (total === 1 ? '' : 's') + ' in the finished PDF' +
+      (total > show ? ' \u00b7 first ' + show + ' shown' : '') + ' \u00b7 click a big preview to enlarge');
   }
 
   /* Click a preview sheet → HD view rendered by the same engine as the PDF. */

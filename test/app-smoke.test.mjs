@@ -356,6 +356,57 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   check('2-up · print-saver: reports the pure b&w style', /pure b&w/.test(r.printed), r.printed.slice(0, 90));
 }
 
+/* ---------- the preview column fills with every sheet/page ---------- */
+{
+  const { document, restore, pdfStub } = await boot('app4up.js', { pages: 2, html: '4up.html' });   // 2 source pages → 1 sheet
+  try {
+    const fileInput = document.getElementById('fileInput');
+    fileInput.files = [fixtureFile(PDF_4P, 'notes-4p.pdf', 2)];
+    fileInput.fire('change');
+    for (let i = 0; i < 300 && !document.getElementById('prevStrip').children.length; i++) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 120));                    // let the last tile land
+    const strip = document.getElementById('prevStrip');
+    const tiles = strip.children.filter((c) => c.tagName === 'FIGURE');
+    const caps = tiles.map((f) => (f.children.find((c) => c.tagName === 'FIGCAPTION') || {}).textContent || '');
+    const note = (strip.children.find((c) => /thumb-note/.test(String(c.className))) || {}).textContent || '';
+    check('preview column: every sheet is drawn as a tile (skeletons first, then swapped in)',
+      tiles.length === 1 && /^sheet 1 . pages 1/.test(caps[0]), tiles.length + ' tiles · "' + caps[0] + '"');
+    check('preview column: the note says how many sheets the PDF has',
+      /1 sheet in the finished PDF/.test(note) && /click a big preview/.test(note), note);
+    check('preview column: no skeleton is left behind once the tiles are in',
+      strip.children.filter((c) => /thumb-sk/.test(String(c.className))).length === 0);
+    void pdfStub;
+  } finally { restore(); }
+}
+{
+  const { document, restore } = await boot('app-invert.js', { pages: 2, html: 'invert.html' });
+  try {
+    const fileInput = document.getElementById('fileInput');
+    fileInput.files = [fixtureFile(PDF_2P, 'notes-2p.pdf', 2)];
+    fileInput.fire('change');
+    for (let i = 0; i < 300 && !document.getElementById('prevStrip').children.length; i++) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 120));
+    const strip = document.getElementById('prevStrip');
+    const tiles = strip.children.filter((c) => c.tagName === 'FIGURE');
+    const firstCap = tiles.length ? (tiles[0].children.find((c) => c.tagName === 'FIGCAPTION') || {}).textContent : '';
+    check('preview column: the Invert Lab lists every page of the result',
+      tiles.length === 2 && /page 1/.test(String(firstCap)), tiles.length + ' tiles · "' + firstCap + '"');
+  } finally { restore(); }
+}
+{
+  const { document, restore } = await boot('app.js', { pages: 2, html: 'index.html' });
+  try {
+    const fileInput = document.getElementById('fileInput');
+    fileInput.files = [fixtureFile(PDF_2P, 'notes-2p.pdf', 2)];
+    fileInput.fire('change');
+    for (let i = 0; i < 300 && !document.getElementById('prevStrip').children.length; i++) await new Promise((r) => setTimeout(r, 10));
+    await new Promise((r) => setTimeout(r, 120));
+    const strip = document.getElementById('prevStrip');
+    const tiles = strip.children.filter((c) => c.tagName === 'FIGURE');
+    check('preview column: the 2-up tool fills the same strip', tiles.length === 1, tiles.length + ' tiles');
+  } finally { restore(); }
+}
+
 /* ---------- raster worker: the heavy map + encode run off-thread ---------- */
 {
   const r = await runApp('2-up worker', 'app.js', 'index.html', {

@@ -19,6 +19,7 @@
   --acc:#34d399; --acc2:#10b981; --ind:#818cf8; --warn:#fbbf24; --err:#f87171;
   --line:rgba(148,163,204,.16); --line-soft:rgba(148,163,204,.10);
   --sheet:#fff;
+  --topbar:72px;                       /* height of the sticky topbar (preview column sticks below it) */
   --panel-grad:linear-gradient(180deg,#151d38,#101830);
   --rim:inset 0 1px 0 rgba(255,255,255,.055);
   /* spacing scale 4 → 96 */
@@ -314,7 +315,12 @@ h2{font-size:clamp(1.8rem,3.1vw,2.35rem);margin:0 0 var(--s3)}
 .fb-out{color:var(--acc);font-weight:800}
 .fb-odd{color:var(--warn);font-size:.8rem;border:1px dashed rgba(251,191,36,.5);border-radius:var(--pill);padding:3px 10px}
 #resetBtn{margin-left:auto}
-.cols{display:grid;grid-template-columns:340px 1fr;gap:var(--s5);align-items:stretch}
+.cols{display:grid;grid-template-columns:340px 1fr;gap:var(--s5);align-items:start}
+/* the preview column used to stretch to the full height of the (much taller)
+   options column, leaving a big empty card. It now keeps its own height and
+   follows the scroll, so the previews stay in view while options are changed. */
+.card.prev{position:sticky;top:calc(var(--topbar,72px) + 10px);align-self:start}
+@media (max-width:920px){.card.prev{position:static}}
 @media (max-width:920px){.cols{grid-template-columns:1fr}}
 .card{background:var(--panel-grad);border:1px solid var(--line);border-radius:var(--r2);padding:1.15rem 1.2rem;
   box-shadow:var(--e1),var(--rim);animation:fadeUp .5s var(--ease-out) both}
@@ -376,6 +382,12 @@ input[type=range]:disabled{opacity:.35}
 
 /* preview */
 .prev-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+/* every sheet (or page) as a small tile — fills the column instead of empty space */
+.prev-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:.6rem;margin-top:1rem}
+.prev-strip figure{margin:0}
+.prev-strip canvas{display:block;width:100%;height:auto;background:#fff;border-radius:5px;border:1px solid var(--line)}
+.prev-strip figcaption{text-align:center;font-size:.62rem;line-height:1.25;color:var(--faint);margin-top:.25rem}
+.prev-strip .thumb-note{margin:.1rem 0 0}
 .sheet-fig{margin:0;position:relative}
 .sheet-fig canvas{display:block;width:100%;height:auto;background:#fff;
   border-radius:8px;box-shadow:0 18px 40px -18px #000,0 0 0 1px rgba(255,255,255,.08);
@@ -413,10 +425,10 @@ input[type=range]:disabled{opacity:.35}
 .rs-big em{font-style:normal;font-size:.8rem;color:var(--faint);font-weight:500}
 .rs-sub{color:var(--dim);font-size:.86rem}
 .res-btns{display:flex;gap:var(--s3);flex-wrap:wrap}
-.thumbs .thumb-sk{position:relative;padding-top:141%;border-radius:6px;background:linear-gradient(100deg,#e9eef6 30%,#f7f9fd 50%,#e9eef6 70%);background-size:220% 100%;animation:thumbshine 1.5s linear infinite;border:1px solid #dbe3f1}
+.thumbs .thumb-sk,.prev-strip .thumb-sk{position:relative;padding-top:141%;border-radius:6px;background:linear-gradient(100deg,#e9eef6 30%,#f7f9fd 50%,#e9eef6 70%);background-size:220% 100%;animation:thumbshine 1.5s linear infinite;border:1px solid #dbe3f1}
 @keyframes thumbshine{from{background-position:120% 0}to{background-position:-120% 0}}
-.thumbs .thumb-note{grid-column:1/-1;margin:.1rem 0 0;color:var(--faint);font-size:.78rem}
-@media (prefers-reduced-motion:reduce){.thumbs .thumb-sk{animation:none}}
+.thumbs .thumb-note,.prev-strip .thumb-note{grid-column:1/-1;margin:.1rem 0 0;color:var(--faint);font-size:.78rem}
+@media (prefers-reduced-motion:reduce){.thumbs .thumb-sk,.prev-strip .thumb-sk{animation:none}}
 .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem;margin-top:1.1rem}
 .thumbs img{width:100%;display:block;border-radius:6px;background:#fff;
   box-shadow:0 10px 24px -12px #000,0 0 0 1px rgba(255,255,255,.06);

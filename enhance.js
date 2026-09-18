@@ -130,7 +130,7 @@
      are a nice-to-have, so they are never allowed to delay the result: a
      placeholder grid appears at once and each preview swaps itself in as it
      finishes, leaving the page responsive. */
-  NotesFX.thumbStrip = function (host, count) {
+  NotesFX.thumbStrip = function (host, count, noteText) {
     host.innerHTML = '';
     var sks = [];
     for (var i = 0; i < count; i++) {
@@ -141,7 +141,7 @@
     }
     var note = document.createElement('p');
     note.className = 'thumb-note';
-    note.textContent = 'previews loading… — the download is ready to use';
+    note.textContent = noteText || 'previews loading… — the download is ready to use';
     host.appendChild(note);
     return {
       place: function (img, i) {                      // swap a preview into its slot

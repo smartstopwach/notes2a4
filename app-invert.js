@@ -254,6 +254,37 @@
     } finally {
       f1.classList.remove('loading'); f2.classList.remove('loading');
     }
+    renderPageStrip(gen);                        // then every page of the result, small
+  }
+
+  /* ---------- every page of the result as a small tile ----------
+     Fills the preview column (it used to be one tall empty card) and shows what the
+     flip does to every page, not just the first one. Cancelled on any change. */
+  var stripToken = 0;
+  async function renderPageStrip(gen) {
+    var host = $('prevStrip');
+    if (!host || !state.doc) return;
+    var my = ++stripToken;
+    var total = state.pages;
+    var show = Math.min(total, 24);
+    var strip = (window.NotesFX && NotesFX.thumbStrip)
+      ? NotesFX.thumbStrip(host, show, 'drawing all ' + total + ' page' + (total === 1 ? '' : 's') + '\u2026')
+      : null;
+    var scratch = document.createElement('canvas');
+    for (var i = 1; i <= show; i++) {
+      if (my !== stripToken || gen !== state.gen || goBtn.disabled) return;
+      var fig = document.createElement('figure');
+      var cv = document.createElement('canvas');
+      var cap = document.createElement('figcaption');
+      cap.textContent = 'page ' + i + ' \u00b7 ' + styleName();
+      fig.appendChild(cv); fig.appendChild(cap);
+      await paintInvertPreview(scratch, cv, i, 168);      // cv = the flipped page, exactly as the PDF gets it
+      if (my !== stripToken || gen !== state.gen) return;
+      if (strip) strip.place(fig, i - 1);
+      await NotesFX.uiYield();
+    }
+    if (strip) strip.note(total + ' page' + (total === 1 ? '' : 's') + ' in the finished PDF' +
+      (total > show ? ' \u00b7 first ' + show + ' shown' : '') + ' \u00b7 click a big preview to enlarge');
   }
 
   /* Click a preview → HD view: original or flipped, same engine as the real PDF. */
