@@ -333,9 +333,16 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
   const t0 = performance.now();
   const statusSeen = [];
   globalThis.__statusSeen = statusSeen;
+  /* three dials must agree and none may lie: the sentence (status), the chip
+     (estimate) and the tab title (the only one a hidden tab can show) */
+  const etaSeen = [], titleSeen = [];
   const watchStatus = setInterval(() => {
     const t = document.getElementById('pstatus').textContent;
     if (statusSeen[statusSeen.length - 1] !== t) statusSeen.push(t);
+    const e = document.getElementById('pEta').textContent;
+    if (etaSeen[etaSeen.length - 1] !== e) etaSeen.push(e);
+    const ti = document.title;
+    if (titleSeen[titleSeen.length - 1] !== ti) titleSeen.push(ti);
   }, 3);
   go.fire('click');
   let revealMs = null;
@@ -356,7 +363,8 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub) {
   return {
     ok, status, printed, document, revealMs, placeholderAtReveal, worstGap, beats: gaps.length, runMs,
     dl: dl.download, href: dl.href, calls: (pdfStub && pdfStub.calls) || [],
-    statusSeen: statusSeen
+    statusSeen: statusSeen, etaSeen: etaSeen, titleSeen: titleSeen,
+    eta: document.getElementById('pEta').textContent
   };
 }
 
@@ -505,10 +513,19 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
     setOptions: (el) => { el('optPrint').checked = true; el('dpi220').checked = true; }
   });
   const seen = (r.statusSeen || []).join(' | ');
-  check('wait: it says it is still working out the estimate, then gives one',
-    /estimating time left/.test(seen) && /s left|min|almost done/.test(seen), seen.slice(0, 190) || '(nothing seen)');
-  check('wait: the estimate never contradicts the phase text',
-    !/undefined|NaN/.test(seen), seen.slice(0, 90));
+  const eta = (r.etaSeen || []).join(' | ');
+  const titles = (r.titleSeen || []).join(' | ');
+  check('wait: the chip says it is still working out the estimate, then gives one',
+    /estimating time left/.test(eta) && /s left|min|almost done/.test(eta), eta.slice(0, 190) || '(nothing seen)');
+  check('wait: neither the phase text nor the chip ever says undefined or NaN',
+    !/undefined|NaN/.test(seen) && !/undefined|NaN/.test(eta), seen.slice(0, 90));
+  check('wait: the estimate lives in its own chip, not appended to the sentence',
+    !/estimating time left|s left/.test(seen) && r.eta === '', seen.slice(0, 90) + ' ‖ chip: "' + r.eta + '"');
+  check('wait: the chip is empty once the run is done (nothing left to wait for)',
+    r.status === 'done' && r.eta === '', 'status "' + r.status + '", chip "' + r.eta + '"');
+  check('wait: the tab title shows the same numbers (percentage, and the estimate)',
+    /\u23f3 \d+%/.test(titles) && !/NaN/.test(titles) && /~\d+ s|~1 min|almost done/.test(titles),
+    titles.slice(-160) || '(no title seen)');
 }
 
 /* ---------- previews pause during a run, then finish themselves ---------- */

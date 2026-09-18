@@ -3,7 +3,7 @@
   'use strict';
 
   // Build stamp: confirm in DevTools console that no stale cached app.js is running.
-  var BUILD = 8;
+  var BUILD = 9;
   console.info('[Notes2A4] app.js build', BUILD, '· 2-up A4 packer (demo layout)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetLayout) {
     document.addEventListener('DOMContentLoaded', function () {
@@ -30,7 +30,8 @@
   /* ---------- element refs ---------- */
   var dz = $('dropzone'), fileInput = $('fileInput'), fileErr = $('fileError');
   var wb = $('workbench'), result = $('result'), thumbs = $('thumbs');
-  var goBtn = $('goBtn'), pBox = $('progressBox'), pFill = $('pfill'), pStatus = $('pstatus');
+  var goBtn = $('goBtn'), pBox = $('progressBox'), pFill = $('pfill'), pStatus = $('pstatus'),
+      pEta = $('pEta');
   var opt = {
     paper: $('optPaper'), margin: $('optMargin'),
     gapAuto: $('gapAuto'), gapFixed: $('gapFixed'), gap: $('optGap'),
@@ -618,21 +619,33 @@
        so every phase reports the same way and they can never disagree. The
        estimate is smoothed (one slow page must not make it jump) and refreshed
        once a second, so it stays honest during a long phase as well. */
-    var etaSmooth = null, lastStep = null, ticker = null;
-    var etaOf = function (frac) {
+    var etaSmooth = null, etaReady = false, lastStep = null, ticker = null;
+    /* a bare estimate string, not a fragment of the sentence: it is shown in its
+       own chip next to the bar (legible at a glance) and in the tab title, which
+       is the only progress a background tab can show */
+    var etaText = function (frac) {
+      etaReady = false;                                  // until a real estimate exists
       if (frac >= 0.999) return '';                      // finished: no estimate needed
       var elapsed = performance.now() - t0;
-      if (!(frac > 0.005) || elapsed < 1500) return ' · estimating time left…';
+      if (!(frac > 0.005) || elapsed < 1500) return 'estimating time left…';
       var left = (elapsed / frac) * (1 - frac);
       etaSmooth = (etaSmooth === null) ? left : (etaSmooth * 0.7 + left * 0.3);
       var txt = NotesFX.eta ? NotesFX.eta(etaSmooth) : '';
-      return txt ? ' · ' + txt : '';
+      etaReady = !!txt;
+      return txt;
+    };
+    var setEta = function (eta) {
+      if (!pEta) return;
+      pEta.textContent = eta || '';
+      pEta.className = 'p-eta' + (eta && !etaReady ? ' est' : '');
     };
     var setStep = function (frac, text, label) {
       lastStep = { frac: frac, text: text, label: label };
       pFill.style.width = (frac * 100).toFixed(1) + '%';
-      pStatus.textContent = text + etaOf(frac);
-      NotesFX.titleProgress(frac, 1, label);
+      pStatus.textContent = text;                        // what is happening
+      var eta = etaText(frac);
+      setEta(eta);                                       // how long is left
+      NotesFX.titleProgress(frac, 1, label, etaReady ? eta : '');
     };
     var stopTicker = function () { if (ticker) { clearInterval(ticker); ticker = null; } };
     /* once a second: refresh the estimate (and the tab title) — this is what makes
@@ -719,6 +732,7 @@
     } catch (err) {
       stopTicker();
       pStatus.textContent = 'failed: ' + (err && err.message || err);
+      setEta('');
       NotesFX.titleDone(false); NotesFX.liveDone();
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);

@@ -402,15 +402,23 @@ input[type=range]:disabled{opacity:.35}
 @media (max-width:560px){.prev-row{grid-template-columns:1fr}}
 /* run row + progress */
 .run-row{display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap;margin-top:var(--s5)}
-.progress{flex:1;min-width:220px;display:flex;align-items:center;gap:.7rem}
-.pbar{flex:1;height:8px;background:var(--bg2);border:1px solid var(--line);border-radius:var(--pill);overflow:hidden}
+.progress{flex:1;min-width:220px;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+.pbar{flex:1 1 200px;height:8px;background:var(--bg2);border:1px solid var(--line);border-radius:var(--pill);overflow:hidden}
 .pfill{position:relative;height:100%;width:0;border-radius:inherit;overflow:hidden;
   background:linear-gradient(90deg,var(--acc2),var(--acc));transition:width .3s var(--ease-out)}
 .pfill::after{content:"";position:absolute;inset:0;
   background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%);
   transform:translateX(-100%);animation:sheen 1.25s linear infinite}
 @keyframes sheen{to{transform:translateX(100%)}}
-#pstatus{font-size:.8rem;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+#pstatus{font-size:.8rem;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;
+  flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* the estimate lives in its own chip: legible at a glance, and duplicated
+   in the tab title so a background tab still shows time left */
+.p-eta{font-size:.78rem;font-weight:700;color:var(--acc);background:rgba(52,211,153,.10);
+  border:1px solid rgba(52,211,153,.30);border-radius:var(--pill);padding:.12rem .5rem;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.p-eta:empty{display:none}
+.p-eta.est{color:var(--dim);background:var(--bg2);border-color:var(--line);font-weight:600}
 
 /* ---------- 10 · result ---------- */
 .result{position:relative;overflow:hidden;margin-top:var(--s6);

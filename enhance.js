@@ -203,16 +203,20 @@
   /* ---------- tab-title progress (visible from other tabs) ---------- */
   var _title0 = null;
   var _titleAt = 0;
-  NotesFX.titleProgress = function (done, total, label) {
+  NotesFX.titleProgress = function (done, total, label, eta) {
     /* The tab title is the ONLY progress a background tab can show, so it keeps
        updating while hidden — a string assignment costs nothing next to a frame.
-       Throttled to 4/s: alive enough to trust, cheap enough to ignore. */
+       Throttled to 4/s: alive enough to trust, cheap enough to ignore.
+       A background tab shows the percentage AND the estimate, so "7% and stuck"
+       can never happen again: the number moves, and it says how long that takes. */
     var now = Date.now();
     if (now - _titleAt < 250) return;
     _titleAt = now;
     if (_title0 === null) _title0 = document.title;
     var pct = total > 0 ? Math.round(done / total * 100) : 0;
-    document.title = '\u23f3 ' + pct + '%' + (label ? ' \u00b7 ' + label : '') + ' \u00b7 ' + _title0;
+    var short = eta ? String(eta).replace(/\s*left$/, '') : '';   // "~40 s left" → "~40 s"
+    document.title = '\u23f3 ' + pct + '%' + (short ? ' \u00b7 ' + short : '') +
+      (label ? ' \u00b7 ' + label : '') + ' \u00b7 ' + _title0;
   };
   NotesFX.titleDone = function (ok) {
     if (_title0 === null) return;

@@ -454,8 +454,9 @@ console.log('\n=== session.js: reload-proof storage ===\n');
   // the wait must be legible, and the preview strip must not fight a running job
   for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
     const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
-    check('wait: ' + f + ' shows a time-left estimate in its status line',
-      /var etaOf = function/.test(src) && /NotesFX\.eta/.test(src) && /etaOf\(/.test(src));
+    check('wait: ' + f + ' shows a time-left estimate, in its own chip',
+      /var etaText = function/.test(src) && /NotesFX\.eta/.test(src) && /etaText\(/.test(src) &&
+      /setEta\(eta\);/.test(src) && !/etaOf/.test(src));
     check('wait: ' + f + ' marks a running conversion and pauses the strip for it',
       /state\.running = true/.test(src) && /state\.running\) \{[\s\S]{0,160}strip\.prune\(/.test(src));
     check('wait: ' + f + ' finishes the paused strip once the result is on screen',
@@ -488,15 +489,18 @@ console.log('\n=== session.js: reload-proof storage ===\n');
   // updating while hidden (it used to bail out, which looked like a frozen run)
   const fxT = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
   check('wait: the tab title is not gated on visibility (it is the cross-tab dial)',
-    /NotesFX\.titleProgress = function \(done, total, label\)/.test(fxT) &&
+    /NotesFX\.titleProgress = function \(done, total, label, eta\)/.test(fxT) &&
     !/titleProgress = function[\s\S]{0,220}if \(document\.hidden\) return;/.test(fxT) &&
     /_titleAt/.test(fxT) && /if \(now - _titleAt < 250\) return;/.test(fxT));
   check('wait: the title never prints NaN when a total is missing',
     /total > 0 \? Math\.round\(done \/ total \* 100\) : 0/.test(fxT));
+  check('wait: the tab title carries the estimate too, so a hidden tab sees both numbers',
+    /replace\(\/\\s\*left\$\/, ''\)/.test(fxT) && /short \? ' \\u00b7 ' \+ short : ''/.test(fxT));
   for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
     const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
-    check('wait: ' + f + ' reports every phase through one setStep (bar + status + title agree)',
-      (src.match(/setStep\(/g) || []).length >= 4 && (src.match(/etaOf\(/g) || []).length === 1);
+    check('wait: ' + f + ' reports every phase through one setStep (bar + status + chip + title agree)',
+      (src.match(/setStep\(/g) || []).length >= 4 && (src.match(/etaText\(/g) || []).length === 1 &&
+      /pStatus\.textContent = text;/.test(src));
     check('wait: ' + f + ' refreshes the estimate once a second',
       /ticker = setInterval\(function \(\) \{[\s\S]{0,160}setStep\(lastStep\.frac/.test(src));
     const exits = (src.match(/goBtn\.disabled = false;/g) || []).length;
@@ -504,6 +508,23 @@ console.log('\n=== session.js: reload-proof storage ===\n');
       (src.match(/stopTicker\(\);/g) || []).length >= exits - 1);
     check('wait: ' + f + ' never appends an estimate to "done"',
       /if \(frac >= 0\.999\) return '';/.test(src));
+  }
+  // the estimate must be readable at a glance, not buried in a long sentence:
+  // its own chip next to the bar, styled, and hidden while it has nothing to say
+  {
+    const chips = ['index.html', '4up.html', 'invert.html'].every((h) =>
+      /<span class="p-eta" id="pEta"><\/span>/.test(readFileSync(new URL('../' + h, import.meta.url), 'utf8')));
+    const cssEta = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    check('wait: every page has a dedicated estimate chip next to the progress bar',
+      chips && /\.p-eta\{/.test(cssEta) && /\.p-eta:empty\{display:none\}/.test(cssEta));
+    check('wait: the chip is dimmed while it still says "estimating"',
+      /\.p-eta\.est\{/.test(cssEta) && /'p-eta' \+ \(eta && !etaReady \? ' est' : ''\)/.test(
+        readFileSync(new URL('../app4up.js', import.meta.url), 'utf8')));
+  }
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    check('wait: ' + f + ' never leaves a stale estimate behind on failure',
+      (src.match(/setEta\(''\);/g) || []).length >= (src.match(/failed: /g) || []).length);
   }
   const wrkSrc = readFileSync(new URL('../worker-raster.js', import.meta.url), 'utf8');
   check('wait: worker progress reports the page height, not the message (the NaN bug)',
