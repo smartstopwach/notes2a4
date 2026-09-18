@@ -105,6 +105,36 @@
       if (r) r();
     };
   }
+  /* ---- result previews ----------------------------------------------------
+     Rendering previews of a finished PDF can take tens of seconds (in
+     print-saver mode every sheet holds four full-resolution images). Previews
+     are a nice-to-have, so they are never allowed to delay the result: a
+     placeholder grid appears at once and each preview swaps itself in as it
+     finishes, leaving the page responsive. */
+  NotesFX.thumbStrip = function (host, count) {
+    host.innerHTML = '';
+    var sks = [];
+    for (var i = 0; i < count; i++) {
+      var sk = document.createElement('div');
+      sk.className = 'thumb-sk';
+      host.appendChild(sk);
+      sks.push(sk);
+    }
+    var note = document.createElement('p');
+    note.className = 'thumb-note';
+    note.textContent = 'previews loading… — the download is ready to use';
+    host.appendChild(note);
+    return {
+      place: function (img, i) {                      // swap a preview into its slot
+        var sk = sks[i];
+        if (sk && sk.parentElement === host) host.insertBefore(img, sk);
+        else host.appendChild(img);
+        if (sk && sk.parentElement === host) host.removeChild(sk);
+      },
+      note: function (text) { note.textContent = text; }
+    };
+  };
+
   NotesFX.uiYield = function () {
     if (document.hidden || !_yieldChan) return Promise.resolve();
     return new Promise(function (resolve) {

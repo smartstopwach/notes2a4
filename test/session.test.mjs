@@ -359,6 +359,35 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     check('markup: ' + h + ' keeps all ' + ids.length + ' settings inside #workbench (they get restored)',
       ids.length > 8 && outside.length === 0, 'outside=' + outside.join(','));
   }
+
+  // pipeline order: the result card (and its Download button) must be revealed as
+  // soon as the bytes exist — previews and the reload-proof save come after it.
+  // Rendering previews of a 100 MB print-saver output takes tens of seconds, and
+  // users were left staring at "done" until it finished. See test/app-smoke.test.mjs
+  // for the behavioural version of this check.
+  for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
+    const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+    const iReveal = src.indexOf('result.hidden = false;');
+    const iSave = src.indexOf('NotesSession.saveResult(');
+    const iThumbs = src.indexOf('renderThumbsSoon(');
+    check('order: ' + f + ' starts previews only after the download link is set',
+      iThumbs > 0, 'renderThumbsSoon at ' + iThumbs);
+    check('order: ' + f + ' reveals the result before the session save',
+      iReveal > 0 && iSave > 0 && iReveal < iSave, 'reveal ' + iReveal + ' < save ' + iSave);
+    check('order: ' + f + ' never awaits previews on the critical path',
+      !/await makeThumbs\((res\.bytes|saved|vres\.bytes)/.test(src) &&
+      !/await makeThumbs\(/.test(src.slice(iThumbs)) );
+    check('order: ' + f + ' the save is queued, not awaited',
+      /\.then\(function \(\) \{[\s\S]{0,220}NotesSession\.runClear\(\)/.test(src) || f === 'app-invert.js');
+  }
+
+  // previews leave a placeholder grid behind while they render
+  const fx = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
+  const css2 = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+  check('previews: NotesFX.thumbStrip builds placeholders + a hint line',
+    /NotesFX\.thumbStrip = function/.test(fx) && /thumb-sk/.test(fx) && /thumb-note/.test(fx));
+  check('previews: skeletons are styled (and animation respects reduced motion)',
+    /\.thumbs \.thumb-sk\{/.test(css2) && /@keyframes thumbshine/.test(css2) && /prefers-reduced-motion[\s\S]{0,80}\.thumb-sk/.test(css2));
 }
 
 console.log('\n' + (fail === 0 ? 'ALL SESSION CHECKS PASSED' : fail + ' SESSION CHECK(S) FAILED') +

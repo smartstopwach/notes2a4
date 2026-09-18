@@ -3,7 +3,7 @@
   'use strict';
 
   // Build stamp: confirm in DevTools console that no stale cached app.js is running.
-  var BUILD = 7;
+  var BUILD = 8;
   console.info('[Notes2A4] app.js build', BUILD, '· 2-up A4 packer (demo layout)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetLayout) {
     document.addEventListener('DOMContentLoaded', function () {
@@ -538,20 +538,24 @@
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative'})[printStyle()] : '');
 
-      await makeThumbs(res.bytes, res.sheets);
-      if (sessReady()) {                                // keep the finished PDF: reload → instant result
-        NotesSession.saveResult({
-          bytes: res.bytes, name: dl.download, kind: printMode() ? 'print' : 'vector',
-          info: { in: res.sourcePages, out: res.sheets, meta: $('rsMeta').textContent }
-        });
-        NotesSession.runClear();                        // checkpoints are no longer needed
-        sessNote('Saved · ' + res.sheets + ' sheet' + (res.sheets === 1 ? '' : 's') + ' ready — reloading keeps this result and the download link.');
-      }
+      /* the bytes are ready, so the result card — and the Download button —
+         appear NOW; previews and the reload-proof save happen behind it */
+      renderThumbsSoon(res.bytes, res.sheets);
       result.hidden = false;
       if (prevCard) prevCard.classList.remove('busy');
       if (window.NotesFX) NotesFX.toast(res.sheets + ' sheets ready · ' + (printMode() ? 'print-saver ' + printDpi() + ' dpi' : 'pure vector'));
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       setTimeout(function () { pBox.hidden = true; }, 900);
+      if (sessReady()) {                                // keep the finished PDF: reload → instant result
+        var meta2 = $('rsMeta').textContent;
+        NotesSession.saveResult({
+          bytes: res.bytes, name: dl.download, kind: printMode() ? 'print' : 'vector',
+          info: { in: res.sourcePages, out: res.sheets, meta: meta2 }
+        }).then(function () {                           // queued in order, so runClear still runs after
+          NotesSession.runClear();                      // checkpoints are no longer needed
+          sessNote('Saved · ' + res.sheets + ' sheet' + (res.sheets === 1 ? '' : 's') + ' ready — reloading keeps this result and the download link.');
+        });
+      }
     } catch (err) {
       pStatus.textContent = 'failed: ' + (err && err.message || err);
       NotesFX.titleDone(false); NotesFX.liveDone();
@@ -561,10 +565,23 @@
     goBtn.disabled = false;
   }
 
-  async function makeThumbs(bytes, sheets) {
-    thumbs.innerHTML = '';
+  var thumbToken = 0;
+  /* Previews must never hold back the result: placeholders appear instantly and
+     the real sheets swap themselves in one by one, in the background. */
+  function renderThumbsSoon(bytes, sheets) {
+    var mine = ++thumbToken;
+    var strip = (window.NotesFX && NotesFX.thumbStrip) ? NotesFX.thumbStrip(thumbs, Math.min(sheets, 6)) : null;
+    setTimeout(function () {
+      if (mine !== thumbToken) return;
+      makeThumbs(bytes, sheets, mine, strip).catch(function (e) { console.warn('previews:', e); });
+    }, 30);
+  }
+  async function makeThumbs(bytes, sheets, token, strip) {
+    var stale = function () { return token !== undefined && token !== thumbToken; };
+    if (strip === undefined) thumbs.innerHTML = '';                 // restored-result path
     if (state.out.doc) { try { state.out.doc.destroy(); } catch (e) {} }
     var doc = state.out.doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes).slice(0) }).promise;
+    if (stale()) return;
     var show = Math.min(sheets, 6);
     for (var i = 1; i <= show; i++) {
       var pg = await doc.getPage(i);
@@ -573,11 +590,14 @@
       var c = document.createElement('canvas');
       c.width = Math.round(vp.width); c.height = Math.round(vp.height);
       await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      if (stale()) { pg.cleanup(); return; }
       var img = document.createElement('img');
       img.src = c.toDataURL('image/png');
       img.alt = 'Packed sheet ' + i + ' preview';
-      thumbs.appendChild(img);
+      if (strip) strip.place(img, i - 1);
+      else thumbs.appendChild(img);
       pg.cleanup();
+      await NotesFX.uiYield();                       // stay responsive while previews render
     }
     if (sheets > show) {
       var more = document.createElement('p');

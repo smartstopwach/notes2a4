@@ -502,20 +502,24 @@
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative'})[printStyle()] : '') +
         (sepLineVal() === 'off' ? '' : ' · dotted middle separator');
-      await makeThumbs(res.bytes, res.sheets);
-      if (sessReady()) {
-        NotesSession.saveResult({
-          bytes: res.bytes, name: $('dlBtn').download, kind: printMode() ? 'print' : 'vector',
-          info: { in: res.sourcePages, out: res.sheets, meta: $('rsMeta').textContent }
-        });
-        NotesSession.runClear();
-        sessNote('Saved · ' + res.sheets + ' sheet' + (res.sheets === 1 ? '' : 's') + ' ready — reloading keeps this result and the download link.');
-      }
+      /* the sheets are ready — show the result card and the Download button
+         immediately, then fill in previews and the reload-proof save behind it */
+      renderThumbsSoon(res.bytes, res.sheets);
       result.hidden = false;
       if (prevCard) prevCard.classList.remove('busy');
       if (window.NotesFX) NotesFX.toast(res.sheets + ' landscape sheets ready · ' + (printMode() ? 'print-saver ' + printDpi() + ' dpi' : 'pure vector'));
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       setTimeout(function () { pBox.hidden = true; }, 900);
+      if (sessReady()) {
+        var meta2 = $('rsMeta').textContent;
+        NotesSession.saveResult({
+          bytes: res.bytes, name: $('dlBtn').download, kind: printMode() ? 'print' : 'vector',
+          info: { in: res.sourcePages, out: res.sheets, meta: meta2 }
+        }).then(function () {                           // queued in order, so runClear still runs after
+          NotesSession.runClear();
+          sessNote('Saved · ' + res.sheets + ' sheet' + (res.sheets === 1 ? '' : 's') + ' ready — reloading keeps this result and the download link.');
+        });
+      }
     } catch (err) {
       pStatus.textContent = 'failed: ' + (err && err.message || err);
       NotesFX.titleDone(false); NotesFX.liveDone();
@@ -525,10 +529,23 @@
     goBtn.disabled = false;
   }
 
-  async function makeThumbs(bytes, sheets) {
-    thumbs.innerHTML = '';
+  var thumbToken = 0;
+  /* Previews must never hold back the result: placeholders appear instantly and
+     the real sheets swap themselves in one by one, in the background. */
+  function renderThumbsSoon(bytes, sheets) {
+    var mine = ++thumbToken;
+    var strip = (window.NotesFX && NotesFX.thumbStrip) ? NotesFX.thumbStrip(thumbs, Math.min(sheets, 6)) : null;
+    setTimeout(function () {
+      if (mine !== thumbToken) return;
+      makeThumbs(bytes, sheets, mine, strip).catch(function (e) { console.warn('previews:', e); });
+    }, 30);
+  }
+  async function makeThumbs(bytes, sheets, token, strip) {
+    var stale = function () { return token !== undefined && token !== thumbToken; };
+    if (strip === undefined) thumbs.innerHTML = '';                 // restored-result path
     if (state.out.doc) { try { state.out.doc.destroy(); } catch (e) {} }
     var doc = state.out.doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes).slice(0) }).promise;
+    if (stale()) return;
     var show = Math.min(sheets, 6);
     for (var i = 1; i <= show; i++) {
       var pg = await doc.getPage(i);
@@ -536,11 +553,14 @@
       var c = document.createElement('canvas');
       c.width = Math.round(vp.width); c.height = Math.round(vp.height);
       await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      if (stale()) { try { pg.cleanup(); } catch (e) {} return; }
       var img = document.createElement('img');
       img.src = c.toDataURL('image/png');
       img.alt = 'Packed 4-up sheet ' + i + ' preview';
-      thumbs.appendChild(img);
+      if (strip) strip.place(img, i - 1);
+      else thumbs.appendChild(img);
       pg.cleanup();
+      await NotesFX.uiYield();                       // stay responsive while previews render
     }
     if (sheets > show) {
       var more = document.createElement('p');

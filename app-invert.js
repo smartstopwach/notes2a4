@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 5;
+  var BUILD = 6;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -351,16 +351,18 @@
           ' inverted 1:1 · true negative (exact vector, 255 − c per channel) · text stays sharp and selectable · sizes unchanged · ' +
           fmtMB(state.bytes.length) + ' → ' + fmtMB(vres.bytes.length) + ' · ' +
           ((performance.now() - t0) / 1000).toFixed(2) + 's · 100% on-device';
-        await makeThumbs(vres.bytes, n);
-        result.hidden = false;
+        renderThumbsSoon(vres.bytes, n);               // previews are background work
+        result.hidden = false;                          // …so the Download button shows NOW
         if (prevCard) prevCard.classList.remove('busy');
-        if (sessReady()) {
-          NotesSession.saveResult({ bytes: vres.bytes, name: dlV.download, kind: 'vector-negative', info: { in: n, out: n, meta: $('rsMeta').textContent } });
-          sessNote('Saved · ' + n + ' page' + (n === 1 ? '' : 's') + ' flipped (exact vector) — reloading keeps this result.');
-        }
         if (window.NotesFX) NotesFX.toast(n + ' pages flipped · exact 255 − c · vector kept');
         result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         setTimeout(function () { pBox.hidden = true; }, 900);
+        if (sessReady()) {
+          var metaV = $('rsMeta').textContent;
+          NotesSession.saveResult({ bytes: vres.bytes, name: dlV.download, kind: 'vector-negative', info: { in: n, out: n, meta: metaV } }).then(function () {
+            sessNote('Saved · ' + n + ' page' + (n === 1 ? '' : 's') + ' flipped (exact vector) — reloading keeps this result.');
+          });
+        }
       } catch (err) {
         pStatus.textContent = 'failed: ' + (err && err.message || err);
         if (prevCard) prevCard.classList.remove('busy');
@@ -429,20 +431,23 @@
         (skipped ? ' · ' + skipped + ' blank page' + (skipped === 1 ? '' : 's') + ' kept white' : '') + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device';
 
-      await makeThumbs(saved, n);
-      if (sessReady()) {
-        NotesSession.saveResult({
-          bytes: saved, name: dl.download, kind: inkMode() ? 'ink' : 'negative',
-          info: { in: n, out: n, meta: $('rsMeta').textContent }
-        });
-        NotesSession.runClear();
-        sessNote('Saved · ' + n + ' page' + (n === 1 ? '' : 's') + ' flipped — reloading keeps this result and the download link.');
-      }
+      /* show the result immediately; previews + the reload-proof save follow */
+      renderThumbsSoon(saved, n);
       result.hidden = false;
       if (prevCard) prevCard.classList.remove('busy');
       if (window.NotesFX) NotesFX.toast(n + ' pages flipped · sizes identical · still on-device');
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       setTimeout(function () { pBox.hidden = true; }, 900);
+      if (sessReady()) {
+        var metaR = $('rsMeta').textContent;
+        NotesSession.saveResult({
+          bytes: saved, name: dl.download, kind: inkMode() ? 'ink' : 'negative',
+          info: { in: n, out: n, meta: metaR }
+        }).then(function () {                           // queued in order, so runClear still runs after
+          NotesSession.runClear();
+          sessNote('Saved · ' + n + ' page' + (n === 1 ? '' : 's') + ' flipped — reloading keeps this result and the download link.');
+        });
+      }
     } catch (err) {
       pStatus.textContent = 'failed: ' + (err && err.message || err);
       NotesFX.titleDone(false); NotesFX.liveDone();
@@ -453,10 +458,23 @@
   }
 
   /* ---------- thumbs of the OUTPUT pdf ---------- */
-  async function makeThumbs(bytes, n) {
-    thumbs.innerHTML = '';
+  var thumbToken = 0;
+  /* Previews must never hold back the result: placeholders appear instantly and
+     the real pages swap themselves in one by one, in the background. */
+  function renderThumbsSoon(bytes, n) {
+    var mine = ++thumbToken;
+    var strip = (window.NotesFX && NotesFX.thumbStrip) ? NotesFX.thumbStrip(thumbs, Math.min(n, 6)) : null;
+    setTimeout(function () {
+      if (mine !== thumbToken) return;
+      makeThumbs(bytes, n, mine, strip).catch(function (e) { console.warn('previews:', e); });
+    }, 30);
+  }
+  async function makeThumbs(bytes, n, token, strip) {
+    var stale = function () { return token !== undefined && token !== thumbToken; };
+    if (strip === undefined) thumbs.innerHTML = '';                 // restored-result path
     if (state.out.doc) { try { state.out.doc.destroy(); } catch (e) {} }
     var doc = state.out.doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes).slice(0) }).promise;
+    if (stale()) return;
     var show = Math.min(n, 6);
     for (var i = 1; i <= show; i++) {
       var pg = await doc.getPage(i);
@@ -468,8 +486,10 @@
       var img = document.createElement('img');
       img.src = c.toDataURL('image/png');
       img.alt = 'Inverted page ' + i + ' preview';
-      thumbs.appendChild(img);
+      if (strip) strip.place(img, i - 1);
+      else thumbs.appendChild(img);
       pg.cleanup();
+      await NotesFX.uiYield();                       // stay responsive while previews render
     }
     if (n > show) {
       var more = document.createElement('p');

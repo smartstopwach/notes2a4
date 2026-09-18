@@ -413,6 +413,10 @@ input[type=range]:disabled{opacity:.35}
 .rs-big em{font-style:normal;font-size:.8rem;color:var(--faint);font-weight:500}
 .rs-sub{color:var(--dim);font-size:.86rem}
 .res-btns{display:flex;gap:var(--s3);flex-wrap:wrap}
+.thumbs .thumb-sk{position:relative;padding-top:141%;border-radius:6px;background:linear-gradient(100deg,#e9eef6 30%,#f7f9fd 50%,#e9eef6 70%);background-size:220% 100%;animation:thumbshine 1.5s linear infinite;border:1px solid #dbe3f1}
+@keyframes thumbshine{from{background-position:120% 0}to{background-position:-120% 0}}
+.thumbs .thumb-note{grid-column:1/-1;margin:.1rem 0 0;color:var(--faint);font-size:.78rem}
+@media (prefers-reduced-motion:reduce){.thumbs .thumb-sk{animation:none}}
 .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem;margin-top:1.1rem}
 .thumbs img{width:100%;display:block;border-radius:6px;background:#fff;
   box-shadow:0 10px 24px -12px #000,0 0 0 1px rgba(255,255,255,.06);

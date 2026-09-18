@@ -99,9 +99,16 @@ function makeEl(id, tag = 'div') {
     removeEventListener() {},
     dispatchEvent(ev) { (this._listeners[ev && ev.type] || []).forEach((f) => f(ev)); return true; },
     fire(ev, extra) { (this._listeners[ev] || []).forEach((f) => f(Object.assign({ type: ev, target: this, preventDefault() {}, stopPropagation() {} }, extra || {}))); },
-    appendChild(c) { this.children.push(c); c.parentElement = c.parentElement || this; return c; },
-    removeChild(c) { this.children = this.children.filter((x) => x !== c); return c; },
-    remove() {}, insertBefore(c) { this.children.push(c); return c; }, replaceChildren() {},
+    appendChild(c) { this.children.push(c); c.parentElement = this; return c; },
+    removeChild(c) { this.children = this.children.filter((x) => x !== c); if (c.parentElement === this) c.parentElement = null; return c; },
+    insertBefore(c, ref) {
+      const at = this.children.indexOf(ref);
+      if (at < 0) this.children.push(c); else this.children.splice(at, 0, c);
+      c.parentElement = this;
+      return c;
+    },
+    remove() { if (this.parentElement) this.parentElement.removeChild(this); },
+    replaceChildren() {},
     setAttribute(k, v) { if (k === 'id') this.id = v; }, getAttribute: () => null, removeAttribute() {},
     querySelector(sel) { return makeEl('q', String(sel).replace(/[^a-z]/gi, '') || 'div'); },
     querySelectorAll: () => [],
@@ -153,10 +160,10 @@ function makeDocument() {
 }
 
 /* -------------------------------------------------------------- pdf.js stub --- */
-function makePdfStub() {
+function makePdfStub(delay = 0) {
   const page = () => ({
     getViewport: ({ scale }) => ({ width: 595.28 * scale, height: 841.89 * scale, scale }),
-    render: () => ({ promise: Promise.resolve() }),
+    render: () => ({ promise: new Promise((r) => setTimeout(r, delay)) }),
     cleanup() {},
     getOperatorList: async () => ({ fnArray: [], argsArray: [] })
   });
@@ -177,7 +184,7 @@ function makePdfStub() {
 }
 
 /* ------------------------------------------------------------------ harness --- */
-async function boot(appFile, { pages = 2, html = '' } = {}) {
+async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0 } = {}) {
   const document = makeDocument();
   /* Same realm as Node itself: pdf-lib does `instanceof Uint8Array` style checks,
      so a separate vm context would reject the app's own buffers. Only the browser
@@ -198,7 +205,7 @@ async function boot(appFile, { pages = 2, html = '' } = {}) {
   set('innerHeight', 900);
   set('location', { href: 'http://localhost:8080/' + html });
   set('navigator', { userAgent: 'node', storage: undefined });
-  set('pdfjsLib', makePdfStub());
+  set('pdfjsLib', makePdfStub(thumbsDelay));
   set('PDFLib', require('pdf-lib'));
   set('matchMedia', () => ({ matches: false, addEventListener() {} }));
   set('scrollTo', () => {});
@@ -237,9 +244,9 @@ function fixtureFile(bytes, name, pages) {
 }
 
 async function runApp(label, appFile, html, {
-  bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}
+  bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0
 } = {}) {
-  const { document, restore } = await boot(appFile, { pages, html });
+  const { document, restore } = await boot(appFile, { pages, html, thumbsDelay });
   try { return await finishRun(document, bytes, name, pages, setOptions); }
   finally { restore(); }
 }
@@ -257,11 +264,21 @@ async function finishRun(document, bytes, name, pages, setOptions) {
   fileInput.fire('change');
   await new Promise((r) => setTimeout(r, 60));                       // let afterLoad + preview run
   const go = document.getElementById('goBtn');
+  const result = document.getElementById('result');
+  const dl = document.getElementById('dlBtn');
+  const t0 = performance.now();
   go.fire('click');
+  let revealMs = null;
+  for (let i = 0; i < 4000; i++) {
+    if (result.hidden === false && dl.href) { revealMs = performance.now() - t0; break; }
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  const stripEl = document.getElementById('thumbs');
+  const placeholderAtReveal = stripEl.children.some((c) => /thumb-sk/.test(String(c.className || '')));
   for (let i = 0; i < 400 && go.disabled; i++) await new Promise((r) => setTimeout(r, 10));
   const status = document.getElementById('pstatus').textContent;
   const printed = document.getElementById('rsMeta').textContent;
-  return { ok, status, printed, document, dl: document.getElementById('dlBtn').download, href: document.getElementById('dlBtn').href };
+  return { ok, status, printed, document, revealMs, placeholderAtReveal, dl: dl.download, href: dl.href };
 }
 
 console.log('\n=== headless app smoke (real app files, stubbed DOM) ===\n');
@@ -312,6 +329,18 @@ console.log('\n=== headless app smoke (real app files, stubbed DOM) ===\n');
   check('4-up · print-saver: no runtime error', !/^failed:/.test(r.status), r.status);
   check('4-up · print-saver: style + separator both reported',
     /pure b&w/.test(r.printed) && /dotted middle separator/.test(r.printed), r.printed.slice(0, 120));
+}
+
+/* ---------- heavy previews must not delay the Download button ---------- */
+{
+  const r = await runApp('4-up heavy previews', 'app4up.js', '4up.html', {
+    bytes: PDF_4P, name: 'notes-4p.pdf', pages: 2, thumbsDelay: 220,   // 6 previews ≈ 1.3 s of work
+    setOptions: (el) => { el('optSep').checked = true; }
+  });
+  check('previews never block: result + Download appear in well under a second',
+    r.revealMs !== null && r.revealMs < 900, r.revealMs === null ? 'never appeared' : r.revealMs.toFixed(0) + ' ms');
+  check('previews: placeholders fill the strip while the sheets render', r.placeholderAtReveal === true);
+  check('previews never block: Start is free again while they render', r.document.getElementById('goBtn').disabled === false);
 }
 
 /* ---------- Invert Lab: black ink with keep-colours ---------- */
