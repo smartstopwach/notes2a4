@@ -5,3 +5,7 @@ Thumbs.db
 *.log
 out/
 dist/
+
+# scratch: rendered samples, raw pixel dumps and contact sheets from testing
+tmp-colortest/
+*.rgba
