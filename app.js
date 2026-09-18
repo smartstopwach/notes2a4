@@ -3,7 +3,7 @@
   'use strict';
 
   // Build stamp: confirm in DevTools console that no stale cached app.js is running.
-  var BUILD = 6;
+  var BUILD = 7;
   console.info('[Notes2A4] app.js build', BUILD, '· 2-up A4 packer (demo layout)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetLayout) {
     document.addEventListener('DOMContentLoaded', function () {
@@ -275,21 +275,50 @@
     for (var s = 0; s < 2; s++) {
       var fig = figures[s], canvas = $('pv' + (s + 1));
       var aIdx = 2 * s, bIdx = 2 * s + 1;
+      fig.style.cursor = 'zoom-in';
       if (aIdx >= state.pages) { fig.hidden = true; fig.classList.remove('loading'); continue; }
       fig.hidden = false; fig.classList.add('loading');
       await paintSheetPreview(canvas, page, opts, aIdx, bIdx);
       fig.classList.remove('loading');
+      wireZoom();
       if (gen !== state.gen) return; // superseded
     }
   }
 
-  async function paintSheetPreview(canvas, page, opts, aIdx, bIdx) {
+  /* Click a preview sheet → HD view rendered by the same engine as the PDF. */
+  function wireZoom() {
+    var figs = document.querySelectorAll('.sheet-fig');
+    figs.forEach(function (fig, sIdx) {
+      if (fig.dataset.zoomWired) return;
+      fig.dataset.zoomWired = '1';
+      fig.style.cursor = 'zoom-in';
+      fig.title = 'Click for an HD look at this sheet';
+      var hint = document.createElement('span');
+      hint.className = 'zoom-hint'; hint.textContent = '\u2922 click to enlarge';
+      fig.appendChild(hint);
+      fig.addEventListener('click', function () {
+        if (!state.doc) return;
+        var opts = readOptions();
+        var page = NotesConverter.PAPERS[opts.paper];
+        var aIdx = 2 * sIdx, bIdx = 2 * sIdx + 1;
+        if (aIdx >= state.pages) return;
+        NotesFX.zoomSheet({
+          aspect: page.w / page.h,
+          caption: 'sheet ' + (sIdx + 1) + ' \u00b7 pages ' + (aIdx + 1) + (bIdx < state.pages ? ('\u2013' + (bIdx + 1)) : '') +
+            ' \u00b7 HD render, same engine as the PDF' + (printMode() ? ' \u00b7 ' + printDpi() + ' dpi b&w' : ''),
+          render: function (cv) { return paintSheetPreview(cv, page, opts, aIdx, bIdx, cv.parentElement.clientWidth || 1200); }
+        });
+      });
+    });
+  }
+
+  async function paintSheetPreview(canvas, page, opts, aIdx, bIdx, cssWOverride) {
     var L = NotesConverter.sheetLayout(
       state.sizes[aIdx],
       bIdx < state.pages ? state.sizes[bIdx] : null,
       opts, page
     );
-    var cssW = Math.max(240, canvas.parentElement.clientWidth || 300);
+    var cssW = cssWOverride || Math.max(240, canvas.parentElement.clientWidth || 300);
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     var pxPerPt = cssW / page.w;
     canvas.style.width = '100%';
@@ -304,7 +333,9 @@
       if (!box) return;
       var pdfPage = await state.doc.getPage(pageIdx1);
       var vw = pdfPage.getViewport({ scale: 1 }).width;
-      var targetPx = Math.max(40, Math.round(box.width * pxPerPt * quality));
+      // render at the canvas's real device pixels (× a little headroom) — the old
+      // code ignored dpr, so on a 2× screen every slide was upscaled → blurry
+      var targetPx = Math.max(40, Math.round(box.width * pxPerPt * dpr * (quality || 1)));
       var vp = pdfPage.getViewport({ scale: targetPx / vw });
       var off = document.createElement('canvas');
       off.width = Math.round(vp.width); off.height = Math.round(vp.height);
@@ -316,14 +347,15 @@
         var hmP = printMap(idat, idat.width, idat.height);
         octx.putImageData(new ImageData(hmP.imageData.data, idat.width, idat.height), 0, 0);
       }
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(off,
         box.x * pxPerPt,
         (page.h - box.y - box.height) * pxPerPt,
         box.width * pxPerPt, box.height * pxPerPt
       );
     }
-    await slide(aIdx + 1, L.top, 1.5);
-    if (bIdx < state.pages) await slide(bIdx + 1, L.bottom, 1.5);
+    await slide(aIdx + 1, L.top);
+    if (bIdx < state.pages) await slide(bIdx + 1, L.bottom);
 
     if (opts.lines) {
       ctx.strokeStyle = '#c3cbd9'; ctx.lineWidth = 0.8;

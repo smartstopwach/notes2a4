@@ -308,6 +308,39 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     check('css: bullet list is styled (dot markers + muted text)', /\.note-list li::before/.test(css2) && /\.note-list li b\{/.test(css2));
   }
 
+  // live-preview sharpness: renderers must target real device pixels (dpr), and
+  // every preview sheet must offer the HD click-to-enlarge view
+  {
+    const fx = readFileSync(new URL('../enhance.js', import.meta.url), 'utf8');
+    check('preview: NotesFX exposes zoomSheet + closeZoom', /NotesFX\.zoomSheet = function/.test(fx) && /NotesFX\.closeZoom = zoomClose/.test(fx));
+    check('preview: zoom overlay sizes itself to the viewport and caps the buffer',
+      /Math\.min\(2, window\.devicePixelRatio/.test(fx) && /cssW \* dpr > 3600/.test(fx) && /maxW/.test(fx) && /maxH/.test(fx));
+    check('preview: zoom cleans up (Esc / backdrop / ×) and releases the canvas',
+      /e\.key === 'Escape'/.test(fx) && /zoomClose\(\)/.test(fx) && /cv\.width = cv\.height = 1/.test(fx));
+
+    const shapes = [
+      { f: 'app.js', dprMath: /box\.width \* pxPerPt \* dpr/, stale: /pxPerPt \* 1\.5\b|\* quality\)/ },
+      { f: 'app4up.js', dprMath: /box\.width \* pxPerPt \* dpr/, stale: /pxPerPt \* 1\.25\b/ },
+      { f: 'app-invert.js', dprMath: /Math\.round\(cssW \* dpr\)/, stale: /var sc = 320 \/ Math\.max\(1, vp\.width\)/ }
+    ];
+    for (const sh of shapes) {
+      const src = readFileSync(new URL('../' + sh.f, import.meta.url), 'utf8');
+      check('preview: ' + sh.f + ' renders at device-pixel density (dpr-aware)', sh.dprMath.test(src));
+      check('preview: ' + sh.f + ' no longer uses the blurry fixed scale', !sh.stale.test(src));
+      check('preview: ' + sh.f + ' wires click-to-enlarge on the sheets',
+        /NotesFX\.zoomSheet\(/.test(src) && /wireZoom\(\)/.test(src) && /zoom-hint/.test(src));
+      check('preview: ' + sh.f + ' draws with high-quality smoothing',
+        /imageSmoothingQuality = 'high'/.test(src));
+      if (sh.f === 'app-invert.js') {
+        check('preview: Invert Lab zoom shows the right half (original vs flipped)',
+          /which === 'flipped'/.test(src) && /paintInvertPreview\(scratch, cv, 1, cssW\)/.test(src));
+      }
+    }
+    const css3 = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    check('preview: zoom overlay is styled + hidden when printing',
+      /\.zoom-box\{/.test(css3) && /\.zoom-hint\{/.test(css3) && /@media print\{\.zoom-box/.test(css3));
+  }
+
   // every option control must sit inside #workbench, otherwise it is never snapshotted
   for (const h of htmls) {
     const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');

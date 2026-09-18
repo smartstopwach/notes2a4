@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 3;
+  var BUILD = 4;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -195,6 +195,33 @@
     return cx;
   }
 
+  /* target backing pixels for a preview canvas: its real on-screen size × dpr
+     (the old fixed 320 px made every preview upscaled and soft) */
+  function previewPx(canvas, cssWOverride) {
+    var cssW = cssWOverride ||
+      Math.max(320, (canvas.parentElement && canvas.parentElement.clientWidth) || canvas.clientWidth || 380);
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    return Math.min(3600, Math.max(320, Math.round(cssW * dpr)));
+  }
+
+  async function paintInvertPreview(c1, c2, pageNum, cssWOverride) {
+    var vp = (await state.doc.getPage(pageNum)).getViewport({ scale: 1 });
+    await renderPageScaled(pageNum, previewPx(c1, cssWOverride) / Math.max(1, vp.width), c1);
+    c2.width = c1.width; c2.height = c1.height;
+    var x2 = c2.getContext('2d', { willReadFrequently: true });
+    x2.imageSmoothingEnabled = true; x2.imageSmoothingQuality = 'high';
+    x2.drawImage(c1, 0, 0);
+    var id = x2.getImageData(0, 0, c2.width, c2.height);
+    if (inkMode()) {
+      var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true, keepColour(), pureMode());
+      x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
+    } else {
+      invertPixels(id, true);
+      x2.putImageData(id, 0, 0);
+    }
+    (await state.doc.getPage(pageNum)).cleanup();
+  }
+
   async function renderPreview() {
     if (!state.doc) return;
     var gen = ++state.gen;
@@ -202,28 +229,44 @@
     var f1 = figures[0], f2 = figures[1];
     f1.hidden = f2.hidden = false;
     f1.classList.add('loading'); f2.classList.add('loading');
+    f1.style.cursor = 'zoom-in'; f2.style.cursor = 'zoom-in';
     try {
-      var vp = (await state.doc.getPage(1)).getViewport({ scale: 1 });
-      var sc = 320 / Math.max(1, vp.width);
-      var c1 = $('pv1');
-      await renderPageScaled(1, sc, c1);
+      await paintInvertPreview($('pv1'), $('pv2'), 1);
       if (gen !== state.gen) return;
-      var c2 = $('pv2');
-      c2.width = c1.width; c2.height = c1.height;
-      var x2 = c2.getContext('2d', { willReadFrequently: true });
-      x2.drawImage(c1, 0, 0);
-      var id = x2.getImageData(0, 0, c2.width, c2.height);
-      if (inkMode()) {
-        var hm = NotesConverter.printSaver.hqMap(id, c2.width, c2.height, true, keepColour(), pureMode());
-        x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
-      } else {
-        invertPixels(id, true);
-        x2.putImageData(id, 0, 0);
-      }
-      (await state.doc.getPage(1)).cleanup();
+      wireZoom();
     } finally {
       f1.classList.remove('loading'); f2.classList.remove('loading');
     }
+  }
+
+  /* Click a preview → HD view: original or flipped, same engine as the real PDF. */
+  function wireZoom() {
+    var figures = document.querySelectorAll('.sheet-fig');
+    [[figures[0], 'original'], [figures[1], 'flipped']].forEach(function (pair) {
+      var fig = pair[0], which = pair[1];
+      if (!fig || fig.dataset.zoomWired) return;
+      fig.dataset.zoomWired = '1';
+      fig.title = 'Click for an HD look at page 1';
+      var hint = document.createElement('span');
+      hint.className = 'zoom-hint'; hint.textContent = '\u2922 click to enlarge';
+      fig.appendChild(hint);
+      fig.addEventListener('click', function () {
+        if (!state.doc) return;
+        var vp = state.sizes[0] || { w: 595, h: 842 };
+        NotesFX.zoomSheet({
+          aspect: vp.w / vp.h,
+          caption: 'page 1 \u00b7 ' + which + ' \u00b7 HD render, same engine as the PDF' +
+            (which === 'flipped' ? ' \u00b7 ' + styleName() + ' \u00b7 ' + Math.round(dpi()) + ' dpi' : ''),
+          render: function (cv) {
+            var scratch = document.createElement('canvas');        // the half that is not being shown
+            var cssW = cv.parentElement.clientWidth || 1200;
+            return which === 'flipped'
+              ? paintInvertPreview(scratch, cv, 1, cssW)           // scratch = original, cv = flipped
+              : paintInvertPreview(cv, scratch, 1, cssW);          // cv = original
+          }
+        });
+      });
+    });
   }
 
   /* ---------- per-page raster + invert (same SSAA guard as the print engine) ---------- */

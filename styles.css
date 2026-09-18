@@ -523,3 +523,21 @@ input[type=range]:disabled{opacity:.35}
   background:#5eead4;box-shadow:0 0 0 2px #5eead433}
 .note-list li b{color:#e6ecf7;font-weight:600}
 @media (max-width:520px){.note-list li{font-size:.76rem}}
+
+/* ---------- HD sheet zoom (click a preview sheet) ---------- */
+body.zoom-lock{overflow:hidden}
+.zoom-box{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
+  background:rgba(5,8,16,.86);backdrop-filter:blur(3px);padding:14px}
+.zoom-box[hidden]{display:none}
+.zoom-inner{position:relative;background:#fff;border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.55);overflow:hidden}
+.zoom-inner canvas{display:block;background:#fff}
+.zoom-x{position:absolute;top:8px;right:8px;z-index:2;width:34px;height:34px;border-radius:50%;border:1px solid #cbd5e1;
+  background:rgba(255,255,255,.94);color:#0f172a;font:600 20px/1 system-ui,sans-serif;cursor:pointer}
+.zoom-x:hover{background:#fff}
+.zoom-cap{position:absolute;left:0;right:0;bottom:0;padding:.45rem .7rem;background:linear-gradient(transparent,rgba(8,12,22,.82));
+  color:#e8eefc;font:600 .78rem/1.3 system-ui,sans-serif;text-align:center}
+.zoom-hint{position:absolute;right:8px;bottom:34px;padding:.22rem .5rem;border-radius:999px;
+  background:rgba(8,12,22,.72);color:#dbe6fb;font:600 .68rem/1.2 system-ui,sans-serif;pointer-events:none;opacity:.9}
+.sheet-fig{position:relative}
+.sheet-fig:hover .zoom-hint{opacity:1;background:rgba(13,148,136,.9)}
+@media print{.zoom-box,.zoom-hint{display:none!important}}

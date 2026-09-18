@@ -311,6 +311,59 @@
     return { file: new File([merged], name, { type: 'application/pdf' }), parts: pdfs.length };
   };
 
+  /* ---------- HD sheet zoom: click any preview sheet for a full-resolution look ----------
+     cfg = { caption, render(canvas) } — render() must fill the canvas it is given,
+     using the same engine as the real PDF. Sized to the viewport, up to 2× device
+     pixels, so handwriting is readable exactly as it will print. */
+  var zoomBox = null, zoomBusy = 0;
+  function zoomClose() {
+    if (!zoomBox) return;
+    zoomBox.hidden = true;
+    var cv = zoomBox.querySelector('.zoom-cv');
+    if (cv) { cv.width = cv.height = 1; }        // release the big buffer
+    document.body.classList.remove('zoom-lock');
+  }
+  NotesFX.zoomSheet = function (cfg) {
+    if (!zoomBox) {
+      zoomBox = document.createElement('div');
+      zoomBox.id = 'zoomBox'; zoomBox.className = 'zoom-box'; zoomBox.hidden = true;
+      zoomBox.innerHTML = '<div class="zoom-inner"><button type="button" class="zoom-x" aria-label="Close">\u00d7</button>' +
+        '<canvas class="zoom-cv"></canvas><div class="zoom-cap"></div></div>';
+      document.body.appendChild(zoomBox);
+      zoomBox.addEventListener('click', function (e) {
+        if (e.target === zoomBox || e.target.className === 'zoom-x') zoomClose();
+      });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape') zoomClose(); });
+    }
+    var inner = zoomBox.querySelector('.zoom-inner');
+    var cv = zoomBox.querySelector('.zoom-cv');
+    var cap = zoomBox.querySelector('.zoom-cap');
+    var aspect = (cfg.aspect && cfg.aspect > 0) ? cfg.aspect : 1.414;       // w / h
+    var maxW = Math.min(window.innerWidth - 28, 2000);
+    var maxH = Math.min(window.innerHeight - 96, 1400);
+    var cssW = Math.min(maxW, maxH * aspect);
+    var cssH = cssW / aspect;
+    var dpr = Math.min(2, window.devicePixelRatio || 1);
+    while (cssW * dpr > 3600 && dpr > 1) dpr -= 0.25;                       // keep the pixel buffer sane
+    inner.style.width = cssW + 'px';
+    inner.style.height = cssH + 'px';
+    cap.textContent = cfg.caption || '';
+    cv.style.width = '100%'; cv.style.height = '100%';
+    cv.width = Math.round(cssW * dpr); cv.height = Math.round(cssH * dpr);  // the renderer may resize to the same value
+    zoomBox.hidden = false;
+    document.body.classList.add('zoom-lock');
+    var mine = ++zoomBusy;
+    Promise.resolve().then(function () { return cfg.render(cv); }).then(function () {
+      if (mine !== zoomBusy) return;                                        // a newer zoom replaced this one
+    }).catch(function (err) {
+      if (mine !== zoomBusy) return;
+      cap.textContent = 'Could not draw this sheet (' + (err && err.message || err) + ')';
+      console.error(err);
+    });
+    return zoomBox;
+  };
+  NotesFX.closeZoom = zoomClose;
+
   NotesFX.toast = function (msg, ms) {
     var wrap = document.getElementById('toasts');
     if (!wrap) return;

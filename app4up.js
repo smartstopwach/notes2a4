@@ -239,18 +239,47 @@
       var fig = figures[s], canvas = $('pv' + (s + 1));
       if (s * 4 >= state.pages) { fig.hidden = true; fig.classList.remove('loading'); continue; }
       fig.hidden = false; fig.classList.add('loading');
+      fig.style.cursor = 'zoom-in';
       await paintSheet(canvas, page, opts, s);
       fig.classList.remove('loading');
+      wireZoom();
       if (gen !== state.gen) return;
     }
   }
 
-  async function paintSheet(canvas, page, opts, sIdx) {
+  /* Click a preview sheet → HD view rendered by the same engine as the PDF. */
+  function wireZoom() {
+    var figs = document.querySelectorAll('.sheet-fig');
+    figs.forEach(function (fig, sIdx) {
+      if (fig.dataset.zoomWired) return;
+      fig.dataset.zoomWired = '1';
+      fig.style.cursor = 'zoom-in';
+      fig.title = 'Click for an HD look at this sheet';
+      var hint = document.createElement('span');
+      hint.className = 'zoom-hint'; hint.textContent = '\u2922 click to enlarge';
+      fig.appendChild(hint);
+      fig.addEventListener('click', function () {
+        if (!state.doc || sIdx * 4 >= state.pages) return;
+        var opts = readOptions();
+        var page = NotesConverter.sheetSize(opts);
+        var base = sIdx * 4, ids = [];
+        for (var c = 0; c < 4 && base + c < state.pages; c++) ids.push(base + c);
+        NotesFX.zoomSheet({
+          aspect: page.w / page.h,
+          caption: 'sheet ' + (sIdx + 1) + ' \u00b7 pages ' + (base + 1) + '\u2013' + (base + ids.length) +
+            ' \u00b7 HD render, same engine as the PDF' + (printMode() ? ' \u00b7 ' + printDpi() + ' dpi b&w' : ''),
+          render: function (cv) { return paintSheet(cv, page, opts, sIdx, cv.parentElement.clientWidth || 1200); }
+        });
+      });
+    });
+  }
+
+  async function paintSheet(canvas, page, opts, sIdx, cssWOverride) {
     var base = sIdx * 4, idxs = [];
     for (var c = 0; c < 4 && base + c < state.pages; c++) idxs.push(base + c);
     var L = NotesConverter.quadLayout(idxs.map(function (i) { return state.sizes[i]; }), opts, page);
 
-    var cssW = Math.max(260, canvas.parentElement.clientWidth || 320);
+    var cssW = cssWOverride || Math.max(260, canvas.parentElement.clientWidth || 320);
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     var pxPerPt = cssW / page.w;
     canvas.style.width = '100%';
@@ -265,7 +294,8 @@
       if (!box) return;
       var pdfPage = await state.doc.getPage(pageIdx1);
       var vw = pdfPage.getViewport({ scale: 1 }).width;
-      var vp = pdfPage.getViewport({ scale: Math.max(40, box.width * pxPerPt * 1.25) / vw });
+      // device-pixel target: ignoring dpr here made every 4-up panel upscaled (blurry)
+      var vp = pdfPage.getViewport({ scale: Math.max(40, box.width * pxPerPt * dpr) / vw });
       var off = document.createElement('canvas');
       off.width = Math.round(vp.width); off.height = Math.round(vp.height);
       await pdfPage.render({ canvasContext: off.getContext('2d'), viewport: vp }).promise;
@@ -276,6 +306,7 @@
         var hmP = printMap(idat, idat.width, idat.height);
         octx.putImageData(new ImageData(hmP.imageData.data, idat.width, idat.height), 0, 0);
       }
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(off, box.x * pxPerPt, (page.h - box.y - box.height) * pxPerPt, box.width * pxPerPt, box.height * pxPerPt);
     }
     for (var ci = 0; ci < idxs.length; ci++) await slide(idxs[ci] + 1, L.slides[ci]);
