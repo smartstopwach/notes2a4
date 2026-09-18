@@ -316,8 +316,13 @@ console.log('5e) hq-map:');
         const sm = NC.sepLines(Lm, oBoth, pgL);
         return Math.abs(sm[1].y1 - (Lm.gap.y + Lm.gap.h / 2)) < 0.01;
       })());
-    check('sep: "v" → vertical only, "h" → horizontal only',
-      NC.sepLines(L4b, NC.normalize({ perSheet: 4, sepLine: 'v' }), pgL).length === 1 &&
+    check('sep: "v" → exactly one line, straight down the middle',
+      (() => {
+        const sv = NC.sepLines(L4b, NC.normalize({ perSheet: 4, sepLine: 'v' }), pgL);
+        return sv.length === 1 && sv[0].x1 === sv[0].x2 && Math.abs(sv[0].x1 - pgL.w / 2) < 0.01 &&
+          sv[0].y2 > sv[0].y1 + 500;                       // top → bottom of the sheet
+      })());
+    check('sep: API still supports "h" (UI ships the vertical toggle only)',
       NC.sepLines(L4b, NC.normalize({ perSheet: 4, sepLine: 'h' }), pgL)[0].x1 === 6);
     check('sep: margin pushes the lines inward',
       NC.sepLines(L4b, NC.normalize({ perSheet: 4, sepLine: 'both', margin: 20 }), pgL)[1].x1 === 20);
@@ -347,10 +352,16 @@ console.log('5e) hq-map:');
       return false;
     };
     const imgs4 = Array.from({ length: 4 }, () => ({ bytes: new Uint8Array(fs.readFileSync(new URL('./fixtures/dark.png', import.meta.url))), w: 1280, h: 718 }));
-    const withSep = await NC.buildFromImages(imgs4, { perSheet: 4, sepLine: 'both' });
+    const withSep = await NC.buildFromImages(imgs4, { perSheet: 4, sepLine: 'v' });
     const noSep = await NC.buildFromImages(imgs4, { perSheet: 4 });
     const sep2up = await NC.buildFromImages(imgs4.slice(0, 2), { perSheet: 2, sepLine: 'both' });
     check('sep: 4-up PDF really draws a dotted (dashed, round-cap) line', hasDashOp(withSep.bytes) === true);
+    // and the shipped UI only ever asks for the vertical one
+    const _4up = fs.readFileSync(new URL('../4up.html', import.meta.url), 'utf8');
+    const _app = fs.readFileSync(new URL('../app4up.js', import.meta.url), 'utf8');
+    check('sep: UI is a single toggle, vertical only (no horizontal/cross controls)',
+      /id="optSep"/.test(_4up) && !/id="sepH"|id="sepB"|id="sepV"/.test(_4up) && !/sepH|sepB|sepOpts/.test(_app) &&
+      /sepLineVal\(\) \{ return \(opt\.sep && opt\.sep\.checked\) \? 'v' : 'off'/.test(_app));
     check('sep: untouched settings still produce a clean sheet (no dash op)', hasDashOp(noSep.bytes) === false);
     check('sep: 2-up output never gets the 4-up separator', hasDashOp(sep2up.bytes) === false);
   }
