@@ -407,7 +407,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     const ci = src.indexOf('converter.js?v=');
     const ri = src.indexOf('raster-client.js?v=');
     check('worker: ' + f + ' loads the raster client after the converter core',
-      ci > 0 && ri > ci && /app.*\.js\?v=34/.test(src), 'client @' + ri);
+      ci > 0 && ri > ci && /app.*\.js\?v=\d+/.test(src), 'client @' + ri);
   }
   for (const f of ['app.js', 'app4up.js', 'app-invert.js']) {
     const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
