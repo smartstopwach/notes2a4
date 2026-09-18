@@ -27,6 +27,8 @@ notes**. This mirrors the classic "2 slides on 1 page" handout layout (top bbox 
 - **Demo-exact default geometry** — margin 0, full-width slides, auto middle gap (matches the standard 2-per-page layout pixel-close)
 - Options: A4 / Letter / A5 / Legal, printable margin (mm), auto or fixed middle gap, **ruled lines** in the gap for handwriting, sheet numbers
 - **Print-Saver** (both tools): colour inversion for toner-starved printers — black ↔ white swap, every other colour → solid black, so a dark "blackboard" deck prints as white paper with black ink. Scanned pages are auto-detected (content-stream probe) and re-rendered by the **HQ engine**: at up to **3× their native density, computed with 2× supersampling + area-averaging (SSAA)** — subpixel-smooth curves, no staircase jaggies, no interpolation mush. An **ink-bias response curve** (γ=1.7 toward the dark side of the 45–135 ramp) compensates halation: white-on-black strokes visually lose ~1 px of glow-edges on inversion, and the bias gives that weight back so thin handwriting never breaks. The dpi radio picks the tier (96 → 1×, 150 → 2×, 220 → 3×) and also governs genuine vector/text pages. A **Keep colours** toggle switches the colour rule: instead of crushing every colour to solid black, coloured strokes (blue/green/yellow highlights, chroma > 60) keep their hue and get their lightness flipped into a dark printable ink of the same colour — light blue on the board becomes dark blue on paper. Output is packed through the same layout engine; *Auto* inverts only genuinely dark pages, light notes pass through untouched. In this mode text becomes part of the image (not selectable); turn the checkbox off and the vector path is exactly as before
+- **Pure B&W** (both tools + Invert Lab): a second black-and-white style next to *Black ink*, using one hard threshold instead of the grey edge ramp — every output pixel is exactly `0` or `255`, so thin handwriting prints as **full black on full white** with zero grey pixels (verified: 0.00% grey on a thin-stroke test page)
+- **Reload-proof session** — a reload, crash or accidental close no longer loses anything (see *Session* below)
 - Live preview rendered by the **same geometry engine** as the final PDF (`converter.js` is shared with the Node tests)
 - Handles odd page counts (last sheet = one slide + clean space) and blank pages without a Contents stream
 - Animated hero explainer showing exactly what the tool does, reduced-motion aware
@@ -63,16 +65,34 @@ GitHub Pages (if enabled for this repo): https://smartstopwach.github.io/notes2a
 3. `pdf-lib` writes a fresh PDF with `embedPdf()` → `drawPage()` per slide, plus vector ruled lines / page numbers if enabled.
 4. With **Print-Saver** on: `nativePP()` reads the page's dominant embedded image from the content stream (`getOperatorList`) to learn its true px-per-point density and picks the quality tier from it (×1/×2/×3 of native). The page is rendered at 2× the *target* resolution and `printSaver.hqMap()` area-averages every output block, then maps it: `mean luma ≤ 45 → white paper · saturated colour (chroma > 60) → solid black · bright → black ink`, with a **linear grey ramp between 45 and 135** so stroke edges land as smooth subpixel coverage instead of staircases (print drivers re-halftone these at 600–1200 dpi; viewers read them as antialiasing). Vector pages simply render at the chosen dpi through the same map. Re-encoded as PNG, and packed by the identical layout code (`buildFromImages`) — geometry, gap, lines and numbers all unchanged.
 
+## Session — nothing is lost on reload
+
+`session.js` keeps the working state inside your own browser (origin-private storage, still zero uploads):
+
+| what | where | why it matters |
+|---|---|---|
+| source PDF(s) | **OPFS** file, IndexedDB Blob as fallback | a reload, a crash or a killed tab comes back with your file already loaded |
+| every setting | one small IndexedDB record | positions, styles, dpi, print-saver choices are all exactly as you left them |
+| finished result | stored once | the result card, the thumbnails and the download link reappear **without re-converting** |
+| interrupted run | per-page checkpoint cache | Print-Saver renders page by page; each finished page is saved, so *Continue* resumes at the page it stopped at instead of starting over |
+
+- A bar above the workbench always shows what is stored; **Continue** appears after an interrupted run, **Forget** wipes everything in one click.
+- Restoring is silent: the file is re-parsed locally, the options are re-applied, and the interrupted run resumes from its checkpoint (same settings) — changing any image setting correctly invalidates the stale checkpoints.
+- Storage failures (private mode, full disk) never break the tools: every call is guarded and simply degrades to no persistence.
+
 ## Tests
 
 The shipped converter core is exercised directly in Node (same file, no re-implementation):
 
 ```bash
 npm install          # dev-only, provides pdf-lib for the test harness
-node test/convert.test.mjs
+npm test             # converter suite + session suite
+node test/make-fixtures.mjs   # regenerate the in-repo sample PDFs/PNGs
 ```
 
-48 assertions: 2-up geometry vs. the reference demo (±3 pt); 4-up pair-column geometry vs. the measured landscape demo cells (±6 pt per corner); band/flush/gutter invariants; shrink-to-fit; partial sheets; blank-page robustness; 400 → 200 and 400 → 100; print-saver pixel map (black→white, white→black, colours→black), auto dark-page detection, HQ coverage map (quarter/half-ink blocks → grey ramp, chroma rule, light-page passthrough), and raster-pack layout in both 2-up and 4-up; end-to-end builds on real notes PDFs.
+**`test/convert.test.mjs` — 80 assertions** on the shipped converter: 2-up geometry vs. the reference demo (±3 pt); 4-up pair-column geometry vs. the measured landscape demo cells (±6 pt per corner); band/flush/gutter invariants; shrink-to-fit; partial sheets; blank-page robustness; 400 → 200 and 400 → 100; sheet-numbering (7 positions × 5 styles × start-at × 3 sizes); print-saver pixel map (black→white, white→black, colours→black), auto dark-page detection, HQ coverage map (quarter/half-ink blocks → grey ramp, chroma rule, light-page passthrough), pure B&W hard threshold (0 grey pixels on a mixed page), and raster-pack layout in both 2-up and 4-up; end-to-end builds on the in-repo sample notes PDFs (`test/fixtures/`, so the suite needs no files outside the repo).
+
+**`test/session.test.mjs` — 53 assertions**: the real `session.js` running against in-memory IndexedDB + OPFS stand-ins — byte-identical file round-trips in both engines, half-written-file recovery, options snapshot/apply (idempotent), result storage + cached object URL + replacement, run checkpoints (reuse on identical settings, invalidation on changed settings, clear), `clearAll`, plus wiring checks that all three apps call every session API, that every setting really sits inside `#workbench`, and that `session.js` is cache-busted with the apps.
 
 ## Layout
 
@@ -83,8 +103,12 @@ app.js                file intake, options, live preview, convert, download
 4up.html              4-up Studio landing page (special mode)
 app4up.js             4-up workbench logic · fourup.css  hero animation + styles
 converter.js          shared geometry + PDF packing core (UMD: browser & node)
+session.js            reload-proof local storage (OPFS + IndexedDB): files, options, result, checkpoints
 vendor/               pdf-lib 1.17.1, pdfjs-dist 3.11.174 (local copies — no CDN needed)
-test/convert.test.mjs Node test harness
+test/convert.test.mjs Node harness — converter core
+test/session.test.mjs Node harness — storage engine + app wiring
+test/fixtures/        sample notes PDFs + PNGs the suites run on
+test/make-fixtures.mjs regenerates those fixtures
 ```
 
 ## Privacy

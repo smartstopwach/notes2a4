@@ -3,7 +3,7 @@
   'use strict';
 
   // Build stamp: confirm in DevTools console that no stale cached app.js is running.
-  var BUILD = 5;
+  var BUILD = 6;
   console.info('[Notes2A4] app.js build', BUILD, '· 2-up A4 packer (demo layout)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetLayout) {
     document.addEventListener('DOMContentLoaded', function () {
@@ -85,6 +85,51 @@
   }
   function clearError() { fileErr.hidden = true; }
 
+  /* ---------- reload-proof session: source + options + result + checkpoints ----------
+     Everything below is local-only (OPFS/IndexedDB inside this browser). */
+  var SESS_SEL = '#workbench input, #workbench select';
+  var restoring = false;
+  var sessBar = $('sessBar'), sessMsg = $('sessMsg'), sessGo = $('sessGo');
+  function sessReady() { return !!(window.NotesSession && NotesSession.supported()); }
+  function sessNote(msg, showGo) {
+    if (!sessBar) return;
+    sessBar.hidden = false;
+    if (sessMsg) sessMsg.textContent = msg;
+    if (sessGo) sessGo.hidden = !showGo;
+  }
+  function sessKill() {
+    if (sessReady()) NotesSession.clearAll();
+    if (sessBar) sessBar.hidden = true;
+  }
+  function printSig() {                       // image settings — a run is resumed only when these match
+    return [printDpi(), printStyle(), printAuto() ? 1 : 0, printKeepColour() ? 1 : 0].join('|');
+  }
+  function syncAfterRestore() {
+    if (opt.gap) opt.gap.disabled = opt.gapAuto.checked;
+    if (printEls.opts && printEls.on) printEls.opts.hidden = !printEls.on.checked;
+    if (opt.numOpts && opt.nums) opt.numOpts.hidden = !opt.nums.checked;
+    if (opt.margin) opt.margin.dispatchEvent(new Event('input'));
+  }
+  async function restoreResult(meta) {
+    var url = await NotesSession.resultUrl();
+    if (!url) return;
+    state.out.url = url;
+    var dl = $('dlBtn');
+    dl.href = url; dl.download = meta.name;
+    $('openBtn').href = url;
+    if (meta.info) {
+      $('rsIn').textContent = meta.info.in;
+      $('rsOut').textContent = meta.info.out;
+      $('rsMeta').textContent = meta.info.meta + ' · restored from this browser, no re-conversion needed';
+    } else {
+      $('rsMeta').textContent = 'Saved result — ' + fmtMB(meta.size) + ' PDF restored from this browser.';
+    }
+    result.hidden = false;
+    if (meta.size <= (NotesSession.THUMB_LIMIT || 96 * 1048576) && meta.info && meta.info.out) {
+      try { await makeThumbs(await NotesSession.resultBytes(), meta.info.out); } catch (e) {}
+    }
+  }
+
   /* ---------- file intake ---------- */
   $('chooseBtn').addEventListener('click', function (e) { e.stopPropagation(); fileInput.click(); });
   dz.addEventListener('click', function (e) { if (e.target.tagName !== 'BUTTON') fileInput.click(); });
@@ -148,6 +193,11 @@
       pBox.hidden = true;
       if (window.PageReview) PageReview.setSource(buf, file.name);
       afterLoad();
+      if (sessReady() && !restoring) {
+        NotesSession.saveFiles([{ name: state.name, bytes: state.bytes }]);
+        NotesSession.runClear();                       // new file ⇒ old checkpoints are meaningless
+        sessNote('Saved in this browser — reload, close or crash, this file and your settings stay.');
+      }
       if (window.NotesFX) NotesFX.toast(state.pages + ' pages parsed — nothing was uploaded');
     } catch (err) {
       pBox.hidden = true;
@@ -352,9 +402,18 @@
     return { canvas: small, status: tag };
   }
 
-  async function buildPrintItems(onPage) {
-    var n = state.pages, items = new Array(n);
+  async function buildPrintItems(onPage, checkpoint) {
+    var n = state.pages, items = new Array(n), reused = 0;
     for (var i = 0; i < n; i++) {
+      if (checkpoint) {                               // a page this run already rendered → reuse it
+        var hit = await NotesSession.pageGet(i);
+        if (hit) {
+          items[i] = { bytes: hit, w: state.sizes[i].w, h: state.sizes[i].h };
+          reused++;
+          if (onPage) await onPage(i + 1, n, 'checkpoint', true);
+          continue;
+        }
+      }
       var pg = await state.doc.getPage(i + 1);
       var r = await printRasterPage(pg);
       pg.cleanup();
@@ -365,8 +424,13 @@
         }),
         w: state.sizes[i].w, h: state.sizes[i].h
       };
+      if (checkpoint) {
+        await NotesSession.pagePut(i, items[i].bytes);                                  // survive a reload
+        await NotesSession.runSave({ phase: 'render', page: i + 1, pages: n, kind: 'print' });
+      }
       if (onPage) await onPage(i + 1, n, r.status);
     }
+    state.reusedPages = reused;
     return items;
   }
   function printListeners(schedule) {
@@ -386,15 +450,23 @@
     var t0 = performance.now();
     try {
       var res;
+      var sig = printSig();
+      var ck = false;
       if (printMode()) {
-        pStatus.textContent = 'rendering pages…';
-        var items = await buildPrintItems(function (d, t, st) {
+        if (sessReady()) {                              // adopt the checkpoint set if the settings match
+          var hand = await NotesSession.runBegin(sig, state.pages, 'print');
+          ck = true;
+          if (hand.have) pStatus.textContent = 'resuming — ' + hand.have + ' page' + (hand.have === 1 ? '' : 's') + ' already rendered…';
+        }
+        if (pStatus.textContent.indexOf('resuming') < 0) pStatus.textContent = 'rendering pages…';
+        var items = await buildPrintItems(function (d, t, st, cached) {
           pFill.style.width = (d / t * 60).toFixed(1) + '%';
-          pStatus.textContent = 'page ' + d + ' of ' + t + ' · binarising ' + (st || 'at ' + printDpi() + ' dpi…');
+          pStatus.textContent = 'page ' + d + ' of ' + t + ' · ' + (cached ? 'from checkpoint' : 'binarising ' + (st || 'at ' + printDpi() + ' dpi…'));
           NotesFX.titleProgress(d * 0.6, t);
           return NotesFX.uiYield();
-        });
+        }, ck);
         pFill.style.width = '65%'; pStatus.textContent = 'packing sheets…';
+        if (sessReady()) await NotesSession.runSave({ phase: 'pack', page: state.pages, pages: state.pages, kind: 'print' });
         res = await NotesConverter.buildFromImages(items, readOptions(), function (d, t) {
           pFill.style.width = (65 + d / t * 32).toFixed(1) + '%';
           pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
@@ -402,9 +474,11 @@
           return NotesFX.uiYield();
         });
       } else {
+        if (sessReady()) await NotesSession.runBegin(sig + '|vector', state.pages, 'vector');
         res = await NotesConverter.build(state.bytes, readOptions(), function (d, t) {
           pFill.style.width = (6 + d / t * 88).toFixed(1) + '%';
           pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
+          if (sessReady() && (d === t || d % 4 === 0)) NotesSession.runSave({ phase: 'build', page: d, pages: t, kind: 'vector' });
           NotesFX.titleProgress(d, t);
           return NotesFX.uiYield();
         });
@@ -430,6 +504,14 @@
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative'})[printStyle()] : '');
 
       await makeThumbs(res.bytes, res.sheets);
+      if (sessReady()) {                                // keep the finished PDF: reload → instant result
+        NotesSession.saveResult({
+          bytes: res.bytes, name: dl.download, kind: printMode() ? 'print' : 'vector',
+          info: { in: res.sourcePages, out: res.sheets, meta: $('rsMeta').textContent }
+        });
+        NotesSession.runClear();                        // checkpoints are no longer needed
+        sessNote('Saved · ' + res.sheets + ' sheet' + (res.sheets === 1 ? '' : 's') + ' ready — reloading keeps this result and the download link.');
+      }
       result.hidden = false;
       if (prevCard) prevCard.classList.remove('busy');
       if (window.NotesFX) NotesFX.toast(res.sheets + ' sheets ready · ' + (printMode() ? 'print-saver ' + printDpi() + ' dpi' : 'pure vector'));
@@ -472,7 +554,9 @@
 
   /* ---------- reset ---------- */
   function resetAll() {
-    if (state.out.url) URL.revokeObjectURL(state.out.url);
+    if (state.out.url && !sessReady()) URL.revokeObjectURL(state.out.url);
+    if (sessReady()) { NotesSession.clearFiles(); NotesSession.clearResult(); NotesSession.runClear(); }
+    if (sessBar) sessBar.hidden = true;
     state.bytes = null; state.out = { bytes: null, doc: null, url: '' };
     fileInput.value = '';
     wb.hidden = true; dz.hidden = false; result.hidden = true; pBox.hidden = true; clearError();
@@ -480,6 +564,40 @@
   }
   $('resetBtn').addEventListener('click', resetAll);
   $('againBtn').addEventListener('click', resetAll);
+
+  /* ---------- boot: pull back whatever the last session left in this browser ---------- */
+  (async function bootSession() {
+    if (!window.NotesSession) return;
+    try { await NotesSession.init(); } catch (e) { return; }
+    if (!sessReady()) return;
+    if (sessGo) sessGo.addEventListener('click', function () { sessGo.hidden = true; convert(); });
+    var forget = $('sessForget');
+    if (forget) forget.addEventListener('click', function () { sessKill(); NotesFX.toast('This browser no longer keeps anything'); });
+    NotesSession.autoSaveOpts($('workbench'), SESS_SEL);
+    var savedOpts = await NotesSession.loadOpts();
+    if (savedOpts && NotesSession.apply(savedOpts, NotesSession.collect(SESS_SEL))) syncAfterRestore();
+    var files = await NotesSession.loadFiles();
+    var meta = await NotesSession.loadResultMeta();
+    if (!files.length) {
+      if (meta) sessNote('Your last result (' + fmtMB(meta.size) + ') is still saved here — pick the PDF again to re-pack, or Forget to wipe it.', false);
+      return;
+    }
+    restoring = true;
+    await handleFile(NotesSession.toFile(files[0]));
+    restoring = false;
+    if (meta) await restoreResult(meta);
+    var run = await NotesSession.runLoad();
+    if (run && run.phase !== 'done' && run.pages) {
+      var st = await NotesSession.pageStats();
+      sessNote('Your last run stopped at page ' + run.page + ' of ' + run.pages + ' — press Continue and it carries on from there' +
+        (st.count ? ' (' + st.count + ' page' + (st.count === 1 ? '' : 's') + ' already rendered are reused)' : '') + '.', true);
+    } else if (meta) {
+      sessNote('Restored — file, settings and your last result are all back. Reload-safe.');
+    } else {
+      sessNote('Restored — file and settings are back. Reload-safe.');
+    }
+    if (window.NotesFX) NotesFX.toast('Session restored from this browser');
+  })();
 
   /* ---------- scroll reveal ---------- */
   if ('IntersectionObserver' in window) {

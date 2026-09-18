@@ -6,8 +6,8 @@
 <title>Notes2A4 · 4-up Studio — four 16:9 note pages on one landscape A4 (400 → 100)</title>
 <meta name="description" content="Special mode: pack FOUR note slides onto one landscape A4 — pages 1·2 left column, 3·4 right, flush rows, a 43 mm white band in the middle for your notes. 400 pages become 100. 100% in-browser, no uploads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='7' width='28' height='18' rx='3' fill='%23fff'/%3E%3Crect x='4' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='4' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=21">
-<link rel="stylesheet" href="fourup.css?v=21">
+<link rel="stylesheet" href="styles.css?v=22">
+<link rel="stylesheet" href="fourup.css?v=22">
 <meta http-equiv="Cache-Control" content="no-cache">
 </head>
 <body id="top" class="fu-body">
@@ -110,6 +110,15 @@
       <p class="dz-fine">No server, no account, no upload.</p>
       <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
       <p class="dz-error" id="fileError" role="alert" hidden></p>
+    </div>
+
+    <div id="sessBar" class="sess-bar" hidden>
+      <span class="sess-dot" aria-hidden="true"></span>
+      <span class="sess-msg" id="sessMsg">Saved in this browser</span>
+      <span class="sess-actions">
+        <button type="button" class="sess-btn sess-go" id="sessGo" hidden>&#9654; Continue</button>
+        <button type="button" class="sess-btn" id="sessForget">Forget</button>
+      </span>
     </div>
 
     <div id="workbench" class="workbench" hidden>
@@ -257,9 +266,10 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=21"></script>
-<script src="enhance.js?v=21"></script>
-<script src="review.js?v=21"></script>
-<script src="app4up.js?v=21"></script>
+<script src="session.js?v=22"></script>
+<script src="converter.js?v=22"></script>
+<script src="enhance.js?v=22"></script>
+<script src="review.js?v=22"></script>
+<script src="app4up.js?v=22"></script>
 </body>
 </html>

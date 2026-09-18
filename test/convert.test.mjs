@@ -59,7 +59,7 @@ check('single-page sheet: top only, bottom null', L4.top !== null && L4.bottom =
 
 /* ---------- 4. REAL build on the user's notes PDF (2 pages → 1 sheet) ---------- */
 console.log('4) build() on real notes PDF:');
-const src = readFileSync(process.argv[2] || '/home/user/uploads/6120851524276654305.pdf');
+const src = readFileSync(process.argv[2] || new URL('./fixtures/notes-2p.pdf', import.meta.url));
 let progressSeen = 0;
 const t0 = Date.now();
 const res = await NC.build(src, { margin: 0, gapMode: 'auto' }, () => { progressSeen++; });
@@ -112,7 +112,7 @@ const qp = NC.quadLayout([demoSizes[0], demoSizes[1]], qo, QPAGE);
 check('partial sheet (2 of 4) → right column empty, no crash', !!(qp.slides[0] && qp.slides[1]) && qp.slides[2] === null && qp.slides[3] === null);
 const qf = NC.quadLayout(demoSizes, NC.normalize({ perSheet: 4, gapMode: 'fixed', gap: 200 }), QPAGE);
 check('huge fixed gap shrinks to fit, never overflows', qf.slides.every(b => b.y >= -.01 && b.y + b.height <= 595.281));
-const src4 = readFileSync('/home/user/uploads/6120851524276654305 (1).pdf');
+const src4 = readFileSync(new URL('./fixtures/notes-4p.pdf', import.meta.url));
 const resQ = await NC.build(src4, { perSheet: 4, lines: true, pageNumbers: true });
 const docQ = await PDFDocument.load(resQ.bytes);
 check('build(): 4 real pages → 1 landscape sheet', docQ.getPageCount() === 1 && near(docQ.getPage(0).getWidth(), 841.89, .02) && near(docQ.getPage(0).getHeight(), 595.28, .02), `pages=${docQ.getPageCount()}`);
@@ -138,7 +138,7 @@ let rd = NC.printSaver.process(darkPg, true);
 check('auto: dark page inverted', rd.inverted === true, `darkFrac ${rd.darkFrac.toFixed(2)}`);
 // raster pack: 4 images → 1 landscape sheet, geometry ≈ quad layout
 const fs = require('fs');
-const mkItems = (n, w, h) => Array.from({ length: n }, (_, i) => ({ bytes: new Uint8Array(fs.readFileSync('/tmp/dark.png')), w, h }));
+const mkItems = (n, w, h) => Array.from({ length: n }, (_, i) => ({ bytes: new Uint8Array(fs.readFileSync(new URL('./fixtures/dark.png', import.meta.url))), w, h }));
 const resI2 = await NC.buildFromImages(mkItems(2, 1280, 718), { perSheet: 2, lines: true, pageNumbers: true });
 const docI2 = await PDFDocument.load(resI2.bytes);
 check('images: 2 → 1 portrait A4 sheet', docI2.getPageCount() === 1 && near(docI2.getPage(0).getWidth(), 595.28, .02) && near(docI2.getPage(0).getHeight(), 841.89, .02));
@@ -149,7 +149,7 @@ const pi4 = docI4.getPage(0);
 check('images: 4 → 1 landscape A4 sheet', docI4.getPageCount() === 1 && near(pi4.getWidth(), 841.89, .02) && near(pi4.getHeight(), 595.28, .02));
 const qref = NC.quadLayout([1,2,3,4].map(()=>({w:1280,h:718})), NC.normalize({perSheet:4}), { w: 841.89, h: 595.28 });
 check('images: layout reuses quad geometry (same producer)', /print-saver/.test((docI4.getProducer && String(docI4.getProducer()).toLowerCase()) || 'print-saver') || true);
-const resI3 = await NC.buildFromImages([{ bytes: new Uint8Array(fs.readFileSync('/tmp/light.png')), w: 1280, h: 718 }, null, { bytes: new Uint8Array(fs.readFileSync('/tmp/dark.png')), w: 1280, h: 716 }], { perSheet: 4 });
+const resI3 = await NC.buildFromImages([{ bytes: new Uint8Array(fs.readFileSync(new URL('./fixtures/light.png', import.meta.url))), w: 1280, h: 718 }, null, { bytes: new Uint8Array(fs.readFileSync(new URL('./fixtures/dark.png', import.meta.url))), w: 1280, h: 716 }], { perSheet: 4 });
 check('images: null gaps tolerated (3 with hole → 1 sheet)', resI3.sheets === 1);
 writeFileSync('/home/user/out_print_up.pdf', Buffer.from(resI4.bytes));
 /* ---------- 5f. sheet-number options: formats & anchors ---------- */

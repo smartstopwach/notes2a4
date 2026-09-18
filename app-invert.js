@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 2;
+  var BUILD = 3;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -45,6 +45,42 @@
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(m) { fileErr.hidden = false; fileErr.textContent = m; }
   function clearError() { fileErr.hidden = true; fileErr.textContent = ''; }
+
+  /* ---------- reload-proof session: source + options + result + page checkpoints ---------- */
+  var SESS_SEL = '#workbench input, #workbench select';
+  var restoring = false;
+  var sessBar = $('sessBar'), sessMsg = $('sessMsg'), sessGo = $('sessGo');
+  function sessReady() { return !!(window.NotesSession && NotesSession.supported()); }
+  function sessNote(msg, showGo) {
+    if (!sessBar) return;
+    sessBar.hidden = false;
+    if (sessMsg) sessMsg.textContent = msg;
+    if (sessGo) sessGo.hidden = !showGo;
+  }
+  function sessKill() {
+    if (sessReady()) NotesSession.clearAll();
+    if (sessBar) sessBar.hidden = true;
+  }
+  function styleName() { return pureMode() ? 'pure b&w' : (inkMode() ? 'black ink' : 'true negative'); }
+  function invSig() {
+    return [Math.round(dpi()), fmt(), styleName(), keepColour() ? 1 : 0, opt.skip.checked ? 1 : 0].join('|');
+  }
+  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); }
+  async function restoreResult(meta) {
+    var url = await NotesSession.resultUrl();
+    if (!url) return;
+    state.out.url = url;
+    var dl = $('dlBtn');
+    dl.href = url; dl.download = meta.name;
+    $('openBtn').href = url;
+    $('rsIn').textContent = $('rsOut').textContent = state.pages || '';
+    $('rsMeta').textContent = (meta.info && meta.info.meta ? meta.info.meta + ' · ' : '') +
+      'restored from this browser — no re-conversion needed · ' + fmtMB(meta.size);
+    result.hidden = false;
+    if (meta.size <= (NotesSession.THUMB_LIMIT || 96 * 1048576) && state.pages) {
+      try { await makeThumbs(await NotesSession.resultBytes(), state.pages); } catch (e) {}
+    }
+  }
 
   /* ---------- core: invert a pixel buffer in place; returns blankness ----------
      blank = every RGB channel ≥ 252 (a pure white page — nothing to flip). */
@@ -118,6 +154,11 @@
       pBox.hidden = true;
       if (window.PageReview) PageReview.setSource(u8, f.name);
       afterLoad();
+      if (sessReady() && !restoring) {
+        NotesSession.saveFiles([{ name: state.name, bytes: state.bytes }]);
+        NotesSession.runClear();
+        sessNote('Saved in this browser — reload, close or crash, this file and your settings stay.');
+      }
       if (window.NotesFX) NotesFX.toast(state.pages + ' pages measured — 1:1 ready, nothing uploaded');
     } catch (err) {
       pBox.hidden = true;
@@ -235,29 +276,46 @@
     if (prevCard) prevCard.classList.add('busy');
     var t0 = performance.now();
     var skip = opt.skip.checked, n = state.pages;
+    var ck = false, hand = { have: 0 };
+    if (sessReady()) {                                     // same settings ⇒ leftover pages are still good
+      try { hand = await NotesSession.runBegin(invSig(), n, 'invert'); ck = true; } catch (e) { ck = false; }
+      if (hand && hand.have) pStatus.textContent = 'resuming — ' + hand.have + ' page' + (hand.have === 1 ? '' : 's') + ' already done…';
+    }
     try {
       var outDoc = await PDFLibns.PDFDocument.create();
-      var skipped = 0;
+      var skipped = 0, reused = 0;
       for (var i = 1; i <= n; i++) {
-        var r = await rasterInverted(i);
-        var bytes = await canvasBytes(r.canvas);
+        var bytes = ck ? await NotesSession.pageGet(i - 1) : null;      // finished page from the last run
+        var r = null, blank = false;
+        if (bytes) { reused++; }
+        else {
+          r = await rasterInverted(i);
+          bytes = await canvasBytes(r.canvas);
+          blank = !!r.blank;
+          if (skip && blank) {          // blank page stays white: embed the un-inverted look (white sheet)
+            var white = document.createElement('canvas'); white.width = 2; white.height = 2;
+            var wx = white.getContext('2d'); wx.fillStyle = '#fff'; wx.fillRect(0, 0, 2, 2);
+            bytes = await canvasBytes(white);
+            skipped++;
+          }
+          if (ck) {
+            await NotesSession.pagePut(i - 1, bytes);                    // survive a reload mid-run
+            await NotesSession.runSave({ phase: 'invert', page: i, pages: n, kind: 'invert' });
+          }
+        }
         var img = (fmt() === 'png') ? await outDoc.embedPng(bytes) : await outDoc.embedJpg(bytes);
         var size = state.sizes[i - 1];
         var outPg = outDoc.addPage([size.w, size.h]);
-        if (skip && r.blank) {          // blank page stays white: embed the un-inverted look (white sheet)
-          var white = document.createElement('canvas'); white.width = 2; white.height = 2;
-          var wx = white.getContext('2d'); wx.fillStyle = '#fff'; wx.fillRect(0, 0, 2, 2);
-          img = (fmt() === 'png') ? await outDoc.embedPng(await canvasBytes(white)) : await outDoc.embedJpg(await canvasBytes(white));
-          skipped++;
-        }
         outPg.drawImage(img, { x: 0, y: 0, width: size.w, height: size.h });
-        NotesFX.liveShow(r.canvas, 'page ' + i + ' / ' + n + ' · ' + (pureMode() ? 'pure b&w' : inkMode() ? 'black ink' : 'negative') + (r.blank && skip ? ' · blank' : ''));
-        r.canvas.width = r.canvas.height = 0;
+        if (r) NotesFX.liveShow(r.canvas, 'page ' + i + ' / ' + n + ' · ' + styleName() + (blank && skip ? ' · blank' : ''));
+        if (r) { r.canvas.width = r.canvas.height = 0; }
         pFill.style.width = (4 + i / n * 90).toFixed(1) + '%';
-        pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + (pureMode() ? 'pure b&w' : inkMode() ? 'black ink' : 'negative') + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' + (r.blank && skip ? ' · blank kept white' : '');
+        pStatus.textContent = 'page ' + i + ' of ' + n + ' · ' + styleName() + ' · ' + (fmt() === 'png' ? 'png' : 'jpeg') + ' ' + Math.round(dpi()) + ' dpi' +
+          (r ? (blank && skip ? ' · blank kept white' : '') : ' · from checkpoint');
         NotesFX.titleProgress(i, n);
         await NotesFX.uiYield();                                      // throttle-proof: full speed in background tabs
       }
+      state.reusedPages = reused;
       pStatus.textContent = 'writing file…';
       var saved = await outDoc.save({ useObjectStreams: true });
       pFill.style.width = '100%'; pStatus.textContent = 'done';
@@ -273,12 +331,20 @@
       $('rsIn').textContent = n;
       $('rsOut').textContent = n;
       $('rsMeta').textContent =
-        n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + (pureMode() ? 'pure b&w' : inkMode() ? 'black ink' : 'true negative') + ' · sizes unchanged · ' +
+        n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + styleName() + ' · sizes unchanged · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(saved.length) + ' · ' + dpi() + ' dpi ' + (fmt() === 'png' ? 'PNG' : 'JPEG') +
         (skipped ? ' · ' + skipped + ' blank page' + (skipped === 1 ? '' : 's') + ' kept white' : '') + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device';
 
       await makeThumbs(saved, n);
+      if (sessReady()) {
+        NotesSession.saveResult({
+          bytes: saved, name: dl.download, kind: inkMode() ? 'ink' : 'negative',
+          info: { in: n, out: n, meta: $('rsMeta').textContent }
+        });
+        NotesSession.runClear();
+        sessNote('Saved · ' + n + ' page' + (n === 1 ? '' : 's') + ' flipped — reloading keeps this result and the download link.');
+      }
       result.hidden = false;
       if (prevCard) prevCard.classList.remove('busy');
       if (window.NotesFX) NotesFX.toast(n + ' pages flipped · sizes identical · still on-device');
@@ -329,13 +395,49 @@
 
   function resetAll() {
     state.bytes = null; state.doc = null; state.pages = 0; state.sizes = [];
-    if (state.out.url) { URL.revokeObjectURL(state.out.url); state.out.url = ''; }
+    if (state.out.url && !sessReady()) { URL.revokeObjectURL(state.out.url); state.out.url = ''; }
+    if (sessReady()) { NotesSession.clearFiles(); NotesSession.clearResult(); NotesSession.runClear(); }
+    if (sessBar) sessBar.hidden = true;
     fileInput.value = '';
     wb.hidden = true; dz.hidden = false; result.hidden = true; pBox.hidden = true; clearError();
     dz.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   $('resetBtn').addEventListener('click', resetAll);
   $('againBtn').addEventListener('click', resetAll);
+
+  /* ---------- boot: pull back whatever the last session left in this browser ---------- */
+  (async function bootSession() {
+    if (!window.NotesSession) return;
+    try { await NotesSession.init(); } catch (e) { return; }
+    if (!sessReady()) return;
+    if (sessGo) sessGo.addEventListener('click', function () { sessGo.hidden = true; convert(); });
+    var forget = $('sessForget');
+    if (forget) forget.addEventListener('click', function () { sessKill(); NotesFX.toast('This browser no longer keeps anything'); });
+    NotesSession.autoSaveOpts($('workbench'), SESS_SEL);
+    var savedOpts = await NotesSession.loadOpts();
+    if (savedOpts && NotesSession.apply(savedOpts, NotesSession.collect(SESS_SEL))) syncAfterRestore();
+    var files = await NotesSession.loadFiles();
+    var meta = await NotesSession.loadResultMeta();
+    if (!files.length) {
+      if (meta) sessNote('Your last result (' + fmtMB(meta.size) + ') is still saved here — pick the PDF again to re-flip, or Forget to wipe it.', false);
+      return;
+    }
+    restoring = true;
+    await loadFile(NotesSession.toFile(files[0]));
+    restoring = false;
+    if (meta) await restoreResult(meta);
+    var run = await NotesSession.runLoad();
+    if (run && run.phase !== 'done' && run.pages) {
+      var st = await NotesSession.pageStats();
+      sessNote('Your last run stopped at page ' + run.page + ' of ' + run.pages + ' — press Continue and it carries on from there' +
+        (st.count ? ' (' + st.count + ' page' + (st.count === 1 ? '' : 's') + ' already flipped are reused)' : '') + '.', true);
+    } else if (meta) {
+      sessNote('Restored — file, settings and your last result are all back. Reload-safe.');
+    } else {
+      sessNote('Restored — file and settings are back. Reload-safe.');
+    }
+    if (window.NotesFX) NotesFX.toast('Session restored from this browser');
+  })();
 
   /* ---------- scroll reveal ---------- */
   if ('IntersectionObserver' in window) {
