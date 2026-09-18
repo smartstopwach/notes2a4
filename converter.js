@@ -19,6 +19,7 @@
   var PDFDocument = PDFLib.PDFDocument;
   var StandardFonts = PDFLib.StandardFonts;
   var rgb = PDFLib.rgb;
+  var LineCapStyle = PDFLib.LineCapStyle;
 
   var PT_PER_MM = 72 / 25.4;
 
@@ -42,7 +43,8 @@
       numPos: 'gap',      // gap | tl | tc | tr | bl | bc | br  (top/bottom × left/centre/right)
       numFmt: 'frac',     // frac "3 / 20" | plain "3" | page "Page 3" | dash "– 3 –" | of "3 of 20"
       numStart: 1,        // first sheet gets this number
-      numSize: 8          // pt font size (6–14)
+      numSize: 8,         // pt font size (6–14)
+      sepLine: 'off'      // 4-up only: dotted cut-lines between the panels — off | v | h | both
     };
   }
 
@@ -61,6 +63,8 @@
     if (['frac', 'plain', 'page', 'dash', 'of'].indexOf(o.numFmt) < 0) o.numFmt = 'frac';
     o.numStart = Math.max(0, Math.min(99999, Math.round(+o.numStart) || 1));
     o.numSize = Math.max(6, Math.min(14, +o.numSize || 8));
+    if (['off', 'v', 'h', 'both'].indexOf(o.sepLine) < 0) o.sepLine = 'off';
+    if (o.perSheet !== 4) o.sepLine = 'off';            // 4-up only — 2-up has no panel to separate
     return o;
   }
 
@@ -469,6 +473,25 @@
   }
 
   /** Shared sheet decoration (ruled lines + sheet number) for both build paths. */
+  /**
+   * Dotted cut-lines for a 2×2 sheet: a vertical one between the two columns and
+   * a horizontal one between the two rows (through the row boundary / white band).
+   * Returns [] unless perSheet === 4 and sepLine is on. Coordinates are in pt.
+   */
+  function sepLines(L, opts, page) {
+    var out = [];
+    if (opts.perSheet !== 4 || !opts.sepLine || opts.sepLine === 'off') return out;
+    var inset = Math.max(6, opts.margin || 0);          // stay clear of the paper edge
+    if (opts.sepLine === 'v' || opts.sepLine === 'both') {
+      out.push({ x1: page.w / 2, y1: inset, x2: page.w / 2, y2: page.h - inset });
+    }
+    if (opts.sepLine === 'h' || opts.sepLine === 'both') {
+      var y = (L && L.gap && L.gap.h > 0) ? L.gap.y + L.gap.h / 2 : ((L && L.gap) ? L.gap.y : page.h / 2);
+      out.push({ x1: inset, y1: y, x2: page.w - inset, y2: y });
+    }
+    return out;
+  }
+
   function decorateSheet(pg, L, opts, font, s, nSheets, page) {
     if (opts.lines) {
       for (var li = 0; li < L.lines.length; li++) {
@@ -480,6 +503,18 @@
           color: rgb(0.66, 0.7, 0.76)
         });
       }
+    }
+    var segs = sepLines(L, opts, page);
+    for (var gi = 0; gi < segs.length; gi++) {          // black dotted cut-lines
+      pg.drawLine({
+        start: { x: segs[gi].x1, y: segs[gi].y1 },
+        end:   { x: segs[gi].x2, y: segs[gi].y2 },
+        thickness: 1.1,
+        color: rgb(0, 0, 0),
+        dashArray: [0.9, 3.2],
+        dashPhase: 0,
+        lineCap: LineCapStyle.Round
+      });
     }
     if (opts.pageNumbers && (opts.numPos !== 'gap' || L.gap.h >= 12 || opts.perSheet === 2)) {
       var txt = numText(s, nSheets, opts);
@@ -577,6 +612,7 @@
     buildFromImages: buildFromImages,
     numText: numText,
     numPlace: numPlace,
+    sepLines: sepLines,
     printSaver: { process: psProcess, hqMap: hqMap, negMap: negMap, keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA }
   };
 });

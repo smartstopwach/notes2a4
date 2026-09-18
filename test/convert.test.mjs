@@ -296,6 +296,65 @@ console.log('5e) hq-map:');
   r = NC.printSaver.hqMap(big, 1, 1, true);
   check('auto dark page inverts', r.inverted === true && r.darkFrac >= 0.5);
 
+  /* --- 4-up dotted separators --- */
+  {
+    const oBoth = NC.normalize({ perSheet: 4, sepLine: 'both' });
+    const pgL = NC.sheetSize(oBoth);
+    const demo4 = [{ w: 1280, h: 718 }, { w: 1280, h: 718 }, { w: 1280, h: 718 }, { w: 1280, h: 718 }];
+    const L4b = NC.quadLayout(demo4, oBoth, pgL);
+    const segsB = NC.sepLines(L4b, oBoth, pgL);
+    check('sep: "both" → vertical + horizontal line', segsB.length === 2);
+    check('sep: vertical line sits on the column seam (page centre)',
+      Math.abs(segsB[0].x1 - pgL.w / 2) < 0.01 && segsB[0].x1 === segsB[0].x2 && segsB[0].y1 === 6 && Math.abs(segsB[0].y2 - (pgL.h - 6)) < 0.01,
+      `x=${segsB[0].x1} y ${segsB[0].y1}→${segsB[0].y2}`);
+    check('sep: horizontal line runs through the row boundary',
+      Math.abs(segsB[1].y1 - (L4b.gap.y + L4b.gap.h / 2)) < 0.01 && segsB[1].x1 === 6 && Math.abs(segsB[1].x2 - (pgL.w - 6)) < 0.01,
+      `y=${segsB[1].y1} band=${L4b.gap.y.toFixed(2)}+${L4b.gap.h.toFixed(2)}`);
+    check('sep: mixed slide ratios still cut at the real row boundary',
+      (() => {
+        const Lm = NC.quadLayout([{ w: 1280, h: 718 }, { w: 1280, h: 718 }, { w: 1280, h: 500 }, { w: 1280, h: 500 }], oBoth, pgL);
+        const sm = NC.sepLines(Lm, oBoth, pgL);
+        return Math.abs(sm[1].y1 - (Lm.gap.y + Lm.gap.h / 2)) < 0.01;
+      })());
+    check('sep: "v" → vertical only, "h" → horizontal only',
+      NC.sepLines(L4b, NC.normalize({ perSheet: 4, sepLine: 'v' }), pgL).length === 1 &&
+      NC.sepLines(L4b, NC.normalize({ perSheet: 4, sepLine: 'h' }), pgL)[0].x1 === 6);
+    check('sep: margin pushes the lines inward',
+      NC.sepLines(L4b, NC.normalize({ perSheet: 4, sepLine: 'both', margin: 20 }), pgL)[1].x1 === 20);
+    check('sep: off by default, ignored in 2-up, junk values rejected',
+      NC.defaults().sepLine === 'off' &&
+      NC.sepLines(L4b, NC.normalize({ perSheet: 2, sepLine: 'both' }), pgL).length === 0 &&
+      NC.normalize({ perSheet: 4, sepLine: 'diagonal' }).sepLine === 'off');
+
+    // the real thing: a 4-up PDF must contain a dotted line operator, and 2-up must not
+    const { inflateSync } = await import('node:zlib');
+    const hasDashOp = (bytes) => {
+      const buf = Buffer.from(bytes);
+      const lat = buf.toString('latin1');
+      let i = 0;
+      while ((i = lat.indexOf('stream', i)) >= 0) {
+        let st = i + 6;
+        if (lat[st] === '\r') st++;
+        if (lat[st] === '\n') st++;
+        const en = lat.indexOf('endstream', st);
+        if (en < 0) break;
+        try {
+          const raw = inflateSync(buf.subarray(st, en)).toString('latin1');
+          if (/\[[\d. ]+\] 0 d/.test(raw) && /1 J/.test(raw)) return true;   // dash pattern + round caps
+        } catch (e) {}
+        i = en + 9;
+      }
+      return false;
+    };
+    const imgs4 = Array.from({ length: 4 }, () => ({ bytes: new Uint8Array(fs.readFileSync(new URL('./fixtures/dark.png', import.meta.url))), w: 1280, h: 718 }));
+    const withSep = await NC.buildFromImages(imgs4, { perSheet: 4, sepLine: 'both' });
+    const noSep = await NC.buildFromImages(imgs4, { perSheet: 4 });
+    const sep2up = await NC.buildFromImages(imgs4.slice(0, 2), { perSheet: 2, sepLine: 'both' });
+    check('sep: 4-up PDF really draws a dotted (dashed, round-cap) line', hasDashOp(withSep.bytes) === true);
+    check('sep: untouched settings still produce a clean sheet (no dash op)', hasDashOp(noSep.bytes) === false);
+    check('sep: 2-up output never gets the 4-up separator', hasDashOp(sep2up.bytes) === false);
+  }
+
   /* --- pure mode: hard threshold, ZERO greys ever --- */
   big = mk([K, W, K, K], 2, 2);                        // 3/4 ink coverage — ink mode gives grey edge
   r = NC.printSaver.hqMap(big, 1, 1, false, false, true);

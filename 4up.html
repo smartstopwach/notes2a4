@@ -6,8 +6,8 @@
 <title>Notes2A4 · 4-up Studio — four 16:9 note pages on one landscape A4 (400 → 100)</title>
 <meta name="description" content="Special mode: pack FOUR note slides onto one landscape A4 — pages 1·2 left column, 3·4 right, flush rows, a 43 mm white band in the middle for your notes. 400 pages become 100. 100% in-browser, no uploads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='7' width='28' height='18' rx='3' fill='%23fff'/%3E%3Crect x='4' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='4' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=22">
-<link rel="stylesheet" href="fourup.css?v=22">
+<link rel="stylesheet" href="styles.css?v=23">
+<link rel="stylesheet" href="fourup.css?v=23">
 <meta http-equiv="Cache-Control" content="no-cache">
 </head>
 <body id="top" class="fu-body">
@@ -192,6 +192,16 @@
               <small>Start at lets a second file continue where the first ended (e.g. 21).</small>
             </div>
           </div>
+          <label class="sw"><input type="checkbox" id="optSep"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Dotted separators</b><em>a black dotted cut-line down the middle of the sheet, so the four panels read as separate notes</em></span></label>
+          <div class="ps-opts" id="sepOpts" hidden>
+            <div class="fld"><span class="lbl">Which line</span>
+              <div class="seg" role="radiogroup" aria-label="Separator lines">
+                <label><input type="radio" name="sepline" id="sepV"><span>&#9474; vertical</span></label>
+                <label><input type="radio" name="sepline" id="sepH"><span>&#9472; horizontal</span></label>
+                <label><input type="radio" name="sepline" id="sepB" checked><span>&#10010; both (cross)</span></label>
+              </div>
+            </div>
+          </div>
           <label class="sw psRow"><input type="checkbox" id="optPrint"><span class="track"><span class="thumb"></span></span>
             <span class="sw-t"><b>Print-Saver inversion ◐</b><em>dark board notes → printer-friendly: black → white paper · pick a colour style below — black ink, kept colours, or a true 255−c negative revert</em></span></label>
           <div class="ps-opts" id="psOpts" hidden>
@@ -266,10 +276,10 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=22"></script>
-<script src="converter.js?v=22"></script>
-<script src="enhance.js?v=22"></script>
-<script src="review.js?v=22"></script>
-<script src="app4up.js?v=22"></script>
+<script src="session.js?v=23"></script>
+<script src="converter.js?v=23"></script>
+<script src="enhance.js?v=23"></script>
+<script src="review.js?v=23"></script>
+<script src="app4up.js?v=23"></script>
 </body>
 </html>

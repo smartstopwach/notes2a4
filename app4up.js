@@ -25,7 +25,12 @@
     numOpts: $('numOpts'), numStart: $('numStart'),
     np: { gap: $('npGap'), tl: $('npTL'), tc: $('npTC'), tr: $('npTR'), bl: $('npBL'), bc: $('npBC'), br: $('npBR') },
     nf: { frac: $('nfFrac'), plain: $('nfPlain'), page: $('nfPage'), dash: $('nfDash'), of: $('nfOf') },
-    ns: { s: $('nsS'), m: $('nsM'), l: $('nsL') } };
+    ns: { s: $('nsS'), m: $('nsM'), l: $('nsL') },
+    sep: $('optSep'), sepOpts: $('sepOpts'), sepV: $('sepV'), sepH: $('sepH'), sepB: $('sepB') };
+  function sepLineVal() {                                   // off | v | h | both
+    if (!opt.sep || !opt.sep.checked) return 'off';
+    return (opt.sepB && opt.sepB.checked) ? 'both' : ((opt.sepH && opt.sepH.checked) ? 'h' : 'v');
+  }
   function numPosVal() { var p = opt.np; for (var k in p) if (p[k] && p[k].checked) return k; return 'gap'; }
   function numFmtVal() { var p = opt.nf; for (var k in p) if (p[k] && p[k].checked) return k; return 'frac'; }
   function numSizeVal() { return opt.ns.l && opt.ns.l.checked ? 11 : (opt.ns.s && opt.ns.s.checked ? 6.5 : 8); }
@@ -39,6 +44,7 @@
       gap: parseFloat(opt.gap.value) * MM,
       lines: opt.lines.checked,
       pageNumbers: opt.nums.checked,
+      sepLine: sepLineVal(),
       numPos: numPosVal(), numFmt: numFmtVal(),
       numStart: parseInt(opt.numStart.value, 10) || 1, numSize: numSizeVal()
     });
@@ -88,6 +94,7 @@
   }
   function syncAfterRestore() {
     if (opt.gap) opt.gap.disabled = opt.gapAuto.checked;
+    if (opt.sepOpts && opt.sep) opt.sepOpts.hidden = !opt.sep.checked;
     if (printEls.opts && printEls.on) printEls.opts.hidden = !printEls.on.checked;
     if (opt.numOpts && opt.nums) opt.numOpts.hidden = !opt.nums.checked;
     if (opt.margin) opt.margin.dispatchEvent(new Event('input'));
@@ -209,6 +216,12 @@
     el.addEventListener(el.type === 'radio' || el.type === 'checkbox' ? 'change' : 'input', schedule);
   });
     // numbering options: reveal panel with the checkbox, refresh preview on any change
+  function sepListeners(sched) {
+    if (!opt.sep) return;
+    opt.sepOpts.hidden = !opt.sep.checked;
+    opt.sep.addEventListener('change', function () { opt.sepOpts.hidden = !opt.sep.checked; sched(); });
+    [opt.sepV, opt.sepH, opt.sepB].forEach(function (el) { if (el) el.addEventListener('change', sched); });
+  }
   function numListeners(sched) {
     if (!opt.numOpts) return;
     opt.nums.addEventListener('change', function () { opt.numOpts.hidden = !opt.nums.checked; });
@@ -222,6 +235,7 @@
   }
   printListeners(schedule);
   numListeners(schedule);
+  sepListeners(schedule);
 
   /* ---------- live preview (same engine as the final PDF) ---------- */
   async function renderPreview() {
@@ -284,6 +298,20 @@
         ctx.lineTo((L.gap.x + L.gap.w - 10) * pxPerPt, yPx);
         ctx.stroke();
       }
+    }
+    var segs = NotesConverter.sepLines(L, opts, page);   // identical helper the PDF build uses
+    if (segs.length) {
+      ctx.save();
+      ctx.setLineDash([0.9 * pxPerPt, 3.2 * pxPerPt]);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#000'; ctx.lineWidth = Math.max(1, 1.1 * pxPerPt);
+      for (var gi = 0; gi < segs.length; gi++) {
+        ctx.beginPath();
+        ctx.moveTo(segs[gi].x1 * pxPerPt, (page.h - segs[gi].y1) * pxPerPt);
+        ctx.lineTo(segs[gi].x2 * pxPerPt, (page.h - segs[gi].y2) * pxPerPt);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     if (opts.pageNumbers && (opts.numPos !== 'gap' || L.gap.h >= 12)) { // mirror of converter build() guard
       var sheets = Math.ceil(state.pages / 4);
@@ -447,7 +475,8 @@
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed 4-per-sheet into ' + res.sheets + ' ' +
         NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' landscape sheet' + (res.sheets === 1 ? '' : 's') + ' · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
-        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative'})[printStyle()] : '');
+        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative'})[printStyle()] : '') +
+        (sepLineVal() === 'off' ? '' : ' · dotted ' + (sepLineVal() === 'both' ? 'cross' : (sepLineVal() === 'v' ? 'vertical' : 'horizontal')) + ' separator');
       await makeThumbs(res.bytes, res.sheets);
       if (sessReady()) {
         NotesSession.saveResult({
