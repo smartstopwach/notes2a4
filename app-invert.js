@@ -229,7 +229,7 @@
       var hm = await NotesConverter.printSaver.hqMapAsync(
         function (y0, rows) { return x2.getImageData(0, y0, c2.width, rows); },
         c2.width, c2.height, c2.width, c2.height, true, keepColour(), pureMode(),
-        { band: 192, progress: function () { return NotesFX.uiYield(); } });   // banded: previews stay snappy too
+        { band: 192, progress: function () { return NotesFX.uiPaint(); } });   // banded: previews stay snappy too
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else {
       var id = x2.getImageData(0, 0, c2.width, c2.height);
@@ -566,7 +566,7 @@
       if (strip) strip.place(img, i - 1);
       else thumbs.appendChild(img);
       pg.cleanup();
-      await NotesFX.uiYield();                       // stay responsive while previews render
+      await NotesFX.uiPaint();                       // stay responsive while previews render
     }
     if (n > show) {
       var more = document.createElement('p');

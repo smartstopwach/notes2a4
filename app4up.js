@@ -313,7 +313,7 @@
         var hmP = await printMapAsync(
           function (y0, rows) { return octx.getImageData(0, y0, off.width, rows); },
           off.width, off.height, off.width, off.height,
-          { band: 192, progress: function () { return NotesFX.uiYield(); } });
+          { band: 192, progress: function () { return NotesFX.uiPaint(); } });
         octx.putImageData(new ImageData(hmP.imageData.data, off.width, off.height), 0, 0);
       }
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
@@ -506,15 +506,17 @@
           pFill.style.width = (d / t * 60).toFixed(1) + '%';
           pStatus.textContent = 'page ' + d + ' of ' + t + ' · ' + (cached ? 'from checkpoint' : 'binarising ' + (st || 'at ' + printDpi() + ' dpi…'));
           NotesFX.titleProgress(d * 0.6, t);
-          return NotesFX.uiYield();
+          return NotesFX.uiPaint();
         }, ck);
         pFill.style.width = '65%'; pStatus.textContent = 'packing sheets…';
         if (sessReady()) await NotesSession.runSave({ phase: 'pack', page: state.pages, pages: state.pages, kind: 'print' });
-        res = await NotesConverter.buildFromImages(items, readOptions(), function (d, t) {
+        res = await NotesConverter.buildFromImages(items, readOptions(), function (d, t, phase) {
           pFill.style.width = (65 + d / t * 32).toFixed(1) + '%';
-          pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
+          pStatus.textContent = phase === 'writing' ? 'writing the file…'
+            : phase === 'encoding' ? 'placing page images… ' + d + ' / ' + t
+            : 'sheet ' + d + ' of ' + t + '…';
           NotesFX.titleProgress(65 + d / t * 32, 100);
-          return NotesFX.uiYield();
+          return NotesFX.uiPaint();                      // real frames, not just event-loop turns
         });
       } else {
         if (sessReady()) await NotesSession.runBegin(sig + '|vector', state.pages, 'vector');
@@ -523,7 +525,7 @@
           pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
           if (sessReady() && (d === t || d % 4 === 0)) NotesSession.runSave({ phase: 'build', page: d, pages: t, kind: 'vector' });
           NotesFX.titleProgress(d, t);
-          return NotesFX.uiYield();
+          return NotesFX.uiPaint();                      // real frames, not just event-loop turns
         });
       }
       pFill.style.width = '100%'; pStatus.textContent = 'done';
@@ -600,7 +602,7 @@
       if (strip) strip.place(img, i - 1);
       else thumbs.appendChild(img);
       pg.cleanup();
-      await NotesFX.uiYield();                       // stay responsive while previews render
+      await NotesFX.uiPaint();                       // stay responsive while previews render
     }
     if (sheets > show) {
       var more = document.createElement('p');
