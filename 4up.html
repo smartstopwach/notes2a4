@@ -6,8 +6,8 @@
 <title>Notes2A4 · 4-up Studio — four 16:9 note pages on one landscape A4 (400 → 100)</title>
 <meta name="description" content="Special mode: pack FOUR note slides onto one landscape A4 — pages 1·2 left column, 3·4 right, flush rows, a 43 mm white band in the middle for your notes. 400 pages become 100. 100% in-browser, no uploads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='7' width='28' height='18' rx='3' fill='%23fff'/%3E%3Crect x='4' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='4' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=24">
-<link rel="stylesheet" href="fourup.css?v=24">
+<link rel="stylesheet" href="styles.css?v=25">
+<link rel="stylesheet" href="fourup.css?v=25">
 <meta http-equiv="Cache-Control" content="no-cache">
 </head>
 <body id="top" class="fu-body">
@@ -211,9 +211,18 @@
                 <label><input type="radio" name="psstyle" id="psKeep"><span>Keep colours</span></label>
                 <label><input type="radio" name="psstyle" id="psNeg"><span>True negative</span></label>
               </div>
-              <small><b>Black ink</b>: smooth-edged K-cartridge output (colour fills → grey). <b>Pure B&amp;W</b>: hard threshold — every pixel is exactly black or white, zero greys/gradients. <b>Keep colours</b>: blue/green/yellow stay their hue as dark printable ink. <b>True negative</b>: pure 255−c revert — colours flip to their complements, like the Invert Lab.</small>
+              <ul class="note-list">
+                <li><b>Black ink</b> — normal black &amp; white. Edges stay smooth and soft.</li>
+                <li><b>Pure B&amp;W</b> — every dot is fully black or fully white, no grey at all. Best for handwriting.</li>
+                <li><b>Keep colours</b> — coloured highlights stay coloured, just darkened so they print cleanly.</li>
+                <li><b>True negative</b> — every colour flips to its opposite (blue → orange), like a photo negative.</li>
+              </ul>
             </div>
-            <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>invert only dark pages — already-white pages pass through untouched</em></span></label>
+            <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>what it actually does — the two points below</em></span></label>
+            <ul class="note-list">
+              <li><b>ON (default)</b> — only dark pages are flipped; pages that are already white stay as they are.</li>
+              <li><b>OFF</b> — every page is flipped, even light ones (light notes would turn dark — leave it ON unless you want that).</li>
+            </ul>
           </div>
         </div>
 
@@ -267,10 +276,10 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=24"></script>
-<script src="converter.js?v=24"></script>
-<script src="enhance.js?v=24"></script>
-<script src="review.js?v=24"></script>
-<script src="app4up.js?v=24"></script>
+<script src="session.js?v=25"></script>
+<script src="converter.js?v=25"></script>
+<script src="enhance.js?v=25"></script>
+<script src="review.js?v=25"></script>
+<script src="app4up.js?v=25"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 <meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
 <meta http-equiv="Cache-Control" content="no-cache">
-<link rel="stylesheet" href="styles.css?v=23">
+<link rel="stylesheet" href="styles.css?v=25">
 </head>
 <body id="top">
 
@@ -246,9 +246,18 @@
                 <label><input type="radio" name="psstyle" id="psKeep"><span>Keep colours</span></label>
                 <label><input type="radio" name="psstyle" id="psNeg"><span>True negative</span></label>
               </div>
-              <small><b>Black ink</b>: smooth-edged K-cartridge output (colour fills → grey). <b>Pure B&amp;W</b>: hard threshold — every pixel is exactly black or white, zero greys/gradients. <b>Keep colours</b>: blue/green/yellow stay their hue as dark printable ink. <b>True negative</b>: pure 255−c revert — colours flip to their complements, like the Invert Lab.</small>
+              <ul class="note-list">
+                <li><b>Black ink</b> — normal black &amp; white. Edges stay smooth and soft.</li>
+                <li><b>Pure B&amp;W</b> — every dot is fully black or fully white, no grey at all. Best for handwriting.</li>
+                <li><b>Keep colours</b> — coloured highlights stay coloured, just darkened so they print cleanly.</li>
+                <li><b>True negative</b> — every colour flips to its opposite (blue → orange), like a photo negative.</li>
+              </ul>
             </div>
-            <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>invert only dark pages — already-white pages pass through untouched</em></span></label>
+            <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>what it actually does — the two points below</em></span></label>
+            <ul class="note-list">
+              <li><b>ON (default)</b> — only dark pages are flipped; pages that are already white stay as they are.</li>
+              <li><b>OFF</b> — every page is flipped, even light ones (light notes would turn dark — leave it ON unless you want that).</li>
+            </ul>
           </div>
         </div>
 
@@ -313,11 +322,11 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=23"></script>
-<script src="converter.js?v=23"></script>
-<script src="enhance.js?v=23"></script>
-<script src="review.js?v=23"></script>
-<script src="app.js?v=23"></script>
+<script src="session.js?v=25"></script>
+<script src="converter.js?v=25"></script>
+<script src="enhance.js?v=25"></script>
+<script src="review.js?v=25"></script>
+<script src="app.js?v=25"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

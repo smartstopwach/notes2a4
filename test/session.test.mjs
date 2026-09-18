@@ -278,6 +278,23 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     const sv = src.match(/session\.js\?v=(\d+)/);
     check('markup: ' + h + ' cache-busts app + session together', !!v && !!sv && v[1] === sv[1], 'app v' + (v && v[1]));
   }
+  // the colour-style / flip-style explanations must be scannable bullets, not a wall of text
+  {
+    const expect = { 'index.html': 6, '4up.html': 6, 'invert.html': 4 };
+    for (const h of htmls) {
+      const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');
+      const lists = [...src.matchAll(/<ul class="note-list">([\s\S]*?)<\/ul>/g)];
+      const items = lists.reduce((n, m) => n + (m[1].match(/<li>/g) || []).length, 0);
+      check('markup: ' + h + ' explains the styles as bullet points (' + items + ' bullets)', items === expect[h]);
+      check('markup: ' + h + ' no longer hides the explanation in a paragraph',
+        !/K-cartridge output/.test(src) && !/<small>Black ink flips/.test(src));
+      check('markup: ' + h + ' every bullet names a style in bold', lists.length > 0 &&
+        lists.every((m) => (m[1].match(/<li><b>/g) || []).length === (m[1].match(/<li>/g) || []).length));
+    }
+    const css2 = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+    check('css: bullet list is styled (dot markers + muted text)', /\.note-list li::before/.test(css2) && /\.note-list li b\{/.test(css2));
+  }
+
   // every option control must sit inside #workbench, otherwise it is never snapshotted
   for (const h of htmls) {
     const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');

@@ -514,3 +514,12 @@ input[type=range]:disabled{opacity:.35}
 .sess-btn.sess-go{background:#0f766e;border-color:#14b8a6;color:#eafff9}
 .sess-btn.sess-go:hover{background:#0d9488}
 @media (max-width:520px){.sess-bar{font-size:.78rem}.sess-actions{width:100%}.sess-btn{flex:1}}
+
+/* ---------- option explanations as scannable bullets ---------- */
+.note-list{margin:.55rem 0 .1rem;padding:0;list-style:none;display:grid;gap:.3rem}
+.note-list li{position:relative;padding-left:1.05rem;font:500 .8rem/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:#aab6cc}
+.note-list li::before{content:"";position:absolute;left:.16rem;top:.5em;width:5px;height:5px;border-radius:50%;
+  background:#5eead4;box-shadow:0 0 0 2px #5eead433}
+.note-list li b{color:#e6ecf7;font-weight:600}
+@media (max-width:520px){.note-list li{font-size:.76rem}}
