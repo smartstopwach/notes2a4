@@ -333,6 +333,54 @@ console.log('5e) hq-map:');
     check('white paper: a dark page is identical to Black ink (black still becomes white paper)',
       sameDark && whiteDark.inverted === true, 'inverted=' + whiteDark.inverted);
 
+    /* --- a dark area INSIDE a white page is a board: it flips inside itself ---
+       (this is the case the user compared against a photo-negative tool: a white
+        notes page holding a navy board panel with white strokes on it) */
+    {
+      const W = 200, H = 120, SS = 3, bw = W * SS, bh = H * SS;
+      const buf = new Uint8ClampedArray(bw * bh * 4);
+      const put = (x, y, c) => { if (x < 0 || y < 0 || x >= bw || y >= bh) return; const o = ((y | 0) * bw + (x | 0)) * 4; buf[o] = c[0]; buf[o + 1] = c[1]; buf[o + 2] = c[2]; buf[o + 3] = 255; };
+      const box = (x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put(x + i, y + j, c); };
+      const pt = (v) => v * SS;
+      box(0, 0, bw, bh, [255, 255, 255]);                       // white paper
+      box(pt(20), pt(20), pt(100), pt(60), [18, 23, 43]);       // the board panel
+      box(pt(40), pt(40), pt(40), pt(4), [255, 255, 255]);      // a thick white stroke on it
+      box(pt(20), pt(90), pt(80), pt(4), [26, 26, 32]);         // dark text on the paper
+      box(pt(150), pt(20), pt(12), pt(12), [0, 0, 0]);          // a small registration mark
+      const page = { data: buf, width: bw, height: bh };
+      const out = NC.printSaver.hqMap(page, W, H, true, false, false, true);
+      const px = (x, y) => out.imageData.data[(y * W + x) * 4];
+      check('white paper + board: the board becomes paper (it is flipped inside itself)',
+        px(60, 70) === 255 && px(100, 30) === 255, 'board interior ' + px(60, 70) + '/' + px(100, 30));
+      check('white paper + board: the strokes on the board become ink',
+        px(50, 41) === 0 && px(70, 42) === 0, 'stroke ' + px(50, 41) + '/' + px(70, 42));
+      check('white paper + board: the paper around the board is untouched',
+        px(180, 10) === 255 && px(60, 110) === 255, 'paper ' + px(180, 10) + '/' + px(60, 110));
+      check('white paper + board: dark text on the paper still becomes solid ink',
+        px(60, 91) === 0 && px(60, 92) === 0, 'text ' + px(60, 91));
+      check('white paper + board: a small dark mark is ink, not a board (no white hole)',
+        px(155, 25) === 0 && px(156, 26) === 0 && px(150, 20) === 0, 'mark ' + px(155, 25));
+      /* the rule must not depend on how the page is cut into bands */
+      const banded = await NC.printSaver.hqMapAsync((y0, rows) => ({
+        data: buf.subarray(y0 * bw * 4, (y0 + rows) * bw * 4), width: bw, height: rows
+      }), bw, bh, W, H, true, false, false, { band: 7 }, true);
+      let sameBoard = true;
+      for (let i = 0; i < out.imageData.data.length; i++) if (out.imageData.data[i] !== banded.imageData.data[i]) sameBoard = false;
+      check('white paper + board: the banded run finds the same board (band boundaries do not matter)', sameBoard);
+      /* White paper with a board must differ from the plain paper rule — that is the fix */
+      const pieces = NC.printSaver.pieces;
+      const acc = pieces.hqAcc(W, H);
+      pieces.hqFeed(acc, buf, bw, 0, bh, bh);
+      const st = pieces.hqSt(acc);
+      pieces.hqFinishA(acc, 0, H, st);
+      st.invert = st.dark / acc.n >= 0.5;
+      const before = new Uint8ClampedArray(acc.n * 4);
+      pieces.hqFinishB(acc, 0, H, st, before, false, false, true);      // no mask: the old behaviour
+      check('white paper + board: without the board step the panel printed as a black rectangle',
+        before[(70 * W + 60) * 4] === 0 && out.imageData.data[(70 * W + 60) * 4] === 255,
+        'before ' + before[(70 * W + 60) * 4] + ' → now ' + out.imageData.data[(70 * W + 60) * 4]);
+    }
+
     /* the banded path must agree with the one-shot path in this mode too */
     const big2 = (() => {
       const w = 64, h = 48, d = new Uint8ClampedArray(w * h * 4);

@@ -381,6 +381,17 @@
      (its paper is bright, unlike a blackboard's) */
   var PS_WHITE_HI = 200;   // ≥ this is paper: handed back exactly as it came in
   var PS_WHITE_LO = 90;    // ≤ this is solid content: solid ink
+  /* A dark *area* inside a light page is a board (a blackboard panel, a dark
+     slide): it must print as ink on paper, exactly like Black ink does for a dark
+     page. The area is found in blocks (darkFrac ≥ PS_BOARD_FRAC), then eroded
+     (a block survives only if it is dark all around) and grown back one block —
+     that keeps small dark marks, thick strokes, headings and the corner
+     registration squares under the ordinary White-paper rule. */
+  var PS_BOARD_FINE = 8;    // fine blocks: where the board's own edge is (≈1.4 mm at 150 dpi)
+  var PS_BOARD_COARSE = 24; // coarse cells: how big a dark area must be to count as a board
+  var PS_BOARD_SEED = 0.7;  // a cell this dark, surrounded by dark cells, is a board seed
+  var PS_BOARD_GROW = 0.5;  // a cell this dark joins the board next to it
+  var PS_BOARD_EDGE = 0.3;  // …and this dark may JOIN a board next to it (its own edge)
   var PS_GAMMA = 1.7;   // ink-bias exponent of the edge ramp (>1 → fatter darks)
   /* ------------------------------------------------------------------------
      The two maps below are long-running pixel work. They are built out of three
@@ -434,6 +445,104 @@
       }
     }
   }
+  /* One pass over the finished luma image, after hqFinishA and before hqFinishB:
+     which blocks of a light page are a dark area (a board) and must be flipped?
+     It reads only st.Ls, so the answer never depends on band boundaries. */
+  function hqBoardMask(acc, st) {
+    var outW = acc.outW, outH = acc.outH, Ls = st.Ls, T = PS_DARK_LUM;
+    var F = PS_BOARD_FINE, C = PS_BOARD_COARSE, i, j;
+    var fw = Math.ceil(outW / F), fh = Math.ceil(outH / F);
+    var cw = Math.ceil(outW / C), ch = Math.ceil(outH / C);
+    /* fine blocks: is this little square mostly ink? */
+    var fine = new Float32Array(fw * fh);
+    for (var fy = 0; fy < fh; fy++) {
+      for (var fx = 0; fx < fw; fx++) {
+        var dark = 0, n = 0, y1 = Math.min(outH, fy * F + F), x1 = Math.min(outW, fx * F + F);
+        for (var y = fy * F; y < y1; y++) {
+          var base = y * outW;
+          for (var x = fx * F; x < x1; x++) { n++; if (Ls[base + x] <= T) dark++; }
+        }
+        fine[fy * fw + fx] = n ? dark / n : 0;
+      }
+    }
+    /* coarse cells: the same question, asked big enough to separate "a panel" from
+       "a heading": a dark area has to be ~3 cells thick in every direction before
+       it is called a board, so a filled bar or a bold heading is never one */
+    var coarse = new Float32Array(cw * ch);
+    for (var cy = 0; cy < ch; cy++) {
+      for (var cx = 0; cx < cw; cx++) {
+        var d2 = 0, n2 = 0, y2 = Math.min(outH, cy * C + C), x2 = Math.min(outW, cx * C + C);
+        for (var yy = cy * C; yy < y2; yy++) {
+          var b2 = yy * outW;
+          for (var xx = cx * C; xx < x2; xx++) { n2++; if (Ls[b2 + xx] <= T) d2++; }
+        }
+        coarse[cy * cw + cx] = n2 ? d2 / n2 : 0;
+      }
+    }
+    var on = new Uint8Array(cw * ch), queue = [];
+    for (var sy = 0; sy < ch; sy++) {
+      for (var sx = 0; sx < cw; sx++) {
+        if (coarse[sy * cw + sx] < PS_BOARD_SEED) continue;
+        var nb = 0;
+        for (j = -1; j <= 1; j++) {
+          for (i = -1; i <= 1; i++) {
+            if (!i && !j) continue;
+            var ny = sy + j, nx = sx + i;
+            if (ny < 0 || nx < 0 || ny >= ch || nx >= cw) continue;
+            if (coarse[ny * cw + nx] >= PS_BOARD_SEED) nb++;
+          }
+        }
+        if (nb >= 5) { on[sy * cw + sx] = 1; queue.push(sy * cw + sx); }
+      }
+    }
+    /* Back to the fine grid. The coarse cells only decided WHERE a board can be;
+       the shape itself is then filled at the fine level, walking through blocks
+       that are at least partly ink and stopping the moment paper is reached. A dark
+       bar a few millimetres below the board is NOT reached by this walk (there is
+       paper in between), while the board's own edge — cut through by a white stroke
+       or fading out at the panel boundary — is. */
+    st.boardW = fw;
+    st.board = new Uint8Array(fw * fh);
+    var queue2 = [];
+    for (var b0 = 0; b0 < fw * fh; b0++) {
+      var cx0 = ((b0 % fw) * F / C) | 0, cy0 = (((b0 / fw) | 0) * F / C) | 0;
+      if (on[cy0 * cw + cx0] && fine[b0] >= PS_BOARD_EDGE) { st.board[b0] = 1; queue2.push(b0); }
+    }
+    while (queue2.length) {
+      var b1 = queue2.pop(), bx1 = b1 % fw, by1 = (b1 / fw) | 0;
+      for (j = -1; j <= 1; j++) {
+        for (i = -1; i <= 1; i++) {
+          if (!i && !j) continue;
+          var nx1 = bx1 + i, ny1 = by1 + j;
+          if (nx1 < 0 || ny1 < 0 || nx1 >= fw || ny1 >= fh) continue;
+          var b2 = ny1 * fw + nx1;
+          if (st.board[b2] || fine[b2] < PS_BOARD_EDGE) continue;
+          st.board[b2] = 1; queue2.push(b2);
+        }
+      }
+    }
+    /* close single-block gaps, so no paper pixel is left inside the board */
+    var grown = st.board.slice();
+    for (var dy = 0; dy < fh; dy++) {
+      for (var dx = 0; dx < fw; dx++) {
+        if (st.board[dy * fw + dx] || fine[dy * fw + dx] < PS_BOARD_EDGE) continue;
+        if ((dy > 0 && st.board[(dy - 1) * fw + dx]) || (dy < fh - 1 && st.board[(dy + 1) * fw + dx]) ||
+            (dx > 0 && st.board[dy * fw + dx - 1]) || (dx < fw - 1 && st.board[dy * fw + dx + 1])) {
+          grown[dy * fw + dx] = 1;
+        }
+      }
+    }
+    st.board = grown;
+  }
+
+  /* is this pixel inside a board block? */
+  function hqBoardAt(st, p, outW) {
+    if (!st.board) return 0;
+    var BLK = PS_BOARD_FINE;
+    var gx = ((p % outW) / BLK) | 0, gy = ((p / outW) | 0) / BLK | 0;
+    return st.board[gy * st.boardW + gx];
+  }
+
   /* pass 2 of the finish: write the output pixels for rows r0 … r1 */
   function hqFinishB(acc, r0, r1, st, out, keepColour, pure, white) {
     var outW = acc.outW, cnt = acc.cnt, Ls = st.Ls, maxC = acc.maxC;
@@ -443,6 +552,19 @@
       var cN = cnt[p] || 1, L = Ls[p];
       var o = p * 4;
       if (!invert) {                  // light page
+        if (white && hqBoardAt(st, p, outW)) {
+          /* A BOARD inside the page (a blackboard panel, a dark slide): flip it the
+             way Black ink flips a whole dark page — the board becomes paper and the
+             marks on it become black ink. That is what the tool the user compared
+             against does, and it is the only way a white-marker sketch survives:
+             paper stays white, but ink still has to come out as ink. */
+          if (L <= lo) v = 255;
+          else if (maxC[p] > PS_CHROMA) v = 0;
+          else if (L >= hi) v = 0;
+          else { var tb = (L - lo) / (hi - lo); v = (Math.pow(1 - tb, PS_GAMMA) * 255) | 0; }
+          out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+          continue;
+        }
         if (white) {                  // WHITE PAPER: paper stays paper, everything else is ink
           /* The band is measured for a WHITE page, not a black board: paper on a
              scan or a JPEG sits around 230–255, so everything from ~200 up is
@@ -500,6 +622,7 @@
     var st = hqSt(acc);
     hqFinishA(acc, 0, acc.outH, st);
     st.invert = auto ? st.dark / acc.n >= 0.5 : true;
+    if (white && !st.invert) hqBoardMask(acc, st);       // dark areas of a light page
     hqFinishB(acc, 0, acc.outH, st, acc.out = new Uint8ClampedArray(acc.n * 4), keepColour, pure, white);
     return hqResult(acc, st);
   }
@@ -527,6 +650,7 @@
       if (step) await step(0.55 + (r1 / outH) * 0.15, 'measure');
     }
     st.invert = auto ? st.dark / acc.n >= 0.5 : true;
+    if (white && !st.invert) hqBoardMask(acc, st);       // dark areas of a light page
     acc.out = new Uint8ClampedArray(acc.n * 4);
     for (var r2 = 0; r2 < outH; r2 += band) {
       var r3 = Math.min(outH, r2 + band);
@@ -797,8 +921,10 @@
       process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, negMap: negMap, negMapAsync: negMapAsync,
       keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA,
       WHITE_HI: PS_WHITE_HI, WHITE_LO: PS_WHITE_LO,
+      BOARD_FINE: PS_BOARD_FINE, BOARD_COARSE: PS_BOARD_COARSE, BOARD_SEED: PS_BOARD_SEED, BOARD_GROW: PS_BOARD_GROW,
       pieces: {
         hqAcc: hqAcc, hqFeed: hqFeed, hqFinishA: hqFinishA, hqFinishB: hqFinishB, hqSt: hqSt,
+        hqBoardMask: hqBoardMask,
         negAcc: negAcc, negFeed: negFeed, negFinishA: negFinishA, negFinishB: negFinishB
       }
     }

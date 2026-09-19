@@ -73,6 +73,9 @@
     } else {
       maps.hqFinishA(acc, 0, o.H, this.st);
       this.st.invert = o.auto ? this.st.dark / n >= 0.5 : true;
+      /* a dark area inside a light page (a board) is found from the whole luma
+         image, exactly as the main thread does it — same mask, same pixels */
+      if (o.white && !this.st.invert && maps.hqBoardMask) maps.hqBoardMask(acc, this.st);
       maps.hqFinishB(acc, 0, o.H, this.st, out, !!o.keepColour, !!o.pure, !!o.white);
     }
     return {

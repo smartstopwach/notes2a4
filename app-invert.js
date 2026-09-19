@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 10;
+  var BUILD = 11;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {

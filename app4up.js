@@ -1,7 +1,7 @@
 /* ============ Notes2A4 — 4-up Studio (landscape, pair columns) ============ */
 (function () {
   'use strict';
-  var BUILD = 9;
+  var BUILD = 10;
   console.info('[Notes2A4] app4up.js build', BUILD, '· 4-up landscape studio (demo-exact geometry)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.quadLayout) {
     document.addEventListener('DOMContentLoaded', function () {

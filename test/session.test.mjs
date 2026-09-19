@@ -545,7 +545,8 @@ console.log('\n=== session.js: reload-proof storage ===\n');
       const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');
       check('white paper: ' + h + ' offers the style and explains it',
         new RegExp('id="' + id + '"').test(src) && /<b>White paper/.test(src) &&
-        /white[^<]{0,60}left exactly as it is|white \(paper\) is left exactly as it is/.test(src));
+        /paper is left exactly as it is/.test(src) &&
+        /dark area[\s\S]{0,220}blackboard panel/.test(src));   // the board rule must be promised too
     }
     const cv = readFileSync(new URL('../converter.js', import.meta.url), 'utf8');
     check('white paper: the core has the rule and its own paper/content band',

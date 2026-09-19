@@ -75,6 +75,32 @@ console.log('\n=== raster worker ===\n');
   const job = new core.MapJob(MAPS, { kind: 'hq', bw: 40, bh: 30, W: 40, H: 30, auto: true, trackBlank: true });
   job.feed(0, 30, white);
   check('worker map: a pure-white page is reported blank', job.finish().blank === true);
+
+  /* a light page with a dark board panel: the worker has to find the same board the
+     main thread finds (the mask is built from the whole luma image, before the map) */
+  {
+    const W = 200, H = 120, SS = 3, bw = W * SS, bh = H * SS;
+    const buf = new Uint8ClampedArray(bw * bh * 4);
+    const put = (x, y, c) => { const o = ((y | 0) * bw + (x | 0)) * 4; buf[o] = c[0]; buf[o + 1] = c[1]; buf[o + 2] = c[2]; buf[o + 3] = 255; };
+    const box = (x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put(x + i, y + j, c); };
+    const pt = (v) => v * SS;
+    box(0, 0, bw, bh, [255, 255, 255]);
+    box(pt(20), pt(20), pt(100), pt(60), [18, 23, 43]);          // the board
+    box(pt(40), pt(40), pt(40), pt(4), [255, 255, 255]);         // a stroke on it
+    const job = new core.MapJob(MAPS, { kind: 'hq', bw, bh, W, H, auto: true, keepColour: false, pure: false, white: true, trackBlank: true });
+    for (let y = 0; y < bh; y += 37) {                          // odd strips on purpose
+      const rows = Math.min(37, bh - y);
+      job.feed(y, rows, buf.subarray(y * bw * 4, (y + rows) * bw * 4));
+    }
+    const res = job.finish();
+    const one = PS.hqMap({ data: buf, width: bw, height: bh }, W, H, true, false, false, true);
+    let diff = 0;
+    for (let i = 0; i < W * H * 4; i++) if (res.data[i] !== one.imageData.data[i]) diff++;
+    const px = (x, y) => res.data[(y * W + x) * 4];
+    check('worker map: a board inside a light page is flipped in the worker too (byte-identical)',
+      diff === 0 && px(60, 70) === 255 && px(50, 41) === 0,
+      diff + ' differing bytes · board ' + px(60, 70) + ' · stroke ' + px(50, 41));
+  }
 }
 
 /* ------------------------------------------------- 2 · client ↔ worker IO --- */
