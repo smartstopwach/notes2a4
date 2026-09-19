@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import vm from 'node:vm';
 import { installFakeWorker, makeOffscreenCanvas, installRasterClient, resetRaster } from './fake-worker.mjs';
+import { decodePNG } from '../tools/img-io.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
@@ -76,9 +77,27 @@ function makeCtx() {
     getImageData: (x, y, w, h) => ({                       // deterministic "rendered page"
       data: (() => {
         const d = new Uint8ClampedArray(w * h * 4);
-        for (let i = 0; i < w * h; i++) {
-          const v = ((i * 37) % 256);
-          d[i * 4] = v; d[i * 4 + 1] = 255 - v; d[i * 4 + 2] = (v * 3) % 256; d[i * 4 + 3] = 255;
+        const notes = globalThis.__pagePattern === 'notes';
+        for (let yy = 0; yy < h; yy++) {
+          for (let xx = 0; xx < w; xx++) {
+            const i = yy * w + xx, o = i * 4;
+            if (!notes) {                                   // synthetic colour noise
+              const v = ((i * 37) % 256);
+              d[o] = v; d[o + 1] = 255 - v; d[o + 2] = (v * 3) % 256; d[o + 3] = 255;
+              continue;
+            }
+            /* a page someone would actually scan: white paper, a coloured banner,
+               a dark heading and dark text lines — every rule of the ink map gets
+               something to chew on, and "paper" really is paper */
+            const fx = xx / w, fy = yy / h;
+            let rgb = [255, 255, 255];
+            if (fy < 0.12) rgb = [40, 120, 255];                        // blue banner
+            else if (fy > 0.16 && fy < 0.20) rgb = [20, 20, 20];        // heading
+            else if (fy > 0.25 && fy < 0.85 && (Math.floor(fy * 100) % 12) < 5) rgb = [35, 35, 35];  // text lines
+            else if (fy > 0.88 && fx > 0.1 && fx < 0.5) rgb = [255, 220, 60];                        // yellow highlight
+            else if (fy > 0.9 && fx > 0.6 && fx < 0.9) rgb = [200, 200, 200];                        // light grey box
+            d[o] = rgb[0]; d[o + 1] = rgb[1]; d[o + 2] = rgb[2]; d[o + 3] = 255;
+          }
         }
         return d;
       })(), width: w, height: h
@@ -261,7 +280,20 @@ async function boot(appFile, { pages = 2, html = '', thumbsDelay = 0, raster = '
   set('navigator', { userAgent: 'node', storage: undefined });
   const pdfStub = makePdfStub(thumbsDelay, sourceDelay, rafChunks);
   set('pdfjsLib', pdfStub);
-  set('PDFLib', require('pdf-lib'));
+  {
+    /* every page image that reaches the output PDF is captured, so a test can look
+       at the pixels the app really shipped — not at what it says it did */
+    const lib = require('pdf-lib');
+    const captured = [];
+    /* embedPng/embedJpg are instance methods (out.embedPng(...)), so the prototype
+       is what has to be wrapped */
+    for (const fn of ['embedPng', 'embedJpg']) {
+      const orig = lib.PDFDocument.prototype[fn];
+      lib.PDFDocument.prototype[fn] = function (b, ...rest) { captured.push(Buffer.from(b)); return orig.call(this, b, ...rest); };
+    }
+    globalThis.__capturedImages = captured;
+    set('PDFLib', lib);
+  }
   set('matchMedia', () => ({ matches: false, addEventListener() {} }));
   set('scrollTo', () => {});
   /* Chrome fires NO animation frames while the tab is hidden, so neither does the
@@ -322,18 +354,19 @@ function fixtureFile(bytes, name, pages) {
 
 async function runApp(label, appFile, html, {
   bytes = PDF_2P, name = 'notes-2p.pdf', pages = 2, setOptions = () => {}, thumbsDelay = 0, raster = 'none', sourceDelay = 0,
-  rafChunks = 0, beforeRun = null
+  rafChunks = 0, beforeRun = null, pagePattern = 'noise'
 } = {}) {
   const { document, restore, pdfStub } = await boot(appFile, { pages, html, thumbsDelay, raster, sourceDelay, rafChunks });
+  globalThis.__pagePattern = pagePattern;
   try { return await finishRun(document, bytes, name, pages, setOptions, pdfStub, { beforeRun }); }
-  finally { restore(); }
+  finally { globalThis.__pagePattern = 'noise'; restore(); }
 }
 async function finishRun(document, bytes, name, pages, setOptions, pdfStub, opts = {}) {
   const ok = { loaded: true };
   /* set the option elements before the file arrives, then fire the same change
      events a user's click would fire (the apps reveal panels on those) */
   setOptions((id) => document.getElementById(id));
-  for (const id of ['optSep', 'styleVec', 'styleNeg', 'styleInk', 'stylePure', 'optPrint', 'psPure', 'psKeep', 'psInk', 'psNeg', 'dpi150', 'dpi96', 'dpi220', 'optNums', 'optLines', 'optKeepColour', 'optSkip', 'fmtJpg', 'fmtPng', 'gapAuto', 'gapFixed']) {
+  for (const id of ['optSep', 'styleVec', 'styleNeg', 'styleInk', 'stylePure', 'optPrint', 'psPure', 'psKeep', 'psInk', 'psNeg', 'dpi150', 'dpi96', 'dpi220', 'optNums', 'optLines', 'optKeepColour', 'optSkip', 'fmtJpg', 'fmtPng', 'gapAuto', 'gapFixed', 'psWhite', 'styleWhite']) {
     document.getElementById(id).fire('change');
   }
   document.getElementById('optMargin').fire('input');
@@ -397,6 +430,7 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub, opts
     ok, status, printed, document, revealMs, placeholderAtReveal, worstGap, beats: gaps.length, runMs,
     dl: dl.download, href: dl.href, calls: (pdfStub && pdfStub.calls) || [],
     statusSeen: statusSeen, etaSeen: etaSeen, titleSeen: titleSeen,
+    images: (globalThis.__capturedImages || []).slice(),
     eta: document.getElementById('pEta').textContent
   };
 }
@@ -524,6 +558,68 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
       titles.slice(0, 5).join(' → ').slice(0, 160));
     check('background: no title ever shows NaN', !/NaN/.test(titles.join(' ')), titles.length + ' titles seen');
   } finally { restore(); }
+}
+
+/* ---------- White paper: paper stays paper, everything else becomes ink ----------
+   The reported problem: on a page that is already white, Black ink and Pure B&W do
+   nothing at all (bright pages pass through untouched), so the two look identical.
+   This is the mode that still cleans such a page — verified on the pixels that end
+   up inside the produced PDF, not on what the UI says. */
+{
+  const run4 = (styleId) => runApp('white-paper ' + styleId, 'app4up.js', '4up.html', {
+    bytes: PDF_4P, name: 'notes-4p.pdf', pages: 2, raster: 'real', pagePattern: 'notes',
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi150').checked = true; el(styleId).checked = true; }
+  });
+  const stats = (bytes) => {
+    const img = decodePNG(bytes);
+    let white = 0, black = 0, coloured = 0, brightGrey = 0;
+    for (let i = 0; i < img.w * img.h; i++) {
+      const r = img.data[i * 3], g = img.data[i * 3 + 1], b = img.data[i * 3 + 2];
+      if (r === 255 && g === 255 && b === 255) white++;
+      else if (r === 0 && g === 0 && b === 0) black++;
+      if (Math.max(r, g, b) - Math.min(r, g, b) > 30) coloured++;
+      const L = (r * 299 + g * 587 + b * 114) / 1000;
+      if (L > 120 && L < 250) brightGrey++;
+    }
+    return { w: img.w, h: img.h, n: img.w * img.h, white, black, coloured, brightGrey };
+  };
+  const inkRun = await run4('psInk');
+  const pureRun = await run4('psPure');
+  const whiteRun = await run4('psWhite');
+  const ink = stats(inkRun.images[0]);
+  const pure = stats(pureRun.images[0]);
+  const wp = stats(whiteRun.images[0]);
+  const same = (a, b) => a.w === b.w && a.white === b.white && a.black === b.black &&
+    a.coloured === b.coloured && a.brightGrey === b.brightGrey;
+  check('white paper: on a light page, Black ink and Pure B&W ship the same image (the reported bug)',
+    same(ink, pure) && same(ink, whiteRun.images[0]) === false,
+    'ink(k' + ink.brightGrey + '/c' + ink.coloured + ') · pure(k' + pure.brightGrey + '/c' + pure.coloured +
+    ') · white(k' + wp.brightGrey + '/c' + wp.coloured + ')');
+  check('white paper: the page survives (it is not flipped into a black sheet)',
+    wp.white > wp.n * 0.4 && whiteRun.status === 'done',
+    (100 * wp.white / wp.n).toFixed(0) + '% paper · status ' + whiteRun.status);
+  check('white paper: paper is never turned into ink (no white pixel is lost)',
+    wp.white > 0 && wp.white >= ink.white,
+    wp.white + ' white pixels (' + (100 * wp.white / wp.n).toFixed(0) + '%) vs ' + ink.white + ' on the untouched page');
+  check('white paper: every colour becomes ink (the untouched page kept them)',
+    ink.coloured > 0 && wp.coloured === 0,
+    ink.coloured + ' coloured pixels before → ' + wp.coloured + ' after');
+  check('white paper: no washed-out grey is left behind',
+    wp.brightGrey === 0, wp.brightGrey + ' bright-grey pixels');
+  check('white paper: the result card names the mode',
+    /white kept/.test(whiteRun.printed), whiteRun.printed.slice(0, 90));
+
+  /* Invert Lab has the same style, and its own status line must name it */
+  const invRun = await runApp('invert white paper', 'app-invert.js', 'invert.html', {
+    bytes: PDF_2P, name: 'notes-2p.pdf', pages: 2, raster: 'real', pagePattern: 'notes',
+    setOptions: (el) => { el('styleWhite').checked = true; el('fmtPng').checked = true; }
+  });
+  const iv = stats(invRun.images[0]);
+  check('white paper: Invert Lab ships the same rule (colours gone, paper intact)',
+    invRun.status === 'done' && iv.coloured === 0 && iv.white > 0,
+    'status ' + invRun.status + ' · ' + iv.coloured + ' coloured · ' + (100 * iv.white / iv.n).toFixed(0) + '% paper');
+  check('white paper: Invert Lab says which style it used',
+    /white paper \(colour → black\)/.test(invRun.printed), invRun.printed.slice(0, 110));
 }
 
 /* ---------- a hidden tab delivers no frames: the fix for "19% and stuck" ----------

@@ -7,7 +7,7 @@
 <meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
 <meta http-equiv="Cache-Control" content="no-cache">
-<link rel="stylesheet" href="styles.css?v=40">
+<link rel="stylesheet" href="styles.css?v=41">
 </head>
 <body id="top">
 
@@ -256,10 +256,11 @@
               </ul>
             </div>
             <div class="fld"><span class="lbl">Colour style</span>
-              <div class="seg" role="radiogroup" aria-label="Print-Saver colour style">
+              <div class="seg seg-wrap" role="radiogroup" aria-label="Print-Saver colour style">
                 <label><input type="radio" name="psstyle" id="psInk" checked><span>Black ink</span></label>
                 <label><input type="radio" name="psstyle" id="psPure"><span>Pure B&amp;W</span></label>
                 <label><input type="radio" name="psstyle" id="psKeep"><span>Keep colours</span></label>
+                <label><input type="radio" name="psstyle" id="psWhite"><span>White paper</span></label>
                 <label><input type="radio" name="psstyle" id="psNeg"><span>True negative</span></label>
               </div>
               <ul class="note-list">
@@ -267,6 +268,7 @@
                 <li><b>Pure B&amp;W</b> — every dot is fully black or fully white, no grey at all. Best for handwriting.</li>
                 <li><b>Keep colours</b> — coloured highlights stay coloured, just darkened so they print cleanly.</li>
                 <li><b>True negative</b> — every colour flips to its opposite (blue → orange), like a photo negative.</li>
+                <li><b>White paper · colour → black</b> — white (paper) is left exactly as it is; every colour and every dark mark becomes solid black ink. Pick this on a page that is already white: Black ink and Pure B&amp;W leave such a page untouched, so on it the two look identical.</li>
               </ul>
             </div>
             <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>what it actually does — the two points below</em></span></label>
@@ -340,12 +342,12 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=40"></script>
-<script src="converter.js?v=40"></script>
-<script src="raster-client.js?v=40"></script>
-<script src="enhance.js?v=40"></script>
-<script src="review.js?v=40"></script>
-<script src="app.js?v=40"></script>
+<script src="session.js?v=41"></script>
+<script src="converter.js?v=41"></script>
+<script src="raster-client.js?v=41"></script>
+<script src="enhance.js?v=41"></script>
+<script src="review.js?v=41"></script>
+<script src="app.js?v=41"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

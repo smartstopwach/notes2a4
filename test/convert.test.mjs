@@ -296,6 +296,61 @@ console.log('5e) hq-map:');
   r = NC.printSaver.hqMap(big, 1, 1, true);
   check('auto dark page inverts', r.inverted === true && r.darkFrac >= 0.5);
 
+  /* --- White paper (7th argument): paper stays paper, everything else is ink ---
+     The point of the mode: Black ink / Pure B&W pass a LIGHT page through
+     untouched, so on such a page they look identical — this one still cleans it. */
+  {
+    /* a light page (1 dark pixel of 4) holding a red swatch and a grey patch */
+    const light = mk([W, [255, 0, 0], [150, 150, 150], W], 2, 2);
+    const plain = NC.printSaver.hqMap(light, 2, 2, true);              // today's pass-through
+    const white = NC.printSaver.hqMap(light, 2, 2, true, false, false, true);
+    check('white paper: the page is still treated as light (no full flip)',
+      white.inverted === false && plain.inverted === false, 'inverted=' + white.inverted);
+    const px = (im, i) => [im.imageData.data[i * 4], im.imageData.data[i * 4 + 1], im.imageData.data[i * 4 + 2]];
+    check('white paper: white stays white (untouched paper)',
+      px(plain, 0).join() === '255,255,255' && px(white, 0).join() === '255,255,255',
+      'plain ' + px(plain, 0).join() + ' · white ' + px(white, 0).join());
+    check('white paper: a colour becomes solid black ink (pass-through kept it red)',
+      px(plain, 1).join() === '255,0,0' && px(white, 1).join() === '0,0,0',
+      'plain ' + px(plain, 1).join() + ' · white ' + px(white, 1).join());
+    check('white paper: mid grey turns into ink (pass-through kept the grey)',
+      px(plain, 2).join() === '150,150,150' && px(white, 2)[0] < 120 && px(white, 2)[0] === px(white, 2)[1],
+      'plain ' + px(plain, 2).join() + ' · white ' + px(white, 2).join());
+    /* nothing grey may be *bright* grey: a light page in this mode is ink + paper */
+    let brightGrey = 0;
+    for (let i = 0; i < 4; i++) { const v = px(white, i)[0]; if (v > 120 && v < 250) brightGrey++; }
+    check('white paper: no washed-out grey is left behind', brightGrey === 0, brightGrey + ' bright-grey pixels');
+
+    /* a DARK page must not change at all: white marks on a black board still print
+       as black ink on white paper, exactly like Black ink does today */
+    const darkPage = mk([K, K, W, K], 2, 2);
+    const inkDark = NC.printSaver.hqMap(darkPage, 2, 2, true);
+    const whiteDark = NC.printSaver.hqMap(darkPage, 2, 2, true, false, false, true);
+    let sameDark = true;
+    for (let i = 0; i < inkDark.imageData.data.length; i++) {
+      if (inkDark.imageData.data[i] !== whiteDark.imageData.data[i]) sameDark = false;
+    }
+    check('white paper: a dark page is identical to Black ink (black still becomes white paper)',
+      sameDark && whiteDark.inverted === true, 'inverted=' + whiteDark.inverted);
+
+    /* the banded path must agree with the one-shot path in this mode too */
+    const big2 = (() => {
+      const w = 64, h = 48, d = new Uint8ClampedArray(w * h * 4);
+      for (let i = 0; i < w * h; i++) {
+        const x = i % w, y = (i / w) | 0;
+        d[i * 4] = (x * 5 + y * 3) % 256; d[i * 4 + 1] = (x * 9) % 256; d[i * 4 + 2] = (y * 7) % 256; d[i * 4 + 3] = 255;
+      }
+      return { data: d, width: w, height: h };
+    })();
+    const one = NC.printSaver.hqMap(big2, 32, 24, true, false, false, true);
+    const banded = await NC.printSaver.hqMapAsync((y0, rows) => ({
+      data: big2.data.subarray(y0 * big2.width * 4, (y0 + rows) * big2.width * 4), width: big2.width, height: rows
+    }), 64, 48, 32, 24, true, false, false, { band: 7 }, true);
+    let sameB = one.imageData.data.length === banded.imageData.data.length;
+    for (let i = 0; sameB && i < one.imageData.data.length; i++) if (one.imageData.data[i] !== banded.imageData.data[i]) sameB = false;
+    check('white paper: the banded map agrees with the one-shot map byte for byte', sameB);
+  }
+
   /* --- vector true-negative: exact 255 - c with nothing rasterised --- */
   {
     const { vectorPageSampler, allObjects } = await import('../tools/pdf-vector.mjs');
@@ -371,9 +426,9 @@ console.log('5e) hq-map:');
     let variants = 0, equal = 0;
     for (const [bw, bh, ow, oh] of [[64, 9, 32, 4], [300, 200, 149, 97], [512, 257, 333, 167]]) {
       const big = mk(bw, bh);
-      for (const auto of [false, true]) for (const keep of [false, true]) for (const pure of [false, true]) {
-        const s1 = PS.hqMap(big, ow, oh, auto, keep, pure);
-        const s2 = await PS.hqMapAsync(prov(big), bw, bh, ow, oh, auto, keep, pure, { band: 7 });
+      for (const auto of [false, true]) for (const keep of [false, true]) for (const pure of [false, true]) for (const white of [false, true]) {
+        const s1 = PS.hqMap(big, ow, oh, auto, keep, pure, white);
+        const s2 = await PS.hqMapAsync(prov(big), bw, bh, ow, oh, auto, keep, pure, { band: 7 }, white);
         variants++;
         if (same(s1.imageData.data, s2.imageData.data) && s1.imageData.width === s2.imageData.width &&
             s1.darkFrac === s2.darkFrac && s1.inverted === s2.inverted) equal++;

@@ -349,6 +349,9 @@ input[type=range]:disabled{opacity:.35}
 .lbl{display:flex;justify-content:space-between;font-size:.83rem;color:var(--dim);margin-bottom:.35rem;font-weight:700}
 /* segmented control (gap mode, dpi) */
 .seg{display:flex;gap:6px;margin-bottom:.4rem}
+/* five colour styles no longer fit one row: this variant wraps into a tidy grid */
+.seg.seg-wrap{flex-wrap:wrap}
+.seg.seg-wrap label{flex:1 1 30%;min-width:88px}
 .seg label{flex:1;position:relative}
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg span{display:block;text-align:center;font-size:.8rem;color:var(--dim);border:1px solid var(--line);

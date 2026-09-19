@@ -106,16 +106,46 @@ console.log('\n=== raster worker, run like a real Worker ===\n');
 
   const img = decodePNG(Buffer.from(new Uint8Array(done.bytes)));
   const mine = PS.hqMap(big, W, H, true, false, false);
+  /* decodePNG hands back RGB (3 bytes a pixel); the map hands back RGBA. Compare
+     pixel by pixel, and check the size first — an empty decode used to make this
+     whole comparison vacuous (NaN never equals anything, so nothing was counted). */
   let worst = 0, differing = 0;
-  for (let i = 0; i < W * H; i++) {
-    for (let c = 0; c < 4; c++) {
-      const d = Math.abs(img.data[i * 4 + c] - mine.imageData.data[i * 4 + c]);
+  const sizeOk = img.w === W && img.h === H;
+  for (let i = 0; sizeOk && i < W * H; i++) {
+    for (let c = 0; c < 3; c++) {
+      const d = Math.abs(img.data[i * 3 + c] - mine.imageData.data[i * 4 + c]);
       if (d) differing++;
       if (d > worst) worst = d;
     }
+    if (mine.imageData.data[i * 4 + 3] !== 255) differing++;
   }
   check('worker realm: the decoded page equals the main-thread hqMap page, pixel for pixel',
-    differing === 0, differing + ' differing channels · worst ' + worst);
+    sizeOk && differing === 0,
+    (sizeOk ? img.w + '×' + img.h : 'decoded ' + img.w + '×' + img.h + ', expected ' + W + '×' + H) +
+    ' · ' + differing + ' differing channels · worst ' + worst);
+
+  /* the same job in the new White-paper mode: the worker must carry the flag end
+     to end (a flag dropped on the way would look like "the mode does nothing") */
+  {
+    const R2 = makeWorkerRealm();
+    await new Promise((r) => setTimeout(r, 30));
+    R2.send({ cmd: 'begin', id: 9, kind: 'hq', bw, bh, W, H, auto: true, keepColour: false, pure: false, white: true, trackBlank: true });
+    for (let y = 0; y < bh; y += 45) {
+      const rows = Math.min(45, bh - y);
+      R2.send({ cmd: 'strip', id: 9, y0: y, rows, data: data.slice(y * bw * 4, (y + rows) * bw * 4).buffer });
+    }
+    R2.send({ cmd: 'finish', id: 9, encode: { mime: 'image/png', previewMax: 0 } });
+    const d9 = await R2.wait('done', 9);
+    const img9 = decodePNG(Buffer.from(new Uint8Array(d9.bytes)));
+    const mine9 = PS.hqMap(big, W, H, true, false, false, true);
+    let diff9 = 0;
+    const ok9 = img9.w === W && img9.h === H;
+    for (let i = 0; ok9 && i < W * H; i++) {
+      for (let c = 0; c < 3; c++) if (img9.data[i * 3 + c] !== mine9.imageData.data[i * 4 + c]) diff9++;
+    }
+    check('worker realm: White paper survives the trip (worker page = main-thread page)',
+      ok9 && diff9 === 0, (ok9 ? img9.w + '×' + img9.h : 'bad size') + ' · ' + diff9 + ' differing channels');
+  }
 
   /* the flip path encodes an RGBA buffer that was produced on the main thread */
   R.send({ cmd: 'encode', id: 8, data: new Uint8ClampedArray(W * H * 4).fill(200).buffer, W, H, encode: { mime: 'image/jpeg', quality: 0.94 } });

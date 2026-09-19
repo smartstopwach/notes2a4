@@ -282,9 +282,9 @@ console.log('\n=== session.js: reload-proof storage ===\n');
   {
     // every dense explanation is a bullet list; count them per page
     const expect = {
-      'index.html': { lists: 6, bullets: 17 },
-      '4up.html': { lists: 6, bullets: 17 },
-      'invert.html': { lists: 3, bullets: 12 }
+      'index.html': { lists: 6, bullets: 18 },   // + White paper
+      '4up.html': { lists: 6, bullets: 18 },
+      'invert.html': { lists: 3, bullets: 13 }
     };
     for (const h of htmls) {
       const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');
@@ -538,6 +538,38 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     check('wait: ' + f + ' never leaves a stale estimate behind on failure',
       (src.match(/setEta\(''\);/g) || []).length >= (src.match(/failed: /g) || []).length);
   }
+  // White paper: paper stays paper, everything else becomes ink — a style that
+  // must exist on all three pages and survive the whole trip to the worker
+  {
+    for (const [h, id] of [['index.html', 'psWhite'], ['4up.html', 'psWhite'], ['invert.html', 'styleWhite']]) {
+      const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');
+      check('white paper: ' + h + ' offers the style and explains it',
+        new RegExp('id="' + id + '"').test(src) && /<b>White paper/.test(src) &&
+        /white[^<]{0,60}left exactly as it is|white \(paper\) is left exactly as it is/.test(src));
+    }
+    const cv = readFileSync(new URL('../converter.js', import.meta.url), 'utf8');
+    check('white paper: the core has the rule and its own paper/content band',
+      /var PS_WHITE_HI = 200;/.test(cv) && /var PS_WHITE_LO = 90;/.test(cv) &&
+      /function hqFinishB\(acc, r0, r1, st, out, keepColour, pure, white\)/.test(cv) &&
+      /if \(maxC\[p\] > PS_CHROMA\) v = 0;[\s\S]{0,220}else if \(L >= PS_WHITE_HI\) v = 255;/.test(cv));
+    for (const f of ['app.js', 'app4up.js']) {
+      const src = readFileSync(new URL('../' + f, import.meta.url), 'utf8');
+      check('white paper: ' + f + ' passes the style to the map and to the worker',
+        /sWhite: \$\('psWhite'\)/.test(src) && /st === 'white'/.test(src) &&
+        /pure: st === 'pure', white: st === 'white'/.test(src) &&
+        /hqMapAsync\(provider, bw, bh, W, H, printAuto\(\), st === 'keep', st === 'pure', hooks, st === 'white'\)/.test(src));
+    }
+    const inv = readFileSync(new URL('../app-invert.js', import.meta.url), 'utf8');
+    check('white paper: app-invert.js resolves the style and carries the flag everywhere',
+      /function whiteMode\(\)/.test(inv) && /white: whiteMode\(\)/.test(inv) &&
+      /pureMode\(\), hook, whiteMode\(\)\)/.test(inv) && /pureMode\(\),\n        \{ band: 192/.test(inv));
+    const wrk = readFileSync(new URL('../worker-raster.js', import.meta.url), 'utf8');
+    const cli = readFileSync(new URL('../raster-client.js', import.meta.url), 'utf8');
+    check('white paper: the worker and its client carry the flag (a dropped flag looks like "the mode does nothing")',
+      /\!\!o\.keepColour, \!\!o\.pure, \!\!o\.white/.test(wrk) && /white: \!\!cfg\.white/.test(cli) &&
+      /white, trackBlank/.test(wrk));
+  }
+
   const wrkSrc = readFileSync(new URL('../worker-raster.js', import.meta.url), 'utf8');
   check('wait: worker progress reports the page height, not the message (the NaN bug)',
     /total: job\.o\.bh/.test(wrkSrc) && !/progress', id: m\.id, done: job\.fed, total: m\.bh/.test(wrkSrc));

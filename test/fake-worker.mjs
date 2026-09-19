@@ -75,7 +75,7 @@ export function makeOffscreenCanvas(target = globalThis) {
         const out = new Uint8Array(enc.data);
         return { arrayBuffer: async () => out.buffer.slice(out.byteOffset, out.byteOffset + out.byteLength) };
       }
-      const png = encodePNG({ data: buf, width: this.width, height: this.height }, 6);   // a REAL png, so pdf-lib can embed it
+      const png = encodePNG({ data: buf, w: this.width, h: this.height }, 6);   // a REAL png, so pdf-lib can embed it
       return { arrayBuffer: async () => png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) };
     }
   }

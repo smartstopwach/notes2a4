@@ -364,11 +364,23 @@
    *   edge band  (between)              → linear grey ramp (kills jaggies;
    *     drivers blue-noise/dither it at print time, viewers show it as AA)
    *   bright     (avg luma ≥ 90+band)   → solid black   [white → black]
-   * auto=true: light pages (darkFrac<0.5) are downsampled untouched.
+   * auto=true: light pages (darkFrac<0.5) are downsampled untouched — unless
+   *   white=true, see below.
    * keepColour=true: coloured pixels keep their hue — lightness is flipped to
    *   a dark printable ink of the same colour instead of solid black.
+   * white=true ("White paper"): paper must stay paper. On a light page white is
+   *   left white and everything that is not white becomes solid black ink (colour
+   *   or grey — the ink ramp only softens the edges). A dark page is untouched by
+   *   this flag: white marks on a dark board are flipped exactly like Black ink,
+   *   so a dark board still prints as black-on-white. This is the mode for pages
+   *   that are already white: Black ink / Pure B&W pass those through untouched,
+   *   so choosing them changes nothing on such a page.
    */
   var PS_BAND = 45;
+  /* White-paper mode: the paper/content split of a page that is already white
+     (its paper is bright, unlike a blackboard's) */
+  var PS_WHITE_HI = 200;   // ≥ this is paper: handed back exactly as it came in
+  var PS_WHITE_LO = 90;    // ≤ this is solid content: solid ink
   var PS_GAMMA = 1.7;   // ink-bias exponent of the edge ramp (>1 → fatter darks)
   /* ------------------------------------------------------------------------
      The two maps below are long-running pixel work. They are built out of three
@@ -423,14 +435,31 @@
     }
   }
   /* pass 2 of the finish: write the output pixels for rows r0 … r1 */
-  function hqFinishB(acc, r0, r1, st, out, keepColour, pure) {
+  function hqFinishB(acc, r0, r1, st, out, keepColour, pure, white) {
     var outW = acc.outW, cnt = acc.cnt, Ls = st.Ls, maxC = acc.maxC;
     var sumR = acc.sumR, sumG = acc.sumG, sumB = acc.sumB;
     var T = PS_DARK_LUM, B = PS_BAND, lo = T - B, hi = T + B, invert = st.invert;
     for (var p = r0 * outW, e = r1 * outW; p < e; p++) {
       var cN = cnt[p] || 1, L = Ls[p];
       var o = p * 4;
-      if (!invert) {                  // light page: plain area-average downsample, untouched colours
+      if (!invert) {                  // light page
+        if (white) {                  // WHITE PAPER: paper stays paper, everything else is ink
+          /* The band is measured for a WHITE page, not a black board: paper on a
+             scan or a JPEG sits around 230–255, so everything from ~200 up is
+             left exactly as it came in (a light grey shaded box counts as paper),
+             while anything clearly darker is content and becomes ink. The ramp in
+             between keeps the edge ink-biased (fatter darks), so handwriting and
+             thin strokes never thin out. */
+          if (maxC[p] > PS_CHROMA) v = 0;                    // a colour is content → solid black
+          else if (L >= PS_WHITE_HI) v = 255;                // paper stays paper — untouched
+          else if (L <= PS_WHITE_LO) v = 0;                  // solid content → solid ink
+          else {
+            var aw = (L - PS_WHITE_LO) / (PS_WHITE_HI - PS_WHITE_LO);
+            v = (Math.pow(aw, PS_GAMMA) * 255) | 0;          // paper-ness of an edge pixel
+          }
+          out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+          continue;
+        }
         out[o] = sumR[p] / cN; out[o + 1] = sumG[p] / cN; out[o + 2] = sumB[p] / cN; out[o + 3] = 255;
         continue;
       }
@@ -464,14 +493,14 @@
   function hqResult(acc, st) {
     return { imageData: { data: acc.out, width: acc.outW, height: acc.outH }, darkFrac: st.dark / acc.n, inverted: st.invert };
   }
-  function hqMap(big, outW, outH, auto, keepColour, pure) {
+  function hqMap(big, outW, outH, auto, keepColour, pure, white) {
     var bd = big.data, bw = big.width, bh = big.height;
     var acc = hqAcc(outW, outH);
     hqFeed(acc, bd, bw, 0, bh, bh);
     var st = hqSt(acc);
     hqFinishA(acc, 0, acc.outH, st);
     st.invert = auto ? st.dark / acc.n >= 0.5 : true;
-    hqFinishB(acc, 0, acc.outH, st, acc.out = new Uint8ClampedArray(acc.n * 4), keepColour, pure);
+    hqFinishB(acc, 0, acc.outH, st, acc.out = new Uint8ClampedArray(acc.n * 4), keepColour, pure, white);
     return hqResult(acc, st);
   }
   /**
@@ -480,7 +509,7 @@
    * and `hooks.progress(fraction, phase)` is awaited between bands — that await
    * is what keeps the tab interactive during a 33-page print-saver run.
    */
-  async function hqMapAsync(provider, bw, bh, outW, outH, auto, keepColour, pure, hooks) {
+  async function hqMapAsync(provider, bw, bh, outW, outH, auto, keepColour, pure, hooks, white) {
     var acc = hqAcc(outW, outH);
     var band = (hooks && hooks.band) || 256;
     var step = hooks && hooks.progress ? hooks.progress : null;
@@ -501,7 +530,7 @@
     acc.out = new Uint8ClampedArray(acc.n * 4);
     for (var r2 = 0; r2 < outH; r2 += band) {
       var r3 = Math.min(outH, r2 + band);
-      hqFinishB(acc, r2, r3, st, acc.out, keepColour, pure);
+      hqFinishB(acc, r2, r3, st, acc.out, keepColour, pure, white);
       if (step) await step(0.7 + (r3 / outH) * 0.3, 'render');
     }
     return hqResult(acc, st);
@@ -767,6 +796,7 @@
     printSaver: {
       process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, negMap: negMap, negMapAsync: negMapAsync,
       keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA,
+      WHITE_HI: PS_WHITE_HI, WHITE_LO: PS_WHITE_LO,
       pieces: {
         hqAcc: hqAcc, hqFeed: hqFeed, hqFinishA: hqFinishA, hqFinishB: hqFinishB, hqSt: hqSt,
         negAcc: negAcc, negFeed: negFeed, negFinishA: negFinishA, negFinishB: negFinishB

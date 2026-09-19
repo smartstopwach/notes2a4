@@ -45,11 +45,13 @@ console.log('\n=== raster worker ===\n');
   const bw = 400, bh = 300, W = 201, H = 151;
   const big = mk(bw, bh);
   let variants = 0, identical = 0, blanks = 0;
-  for (const [kind, keep, pure, auto] of [
-    ['hq', false, false, true], ['hq', true, false, true], ['hq', false, true, true], ['hq', true, false, false],
-    ['neg', false, false, true], ['neg', false, false, false]
+  for (const [kind, keep, pure, auto, white] of [
+    ['hq', false, false, true, false], ['hq', true, false, true, false], ['hq', false, true, true, false],
+    ['hq', true, false, false, false],
+    ['hq', false, false, true, true], ['hq', false, false, false, true],   // White paper, both page kinds
+    ['neg', false, false, true, false], ['neg', false, false, false, false]
   ]) {
-    const job = new core.MapJob(MAPS, { kind, bw, bh, W, H, auto, keepColour: keep, pure, trackBlank: true });
+    const job = new core.MapJob(MAPS, { kind, bw, bh, W, H, auto, keepColour: keep, pure, white, trackBlank: true });
     for (let y = 0; y < bh; y += 37) {                 // deliberately odd strip size
       const rows = Math.min(37, bh - y);
       job.feed(y, rows, big.data.subarray(y * bw * 4, (y + rows) * bw * 4));
@@ -57,7 +59,7 @@ console.log('\n=== raster worker ===\n');
     const res = job.finish();
     const one = kind === 'neg'
       ? PS.negMap(big, W, H, auto)
-      : PS.hqMap(big, W, H, auto, keep, pure);
+      : PS.hqMap(big, W, H, auto, keep, pure, white);
     variants++;
     if (sameBytes(new Uint8Array(res.data.buffer, res.data.byteOffset, res.data.length), one.imageData.data) &&
         res.darkFrac === one.darkFrac && res.inverted === one.inverted) identical++;

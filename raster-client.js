@@ -106,7 +106,7 @@
     w.postMessage({
       cmd: 'begin', id: id, kind: cfg.kind === 'neg' ? 'neg' : 'hq',
       bw: cfg.bw, bh: cfg.bh, W: cfg.W, H: cfg.H,
-      auto: !!cfg.auto, keepColour: !!cfg.keepColour, pure: !!cfg.pure, trackBlank: !!cfg.trackBlank
+      auto: !!cfg.auto, keepColour: !!cfg.keepColour, pure: !!cfg.pure, white: !!cfg.white, trackBlank: !!cfg.trackBlank
     });
     var band = cfg.band || 192;
     for (var y = 0; y < cfg.bh; y += band) {

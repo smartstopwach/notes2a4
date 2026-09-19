@@ -12,7 +12,7 @@
  * on the main thread.
  *
  * Protocol (main → worker)
- *   { cmd:'begin',  id, kind:'hq'|'neg', bw, bh, W, H, auto, keepColour, pure, trackBlank }
+ *   { cmd:'begin',  id, kind:'hq'|'neg', bw, bh, W, H, auto, keepColour, pure, white, trackBlank }
  *   { cmd:'strip',  id, y0, rows, data:<ArrayBuffer, transferred> }
  *   { cmd:'finish', id, encode:{ mime, quality, previewMax } }
  *   { cmd:'encode', id, data:<ArrayBuffer, transferred RGBA>, W, H, encode:{…} }
@@ -73,7 +73,7 @@
     } else {
       maps.hqFinishA(acc, 0, o.H, this.st);
       this.st.invert = o.auto ? this.st.dark / n >= 0.5 : true;
-      maps.hqFinishB(acc, 0, o.H, this.st, out, !!o.keepColour, !!o.pure);
+      maps.hqFinishB(acc, 0, o.H, this.st, out, !!o.keepColour, !!o.pure, !!o.white);
     }
     return {
       data: out, width: o.W, height: o.H,

@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 9;
+  var BUILD = 10;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -33,21 +33,23 @@
   var opt = {
     dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'),
     fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
-    styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'),
+    styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'), styleWhite: $('styleWhite'),
     dpiFld: $('dpiFld'), fmtFld: $('fmtFld'), skipRow: $('skipRow'),
     keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow')
   };
 
   function dpi() { return opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96); }
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
-  function inkMode() { return (opt.styleInk.checked || (opt.stylePure && opt.stylePure.checked)) && window.NotesConverter && NotesConverter.printSaver; }
+  function inkMode() { return (opt.styleInk.checked || (opt.stylePure && opt.stylePure.checked) || (opt.styleWhite && opt.styleWhite.checked)) && window.NotesConverter && NotesConverter.printSaver; }
   function pureMode() { return !!(opt.stylePure && opt.stylePure.checked); }
+  /* paper stays paper: white is left untouched, everything else becomes solid ink */
+  function whiteMode() { return !!(opt.styleWhite && opt.styleWhite.checked); }
   /* exact vector 255 - c: no rasterising, the flip is applied to the PDF content
      itself (blend mode Difference), so the output matches a dedicated inversion
      tool pixel for pixel while text stays vector */
   function vectorMode() { return !!(opt.styleVec && opt.styleVec.checked); }
   function keepColour() { return !!(opt.keepColour && opt.keepColour.checked); }
-  function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !opt.styleInk.checked; }  // pure mode: no colour row (everything is 0/255)
+  function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !(opt.styleInk.checked || (opt.styleWhite && opt.styleWhite.checked)); }  // pure/white mode: no colour row (nothing grey or coloured is left to keep)
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(m) { fileErr.hidden = false; fileErr.textContent = m; }
   function clearError() { fileErr.hidden = true; fileErr.textContent = ''; }
@@ -69,7 +71,7 @@
   }
   function styleName() {
     if (vectorMode()) return 'true negative (exact vector)';
-    return pureMode() ? 'pure b&w' : (inkMode() ? 'black ink' : 'true negative');
+    return whiteMode() ? 'white paper (colour → black)' : pureMode() ? 'pure b&w' : (inkMode() ? 'black ink' : 'true negative');
   }
   function invSig() {
     return [Math.round(dpi()), fmt(), styleName(), keepColour() ? 1 : 0, opt.skip.checked ? 1 : 0].join('|');
@@ -230,7 +232,7 @@
       var hm = await NotesConverter.printSaver.hqMapAsync(
         function (y0, rows) { return x2.getImageData(0, y0, c2.width, rows); },
         c2.width, c2.height, c2.width, c2.height, true, keepColour(), pureMode(),
-        { band: 192, progress: function () { return NotesFX.uiPaint(); } });   // banded: previews stay snappy too
+        { band: 192, progress: function () { return NotesFX.uiPaint(); } }, whiteMode());   // banded: previews stay snappy too
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else {
       var id = x2.getImageData(0, 0, c2.width, c2.height);
@@ -390,7 +392,7 @@
       try {
         if (inkMode()) {
           var wi = await NotesRaster.mapPage({
-            kind: 'hq', auto: true, keepColour: keepColour(), pure: pureMode(),
+            kind: 'hq', auto: true, keepColour: keepColour(), pure: pureMode(), white: whiteMode(),
             bw: bw, bh: bh, W: W, H: H, band: stripRows, trackBlank: true, provider: renderStrip,
             encode: { mime: wmime, quality: 0.94, previewMax: 720 },
             onProgress: function (done, total) { if (sub) sub(done / total, 'binarising'); },
@@ -436,7 +438,7 @@
       };
       var hm;
       try {
-        hm = await NotesConverter.printSaver.hqMapAsync(stripFeed, bw, bh, W, H, true, keepColour(), pureMode(), hook);
+        hm = await NotesConverter.printSaver.hqMapAsync(stripFeed, bw, bh, W, H, true, keepColour(), pureMode(), hook, whiteMode());
       } catch (err) {
         console.warn('strip rendering unavailable, falling back to a full-page render:', err);
         blank = true;
@@ -445,7 +447,7 @@
           var id = fat.ctx.getImageData(0, y0, bw, rows);
           if (blank) blank = invertPixels(id, false);
           return id;
-        }, bw, bh, W, H, true, keepColour(), pureMode(), hook);
+        }, bw, bh, W, H, true, keepColour(), pureMode(), hook, whiteMode());
         fat.canvas.width = 0; fat.canvas.height = 0;
       }
       out.getContext('2d').putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
@@ -753,10 +755,10 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.keepColour].forEach(function (el) {
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.keepColour].forEach(function (el) {
     if (el) el.addEventListener('change', schedulePreview);
   });
-  [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec].forEach(function (el) {
+  [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite].forEach(function (el) {
     if (el) el.addEventListener('change', function () { syncKeepColourRow(); syncVectorRows(); });
   });
   syncKeepColourRow();

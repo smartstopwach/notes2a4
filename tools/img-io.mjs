@@ -73,11 +73,20 @@ function chunk(type, data) {
   return Buffer.concat([len, td, crc]);
 }
 export function encodePNG(img, level = 6) {
-  const { w, h, data } = img;
+  /* accept {w,h} (the internal spelling) and {width,height} (canvas talk) — a
+     silent 0×0 PNG is worse than a throw, so the size is checked */
+  const w = img.w !== undefined ? img.w : img.width;
+  const h = img.h !== undefined ? img.h : img.height;
+  const data = img.data;
+  if (!(w > 0) || !(h > 0)) throw new Error('encodePNG: refusing to write a ' + w + '×' + h + ' image');
+  /* RGBA is what a canvas hands over; RGB is what our own decoders produce. Read
+     the wrong layout and the PNG looks nearly right — which is exactly the sort of
+     bug that survives a test that only checks the signature. */
+  const ch = data.length >= w * h * 4 ? 4 : 3;
   const raw = Buffer.concat(Array.from({ length: h }, (_, y) => {
     const line = Buffer.alloc(1 + w * 3);
     for (let x = 0; x < w; x++) {
-      const s = (y * w + x) * 3;
+      const s = (y * w + x) * ch;
       line[1 + x * 3] = data[s]; line[2 + x * 3] = data[s + 1]; line[3 + x * 3] = data[s + 2];
     }
     return line;

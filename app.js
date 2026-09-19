@@ -3,7 +3,7 @@
   'use strict';
 
   // Build stamp: confirm in DevTools console that no stale cached app.js is running.
-  var BUILD = 10;
+  var BUILD = 11;
   console.info('[Notes2A4] app.js build', BUILD, '· 2-up A4 packer (demo layout)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetLayout) {
     document.addEventListener('DOMContentLoaded', function () {
@@ -59,7 +59,7 @@
     });
   }
 
-  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), sInk: $('psInk'), sPure: $('psPure'), sKeep: $('psKeep'), sNeg: $('psNeg') };
+  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), sInk: $('psInk'), sPure: $('psPure'), sKeep: $('psKeep'), sNeg: $('psNeg'), sWhite: $('psWhite') };
   function printMode() { return !!(printEls.on && printEls.on.checked); }
   function printDpi() { return printEls.d220 && printEls.d220.checked ? 220 : (printEls.d96 && printEls.d96.checked ? 96 : 150); }
   function printAuto() { return printEls.auto.checked; }
@@ -67,6 +67,7 @@
     if (printEls.sNeg && printEls.sNeg.checked) return 'neg';
     if (printEls.sKeep && printEls.sKeep.checked) return 'keep';
     if (printEls.sPure && printEls.sPure.checked) return 'pure';
+    if (printEls.sWhite && printEls.sWhite.checked) return 'white';
     return 'ink';
   }
   /* Keep-colours checkbox — part of the run signature, so an interrupted
@@ -81,7 +82,7 @@
   async function printMapAsync(provider, bw, bh, W, H, hooks) {
     var st = printStyle();
     if (st === 'neg') return NotesConverter.printSaver.negMapAsync(provider, bw, bh, W, H, printAuto(), hooks);
-    return NotesConverter.printSaver.hqMapAsync(provider, bw, bh, W, H, printAuto(), st === 'keep', st === 'pure', hooks);
+    return NotesConverter.printSaver.hqMapAsync(provider, bw, bh, W, H, printAuto(), st === 'keep', st === 'pure', hooks, st === 'white');
   }
   function refreshPrintBadge() {
     var el = $('fbOut'); if (!el) return;
@@ -516,7 +517,7 @@
     if (window.NotesRaster && NotesRaster.supported()) {
       try {
         var wres = await NotesRaster.mapPage({
-          kind: st === 'neg' ? 'neg' : 'hq', auto: printAuto(), keepColour: st === 'keep', pure: st === 'pure',
+          kind: st === 'neg' ? 'neg' : 'hq', auto: printAuto(), keepColour: st === 'keep', pure: st === 'pure', white: st === 'white',
           bw: bw, bh: bh, W: W, H: H, band: stripRows, provider: renderStrip,
           encode: { mime: 'image/png', previewMax: 720 },
           onProgress: function (done, total) { if (sub) sub(done / total, 'binarising'); },
@@ -603,7 +604,7 @@
   function printListeners(schedule) {
     if (!printEls.on) return;
     printEls.on.addEventListener('change', function () { printEls.opts.hidden = !printEls.on.checked; schedule(); refreshPrintBadge(); });
-    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.sInk, printEls.sPure, printEls.sKeep, printEls.sNeg].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
+    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.sInk, printEls.sPure, printEls.sKeep, printEls.sNeg, printEls.sWhite].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
   }
   /* ---------- convert ---------- */
   goBtn.addEventListener('click', convert);
@@ -717,7 +718,7 @@
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed into ' + res.sheets + ' ' +
         NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' sheets · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
-        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative'})[printStyle()] : '');
+        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative', white:'white kept'})[printStyle()] : '');
 
       /* the bytes are ready, so the result card — and the Download button —
          appear NOW; previews and the reload-proof save happen behind it */
