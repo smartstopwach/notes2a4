@@ -226,25 +226,51 @@
 
     if (opts.lines) {
       var sty = opts.lineStyle || 'solid';
-      ctx.strokeStyle = (sty === 'grid' || sty === 'dots') ? '#bdc6d4' : '#c3cbd9';
-      ctx.lineWidth = 0.8; ctx.setLineDash([]); ctx.lineCap = 'butt';
       var stepPx = (L.lines.step || opts.lineSpacing) * pxPerPt;
-      if (sty === 'dashed') { ctx.setLineDash([6 * pxPerPt, 4 * pxPerPt]); ctx.lineWidth = 0.9; }
-      else if (sty === 'dotted') { ctx.setLineDash([0.6, 5]); ctx.lineWidth = 1.6; ctx.lineCap = 'round'; }
-      else if (sty === 'grid') ctx.lineWidth = 0.55;
-      else if (sty === 'dots') { ctx.setLineDash([0.6, stepPx]); ctx.lineWidth = 1.6; ctx.lineCap = 'round'; }
-      for (var i = 0; i < L.lines.length; i++) {
-        var yPx = (page.h - L.lines[i]) * pxPerPt;
-        var x0 = (L.gap.x + 10) * pxPerPt, x1 = (L.gap.x + L.gap.w - 10) * pxPerPt;
-        ctx.beginPath(); ctx.moveTo(x0, yPx); ctx.lineTo(x1, yPx); ctx.stroke();
-      }
-      if (sty === 'grid' && L.lines.length) {
-        var gy0 = (page.h - L.gap.y - L.gap.h + 7) * pxPerPt, gy1 = (page.h - L.gap.y - 7) * pxPerPt;
-        ctx.beginPath();
-        for (var vx = x0 + stepPx; vx < x1 - stepPx / 2; vx += stepPx) { ctx.moveTo(vx, gy0); ctx.lineTo(vx, gy1); }
-        ctx.stroke();
-      }
+      var x0 = (L.gap.x + 10) * pxPerPt, x1 = (L.gap.x + L.gap.w - 10) * pxPerPt;
+      var byT = (page.h - L.gap.y - L.gap.h + 7) * pxPerPt, byB = (page.h - L.gap.y - 7) * pxPerPt;
       ctx.setLineDash([]); ctx.lineCap = 'butt';
+      if (sty !== 'columns' && sty !== 'staff') {
+        for (var i = 0; i < L.lines.length; i++) {
+          var yPx = (page.h - L.lines[i]) * pxPerPt;
+          var w = 0.8, c = '#c3cbd9', dash = null;
+          if (sty === 'grid' || sty === 'graph' || sty === 'dots') c = '#bdc6d4';
+          if (sty === 'dashed') { w = 0.9; dash = [6 * pxPerPt, 4 * pxPerPt]; }
+          else if (sty === 'dotted') { w = 1.6; dash = [0.6, 5]; ctx.lineCap = 'round'; }
+          else if (sty === 'grid' || sty === 'graph') w = 0.55;
+          else if (sty === 'dots') { w = 1.6; dash = [0.6, stepPx]; ctx.lineCap = 'round'; }
+          if (sty === 'graph' && i % 5 === 0) { w = 1.1; c = '#9fabbf'; }
+          ctx.lineWidth = w; ctx.strokeStyle = c; if (dash) ctx.setLineDash(dash);
+          ctx.beginPath(); ctx.moveTo(x0, yPx); ctx.lineTo(x1, yPx); ctx.stroke(); ctx.setLineDash([]); ctx.lineCap = 'butt';
+        }
+      }
+      if (sty === 'grid' || sty === 'graph' || sty === 'columns') {
+        var vj = 1;
+        for (var vx = x0 + stepPx; vx < x1 - stepPx / 2; vx += stepPx, vj++) {
+          ctx.lineWidth = (sty === 'columns') ? 0.8 : ((sty === 'graph' && vj % 5 === 0) ? 1.1 : 0.55);
+          ctx.strokeStyle = (sty === 'columns') ? '#c3cbd9' : ((sty === 'graph' && vj % 5 === 0) ? '#9fabbf' : '#bdc6d4');
+          ctx.beginPath(); ctx.moveTo(vx, byT); ctx.lineTo(vx, byB); ctx.stroke();
+        }
+      }
+      if (sty === 'margin') {
+        ctx.strokeStyle = 'rgba(198,104,112,.9)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x0 + 0.16 * (x1 - x0), byB + 2); ctx.lineTo(x0 + 0.16 * (x1 - x0), byT - 2); ctx.stroke();
+      }
+      if (sty === 'cornell') {
+        var cxx = x0 + 0.3 * (x1 - x0), sy = (page.h - (L.gap.y + 0.24 * L.gap.h)) * pxPerPt;
+        ctx.strokeStyle = '#9fabbf'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cxx, sy); ctx.lineTo(cxx, byT); ctx.moveTo(x0, sy); ctx.lineTo(x1, sy); ctx.stroke();
+      }
+      if (sty === 'staff') {
+        var pPx = stepPx / 4.5;
+        ctx.strokeStyle = '#a9b4c6'; ctx.lineWidth = 0.7;
+        for (var si = 0; si < L.lines.length; si++) {
+          for (var k = 0; k < 5; k++) {
+            var yy = (page.h - L.lines[si]) * pxPerPt + k * pPx;
+            ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke();
+          }
+        }
+      }
     }
     if (opts.pageNumbers) {
       var sheets = Math.ceil(state.pages / 2);

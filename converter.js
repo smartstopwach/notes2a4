@@ -38,7 +38,7 @@
       gap: 40 * PT_PER_MM / 2, // pt, used only when gapMode === 'fixed'
       lines: false,       // ruled lines inside the middle band (room for handwritten notes)
       lineSpacing: 14,    // pt
-      lineStyle: 'solid',   // 'solid'|'dashed'|'dotted'|'grid'|'dots' — only when lines are on
+      lineStyle: 'solid',   // line styles: solid|dashed|dotted|grid|dots — page types: margin|graph|staff|columns|cornell
       pageNumbers: false  // small "sheet / total" inside the band
     };
   }
@@ -54,7 +54,7 @@
     o.lines = !!o.lines;
     o.pageNumbers = !!o.pageNumbers;
     o.lineSpacing = Math.max(6, Math.min(36, +o.lineSpacing || 14));
-    if (['solid','dashed','dotted','grid','dots'].indexOf(o.lineStyle) < 0) o.lineStyle = 'solid';
+    if (['solid','dashed','dotted','grid','dots','margin','graph','staff','columns','cornell'].indexOf(o.lineStyle) < 0) o.lineStyle = 'solid';
     return o;
   }
 
@@ -380,20 +380,45 @@
       var sty = opts.lineStyle || 'solid';
       var x0 = L.gap.x + (L.lineInset || 10), x1 = L.gap.x + L.gap.w - (L.lineInset || 10);
       var step = L.lines.step || opts.lineSpacing;
-      var col = (sty === 'grid' || sty === 'dots') ? rgb(0.74, 0.78, 0.84) : rgb(0.66, 0.7, 0.76);
-      for (var li = 0; li < L.lines.length; li++) {
-        var y = L.lines[li];
-        var ln = { start: { x: x0, y: y }, end: { x: x1, y: y }, thickness: 0.6, color: col };
-        if (sty === 'dashed') { ln.thickness = 0.7; ln.dashArray = [6, 4]; }
-        else if (sty === 'dotted') { ln.thickness = 1.5; ln.lineCapStyle = 1; ln.dashArray = [0.1, 4.5]; }
-        else if (sty === 'grid') { ln.thickness = 0.45; }
-        else if (sty === 'dots') { ln.thickness = 1.5; ln.lineCapStyle = 1; ln.dashArray = [0.1, step]; ln.dashPhase = step / 2; }
-        pg.drawLine(ln);
+      var gy0 = L.gap.y + 7, gy1 = L.gap.y + L.gap.h - 7;
+      var col = (sty === 'grid' || sty === 'dots' || sty === 'graph') ? rgb(0.74, 0.78, 0.84) : rgb(0.66, 0.7, 0.76);
+      var vcol = rgb(0.74, 0.78, 0.84), vheavy = rgb(0.58, 0.63, 0.71);
+      if (sty !== 'columns' && sty !== 'staff') {
+        for (var li = 0; li < L.lines.length; li++) {
+          var y = L.lines[li];
+          var ln = { start: { x: x0, y: y }, end: { x: x1, y: y }, thickness: 0.6, color: col };
+          if (sty === 'dashed') { ln.thickness = 0.7; ln.dashArray = [6, 4]; }
+          else if (sty === 'dotted') { ln.thickness = 1.5; ln.lineCapStyle = 1; ln.dashArray = [0.1, 4.5]; }
+          else if (sty === 'grid' || sty === 'graph') { ln.thickness = 0.45; }
+          else if (sty === 'dots') { ln.thickness = 1.5; ln.lineCapStyle = 1; ln.dashArray = [0.1, step]; ln.dashPhase = step / 2; }
+          if (sty === 'graph' && li % 5 === 0) { ln.thickness = 0.9; ln.color = vheavy; }
+          pg.drawLine(ln);
+        }
       }
-      if (sty === 'grid' && L.lines.length) {           // square grid: verticals at the same realised step
-        var gy0 = L.gap.y + 7, gy1 = L.gap.y + L.gap.h - 7;
-        for (var vx = x0 + step; vx < x1 - step / 2; vx += step) {
-          pg.drawLine({ start: { x: vx, y: gy0 }, end: { x: vx, y: gy1 }, thickness: 0.45, color: col });
+      if ((sty === 'grid' || sty === 'graph' || sty === 'columns') && L.lines.length) {  // verticals at the realised step
+        var vj = 1;
+        for (var vx = x0 + step; vx < x1 - step / 2; vx += step, vj++) {
+          var heavy = (sty === 'graph' && vj % 5 === 0);
+          pg.drawLine({ start: { x: vx, y: gy0 }, end: { x: vx, y: gy1 },
+            thickness: (sty === 'columns') ? 0.6 : (heavy ? 0.9 : 0.45),
+            color: (sty === 'columns') ? rgb(0.66, 0.7, 0.76) : (heavy ? vheavy : vcol) });
+        }
+      }
+      if (sty === 'margin' && L.lines.length) {                       // school-pad margin rule
+        var mx = x0 + 0.16 * (x1 - x0);
+        pg.drawLine({ start: { x: mx, y: L.gap.y + 4 }, end: { x: mx, y: L.gap.y + L.gap.h - 4 }, thickness: 0.9, color: rgb(0.78, 0.42, 0.46) });
+      }
+      if (sty === 'cornell' && L.lines.length) {                      // cue column + summary rule
+        var cxx = x0 + 0.3 * (x1 - x0), sy = L.gap.y + 0.24 * L.gap.h;
+        pg.drawLine({ start: { x: cxx, y: sy }, end: { x: cxx, y: gy1 }, thickness: 0.85, color: vheavy });
+        pg.drawLine({ start: { x: x0, y: sy }, end: { x: x1, y: sy }, thickness: 0.85, color: vheavy });
+      }
+      if (sty === 'staff') {                                          // five-line music staves
+        var p = step / 4.5;
+        for (var si = 0; si < L.lines.length; si++) {
+          for (var k = 0; k < 5; k++) {
+            pg.drawLine({ start: { x: x0, y: L.lines[si] - k * p }, end: { x: x1, y: L.lines[si] - k * p }, thickness: 0.5, color: rgb(0.62, 0.66, 0.73) });
+          }
         }
       }
     }
