@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 15;
+  var BUILD = 16;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -321,26 +321,27 @@
     var x2 = c2.getContext('2d', { willReadFrequently: true });
     x2.imageSmoothingEnabled = true; x2.imageSmoothingQuality = 'high';
     x2.drawImage(c1, 0, 0);
+    var psk = null, pMode = bandMode();              // the band toggle shows in the preview too
+    if (pMode && OV && OV.findBand) {
+      try {
+        var snap = c1.getContext('2d').getImageData(0, 0, c1.width, c1.height);
+        var pds = c1.width / Math.max(1, vp.width);
+        var ph = OV.findBand(snap, 'h', pds);
+        var pv = (pMode === '4up') ? OV.findBand(snap, 'v', pds) : null;
+        if (ph || pv) {
+          psk = { r0: ph ? ph.a0 : 0, r1: ph ? ph.a1 : 0, c0: pv ? pv.a0 : 0, c1: pv ? pv.a1 : 0 };
+        }
+      } catch (e) { psk = null; }
+    }
     if (inkMode() && !vectorMode()) {                 // vector mode = plain 255 - c, same as the PDF it produces
       var hm = await NotesConverter.printSaver.hqMapAsync(
         function (y0, rows) { return x2.getImageData(0, y0, c2.width, rows); },
         c2.width, c2.height, c2.width, c2.height, true, keepColour(), pureMode(),
         { band: 192, progress: function () { return NotesFX.uiPaint(); } }, whiteMode());   // banded: previews stay snappy too
+      if (psk && OV.whitenBand) OV.whitenBand(hm.imageData.data, c2.width, c2.height, psk);
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else {
       var id = x2.getImageData(0, 0, c2.width, c2.height);
-      var psk = null, pMode = bandMode();            // the band toggle shows in the preview too
-      if (pMode && OV && OV.findBand) {
-        try {
-          var snap = c1.getContext('2d').getImageData(0, 0, c1.width, c1.height);
-          var pds = c1.width / Math.max(1, vp.width);
-          var ph = OV.findBand(snap, 'h', pds);
-          var pv = (pMode === '4up') ? OV.findBand(snap, 'v', pds) : null;
-          if (ph || pv) {
-            psk = { r0: ph ? ph.a0 : 0, r1: ph ? ph.a1 : 0, c0: pv ? pv.a0 : 0, c1: pv ? pv.a1 : 0 };
-          }
-        } catch (e) { psk = null; }
-      }
       invertPixels(id, true, psk);
       x2.putImageData(id, 0, 0);
     }
@@ -459,8 +460,10 @@
     var ss = (bigW * bigH <= 34000000 && bigW <= 16000 && bigH <= 16000) ? 2 : 1;   // 2× supersample → area-averaged down
     var W = Math.max(2, Math.round(vp1.width * outSc)), H = Math.max(2, Math.round(vp1.height * outSc));
     var bw = Math.max(2, Math.round(vp1.width * outSc * ss)), bh = Math.max(2, Math.round(vp1.height * outSc * ss));
-    /* band-keep (true negative only): the white band(s) in supersampled px */
-    var bandBh = null;
+    /* band-keep: the white band(s) in supersampled px for the negative paths,
+       and in output px for the ink paths (the ink engine maps white to ink on
+       dark pages, so the band is painted back to paper white afterwards) */
+    var bandBh = null, bandWH = null;
     if (band && (band.h || band.v)) {
       var bk = outSc * ss;
       bandBh = { r0: 0, r1: 0, c0: 0, c1: 0 };
@@ -473,6 +476,10 @@
         bandBh.c1 = Math.min(bw, Math.round(band.v.t1 * bk));
       }
       if (!(bandBh.r1 > bandBh.r0 || bandBh.c1 > bandBh.c0)) bandBh = null;
+      var wk = outSc, wr0 = 0, wr1 = 0, wc0 = 0, wc1 = 0;
+      if (band.h) { wr0 = Math.max(0, Math.round(band.h.t0 * wk)); wr1 = Math.min(H, Math.round(band.h.t1 * wk)); }
+      if (band.v) { wc0 = Math.max(0, Math.round(band.v.t0 * wk)); wc1 = Math.min(W, Math.round(band.v.t1 * wk)); }
+      if (wr1 > wr0 || wc1 > wc0) bandWH = { r0: wr0, r1: wr1, c0: wc0, c1: wc1 };
     }
     var stripSkip = function (y0, rows) {            // strip-relative skip, or null off-band
       if (!bandBh) return null;
@@ -513,7 +520,9 @@
     /* Off-thread first: the per-pixel map over the whole page and the JPEG/PNG
        encode are what froze the tab. The worker does both on the strips we hand
        over; if it cannot, the main-thread path below does exactly the same maths. */
-    if (window.NotesRaster && NotesRaster.supported()) {
+    /* the worker returns encoded bytes (no pixels to restore the band on), so an
+       ink page with a band runs on the main thread instead — same pixel maths */
+    if (window.NotesRaster && NotesRaster.supported() && !(band && inkMode())) {
       var wmime = fmt() === 'png' ? 'image/png' : 'image/jpeg';
       try {
         if (inkMode()) {
@@ -559,7 +568,7 @@
     if (inkMode()) {                            // same ink-bias mapping the Print-Saver engine uses
       var stripFeed = function (y0, rows) {
         return renderStrip(y0, rows).then(function (id) {
-          if (blank) blank = invertPixels(id, false);              // scan-only: is the page pure white?
+          if (blank) blank = invertPixels(id, false, stripSkip(y0, rows));   // scan-only, band ignored
           return id;
         });
       };
@@ -572,11 +581,12 @@
         var fat = await fullCanvas();
         hm = await NotesConverter.printSaver.hqMapAsync(function (y0, rows) {
           var id = fat.ctx.getImageData(0, y0, bw, rows);
-          if (blank) blank = invertPixels(id, false);
+          if (blank) blank = invertPixels(id, false, stripSkip(y0, rows));
           return id;
         }, bw, bh, W, H, true, keepColour(), pureMode(), hook, whiteMode());
         fat.canvas.width = 0; fat.canvas.height = 0;
       }
+      if (bandWH && OV && OV.whitenBand) OV.whitenBand(hm.imageData.data, W, H, bandWH);
       out.getContext('2d').putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
     } else {
       /* true negative — colours included. The flipped page is assembled at full

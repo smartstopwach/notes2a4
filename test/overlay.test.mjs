@@ -390,5 +390,40 @@ function coversBand(det, exp) {   // detected run must cover the layout band (ed
     'h→' + (bh ? bh.a0 + '..' + bh.a1 : 'null') + ' v→' + (bv ? bv.a0 + '..' + bv.a1 : 'null'));
 }
 
+/* ---------- 14) whitenBand: ink-mode band restore to paper white ---------- */
+function mkBuf(w, h, v) {
+  const d = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) { d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v; d[i * 4 + 3] = 255; }
+  return d;
+}
+function atW(d, w, x, y) { return d[(y * w + x) * 4]; }
+{
+  const d = mkBuf(10, 10, 20);
+  const n = OV.whitenBand(d, 10, 10, { r0: 3, r1: 5, c0: 0, c1: 0 });
+  check('whitenBand: rows-only whitens the rows, leaves the rest',
+    n === 20 && atW(d, 10, 0, 3) === 255 && atW(d, 10, 9, 4) === 255 &&
+    atW(d, 10, 5, 2) === 20 && atW(d, 10, 5, 5) === 20, n + ' px');
+}
+{
+  const d = mkBuf(10, 10, 20);
+  const n = OV.whitenBand(d, 10, 10, { r0: 0, r1: 0, c0: 2, c1: 4 });
+  check('whitenBand: cols-only whitens the cols, leaves the rest',
+    n === 20 && atW(d, 10, 2, 0) === 255 && atW(d, 10, 3, 9) === 255 &&
+    atW(d, 10, 1, 5) === 20 && atW(d, 10, 4, 5) === 20, n + ' px');
+}
+{
+  const d = mkBuf(10, 10, 20);
+  const n = OV.whitenBand(d, 10, 10, { r0: 4, r1: 6, c0: 4, c1: 6 });
+  check('whitenBand: rows+cols whiten the full cross, corners stay',
+    n === 40 && atW(d, 10, 0, 5) === 255 && atW(d, 10, 5, 0) === 255 &&
+    atW(d, 10, 5, 5) === 255 && atW(d, 10, 0, 0) === 20 && atW(d, 10, 9, 9) === 20, n + ' px');
+}
+{
+  const d = mkBuf(6, 6, 20);
+  const n = OV.whitenBand(d, 6, 6, null);
+  const n2 = OV.whitenBand(d, 6, 6, { r0: 2, r1: 2, c0: 1, c1: 1 });
+  check('whitenBand: null/empty skip is a no-op', n === 0 && n2 === 0 && atW(d, 6, 3, 3) === 20);
+}
+
 console.log('\n' + (fail === 0 ? 'ALL OVERLAY CHECKS PASSED' : fail + ' OVERLAY CHECK(S) FAILED') + '  (' + pass + ' passed)\n');
 process.exit(fail ? 1 : 0);

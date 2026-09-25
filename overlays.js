@@ -235,6 +235,28 @@
   }
 
   /**
+   * Restore the band to pure white on an INK-mapped page (black ink / pure
+   * b&w / white paper): on a dark page the ink engine maps white to solid
+   * ink (white chalk and the white band look the same to it), so after the
+   * mapping the band rows/cols are painted back to paper white. data is a
+   * RGBA buffer W*H; skip = {r0, r1, c0, c1} in the same px (either range may
+   * be empty); null skip is a no-op. Alpha is left untouched.
+   */
+  function whitenBand(data, W, H, skip) {
+    if (!data || !skip || !(W > 0 && H > 0)) return 0;
+    var r0 = Math.max(0, skip.r0 | 0), r1 = Math.min(H, skip.r1 | 0);
+    var c0 = Math.max(0, skip.c0 | 0), c1 = Math.min(W, skip.c1 | 0);
+    var n = 0, x, y, o;
+    for (y = r0; y < r1; y++) {
+      for (x = 0; x < W; x++) { o = (y * W + x) * 4; data[o] = data[o + 1] = data[o + 2] = 255; n++; }
+    }
+    for (y = 0; y < H; y++) {
+      for (x = c0; x < c1; x++) { o = (y * W + x) * 4; data[o] = data[o + 1] = data[o + 2] = 255; n++; }
+    }
+    return n;
+  }
+
+  /**
    * Restore up to two bands (the 4-up union: horizontal AND vertical). hb =
    * {y0, y1} rows and/or vb = {x0, x1} cols in pdf-lib bottom-left pt, either
    * may be null. Two overlapping Difference rects would flip their crossing
@@ -357,6 +379,7 @@
     findBand: findBand,
     unflipBand: unflipBand,
     unflipBands: unflipBands,
+    whitenBand: whitenBand,
     sepLines: sepLines,
     drawPage: drawPage
   };

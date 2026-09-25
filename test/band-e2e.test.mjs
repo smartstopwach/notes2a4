@@ -209,5 +209,46 @@ await e2e(2, [0, 1], '2up');
     'bar means ' + crossRow.toFixed(1) + ' / ' + crossCol.toFixed(1) + ' (must stay 255)');
   check('union: quadrants around the cross flipped', quad > 200, 'mean 25 → ' + quad.toFixed(1));
 }
+/* ink-mode band-keep proof: on a DARK page the ink engine maps white to solid
+   ink (L>=135 → v=0), so the band must be painted back afterwards. Runs the
+   REAL hqMapAsync over a synthetic dark page with a white band + grey ruling. */
+{
+  const bw = 96, bh = 96, W = 48, H = 48;
+  const full = new Uint8ClampedArray(bw * bh * 4);
+  for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+    let v;
+    if (y >= 40 && y < 56) v = (y === 44 || y === 50) ? 168 : 255;   // white band + grey ruling
+    else { v = 24; if (y % 8 < 2) v = 235; }                          // dark slides + light text
+    const o = (y * bw + x) * 4; full[o] = full[o + 1] = full[o + 2] = v; full[o + 3] = 255;
+  }
+  const provider = (y0, rows) => ({ data: full.subarray(y0 * bw * 4, (y0 + rows) * bw * 4) });
+  const bandOf = (hm) => regionMean({ data: hm.imageData.data, width: W, height: H }, 0, W, 20, 28);
+  const slideOf = (hm) => regionMean({ data: hm.imageData.data, width: W, height: H }, 0, W, 4, 16);
+  const run = (pure, white) => CV.printSaver.hqMapAsync(provider, bw, bh, W, H, true, false, pure, { band: 32 }, white);
+
+  const inkRaw = await run(false, false);
+  check('ink-modes: dark test page inverts (premise)', inkRaw.inverted === true && inkRaw.darkFrac >= 0.5,
+    'inverted=' + inkRaw.inverted + ' darkFrac=' + inkRaw.darkFrac.toFixed(2));
+  check('ink-modes: unmasked band turns to ink (the reported bug)', bandOf(inkRaw) < 60,
+    'band mean 255 → ' + bandOf(inkRaw).toFixed(1));
+
+  const inkKept = await run(false, false);
+  OV.whitenBand(inkKept.imageData.data, W, H, { r0: 20, r1: 28, c0: 0, c1: 0 });
+  check('ink-modes: black-ink + restore keeps band white, slides paper',
+    bandOf(inkKept) === 255 && slideOf(inkKept) > 170,
+    'band ' + bandOf(inkKept).toFixed(0) + ', slide ' + slideOf(inkKept).toFixed(1));
+
+  const pureKept = await run(true, false);
+  OV.whitenBand(pureKept.imageData.data, W, H, { r0: 20, r1: 28, c0: 0, c1: 0 });
+  check('ink-modes: pure b&w + restore keeps band white',
+    pureKept.inverted === true && bandOf(pureKept) === 255 && slideOf(pureKept) > 170,
+    'band ' + bandOf(pureKept).toFixed(0) + ', slide ' + slideOf(pureKept).toFixed(1));
+
+  const whiteKept = await run(false, true);
+  OV.whitenBand(whiteKept.imageData.data, W, H, { r0: 20, r1: 28, c0: 0, c1: 0 });
+  check('ink-modes: white paper + restore keeps band white',
+    whiteKept.inverted === true && bandOf(whiteKept) === 255 && slideOf(whiteKept) > 170,
+    'band ' + bandOf(whiteKept).toFixed(0) + ', slide ' + slideOf(whiteKept).toFixed(1));
+}
 console.log('\n' + (fail ? fail + ' E2E CHECK(S) FAILED' : 'ALL E2E CHECKS PASSED') + '  (' + pass + ' passed)\n');
 process.exit(fail ? 1 : 0);
