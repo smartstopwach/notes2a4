@@ -743,5 +743,16 @@ async function bakeRasterPage(out, pg, p, list, dpi, size, fmt) {
   pg.drawImage(emb, { x: 0, y: 0, width: size.width, height: size.height });
 }
 
+/* ---------- scroll reveal (same pattern as the other apps — without this,
+   every .reveal block stays at opacity:0 and the page looks blank) ---------- */
+if ('IntersectionObserver' in window) {
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (en) { if (en.isIntersecting) { en.target.classList.add('in'); io.unobserve(en.target); } });
+  }, { threshold: 0.18 });
+  document.querySelectorAll('.reveal').forEach(function (el) { io.observe(el); });
+} else {
+  document.querySelectorAll('.reveal').forEach(function (el) { el.classList.add('in'); });
+}
+
 console.info('[rapper] ' + BUILD + ' ready');
 })();

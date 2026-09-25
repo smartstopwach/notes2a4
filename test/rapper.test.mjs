@@ -175,6 +175,11 @@ console.log('\n=== THE RAPPER core ===\n');
   const radioNames = [...new Set([...appSrc.matchAll(/input\[name=([a-z]+)\]/g)].map((m) => m[1]))];
   const missingRadio = radioNames.filter((n) => !html.includes('name="' + n + '"'));
   check('editor wiring: every radio group exists in rapper.html', missingRadio.length === 0, radioNames.join(','));
+  /* .reveal blocks are opacity:0 until JS adds .in — missing this = blank page */
+  const revealCount = (html.match(/class="[^"]*\breveal\b/g) || []).length;
+  check('editor wiring: scroll-reveal present (.reveal would stay invisible otherwise)',
+    revealCount > 0 && appSrc.includes("querySelectorAll('.reveal')") && appSrc.includes("classList.add('in')"),
+    revealCount + ' .reveal blocks');
 
   /* minimal stub DOM — just enough for the IIFE top level + one tool switch */
   const mkEl = (tag) => {
