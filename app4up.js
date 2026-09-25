@@ -41,6 +41,7 @@
       gapMode: opt.gapFixed.checked ? 'fixed' : 'auto',
       gap: parseFloat(opt.gap.value) * MM,
       lines: opt.lines.checked,
+      lineStyle: (document.querySelector('input[name="linestyle"]:checked') || { value: 'solid' }).value,
       pageNumbers: opt.nums.checked,
       sepLine: sepLineVal(),
       numPos: numPosVal(), numFmt: numFmtVal(),
@@ -218,6 +219,10 @@
 
   var pvTimer = null;
   function schedule() { clearTimeout(pvTimer); pvTimer = setTimeout(renderPreview, 120); updateModeUI(); }
+  opt.lines.addEventListener('change', function () { $('lineOpts').hidden = !opt.lines.checked; });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="linestyle"]'), function (r) {
+    r.addEventListener('change', schedule);
+  });
   [opt.paper, opt.margin, opt.gap, opt.lines, opt.nums, opt.gapAuto, opt.gapFixed].forEach(function (el) {
     el.addEventListener(el.type === 'radio' || el.type === 'checkbox' ? 'change' : 'input', schedule);
   });
@@ -382,13 +387,51 @@
     for (var ci = 0; ci < idxs.length; ci++) await slide(idxs[ci] + 1, L.slides[ci]);
 
     if (opts.lines) {
-      ctx.strokeStyle = '#c3cbd9'; ctx.lineWidth = 0.8;
-      for (var i = 0; i < L.lines.length; i++) {
-        var yPx = (page.h - L.lines[i]) * pxPerPt;
-        ctx.beginPath();
-        ctx.moveTo((L.gap.x + 10) * pxPerPt, yPx);
-        ctx.lineTo((L.gap.x + L.gap.w - 10) * pxPerPt, yPx);
-        ctx.stroke();
+      var sty = opts.lineStyle || 'solid';
+      var stepPx = (L.lines.step || opts.lineSpacing) * pxPerPt;
+      var x0 = (L.gap.x + 10) * pxPerPt, x1 = (L.gap.x + L.gap.w - 10) * pxPerPt;
+      var byT = (page.h - L.gap.y - L.gap.h + 7) * pxPerPt, byB = (page.h - L.gap.y - 7) * pxPerPt;
+      ctx.setLineDash([]); ctx.lineCap = 'butt';
+      if (sty !== 'columns' && sty !== 'staff') {
+        for (var i = 0; i < L.lines.length; i++) {
+          var yPx = (page.h - L.lines[i]) * pxPerPt;
+          var w = 0.8, c = '#c3cbd9', dash = null;
+          if (sty === 'grid' || sty === 'graph' || sty === 'dots') c = '#bdc6d4';
+          if (sty === 'dashed') { w = 0.9; dash = [6 * pxPerPt, 4 * pxPerPt]; }
+          else if (sty === 'dotted') { w = 1.6; dash = [0.6, 5]; ctx.lineCap = 'round'; }
+          else if (sty === 'grid' || sty === 'graph') w = 0.55;
+          else if (sty === 'dots') { w = 1.6; dash = [0.6, stepPx]; ctx.lineCap = 'round'; }
+          if (sty === 'graph' && i % 5 === 0) { w = 1.1; c = '#9fabbf'; }
+          ctx.lineWidth = w; ctx.strokeStyle = c; if (dash) ctx.setLineDash(dash);
+          ctx.beginPath(); ctx.moveTo(x0, yPx); ctx.lineTo(x1, yPx); ctx.stroke(); ctx.setLineDash([]); ctx.lineCap = 'butt';
+        }
+      }
+      if (sty === 'grid' || sty === 'graph' || sty === 'columns') {
+        var vj = 1;
+        for (var vx = x0 + stepPx; vx < x1 - stepPx / 2; vx += stepPx, vj++) {
+          ctx.lineWidth = (sty === 'columns') ? 0.8 : ((sty === 'graph' && vj % 5 === 0) ? 1.1 : 0.55);
+          ctx.strokeStyle = (sty === 'columns') ? '#c3cbd9' : ((sty === 'graph' && vj % 5 === 0) ? '#9fabbf' : '#bdc6d4');
+          ctx.beginPath(); ctx.moveTo(vx, byT); ctx.lineTo(vx, byB); ctx.stroke();
+        }
+      }
+      if (sty === 'margin') {
+        ctx.strokeStyle = 'rgba(198,104,112,.9)'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(x0 + 0.16 * (x1 - x0), byB + 2); ctx.lineTo(x0 + 0.16 * (x1 - x0), byT - 2); ctx.stroke();
+      }
+      if (sty === 'cornell') {
+        var cxx = x0 + 0.3 * (x1 - x0), sy = (page.h - (L.gap.y + 0.24 * L.gap.h)) * pxPerPt;
+        ctx.strokeStyle = '#9fabbf'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cxx, sy); ctx.lineTo(cxx, byT); ctx.moveTo(x0, sy); ctx.lineTo(x1, sy); ctx.stroke();
+      }
+      if (sty === 'staff') {
+        var pPx = stepPx / 4.5;
+        ctx.strokeStyle = '#a9b4c6'; ctx.lineWidth = 0.7;
+        for (var si = 0; si < L.lines.length; si++) {
+          for (var k = 0; k < 5; k++) {
+            var yy = (page.h - L.lines[si]) * pxPerPt + k * pPx;
+            ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x1, yy); ctx.stroke();
+          }
+        }
       }
     }
     var segs = NotesConverter.sepLines(L, opts, page);   // identical helper the PDF build uses
