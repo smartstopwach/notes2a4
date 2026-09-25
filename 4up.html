@@ -6,8 +6,8 @@
 <title>Notes2A4 · 4-up Studio — four 16:9 note pages on one landscape A4 (400 → 100)</title>
 <meta name="description" content="Special mode: pack FOUR note slides onto one landscape A4 — pages 1·2 left column, 3·4 right, flush rows, a 43 mm white band in the middle for your notes. 400 pages become 100. 100% in-browser, no uploads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='7' width='28' height='18' rx='3' fill='%23fff'/%3E%3Crect x='4' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='4' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=15">
-<link rel="stylesheet" href="fourup.css?v=12">
+<link rel="stylesheet" href="styles.css?v=43">
+<link rel="stylesheet" href="fourup.css?v=43">
 <meta http-equiv="Cache-Control" content="no-cache">
 </head>
 <body id="top" class="fu-body">
@@ -105,11 +105,20 @@
         <path d="M14 40 v8 a6 6 0 0 0 6 6 h24 a6 6 0 0 0 6-6 v-8" class="dz-tray"/>
       </svg>
       <p class="dz-title">Drop your notes PDF — 4 slides per landscape sheet</p>
-      <p class="dz-hint">any length · 20, 100 or 400 pages · or</p>
+      <p class="dz-hint">any length · drop several PDFs — they merge in order · or</p>
       <button type="button" class="btn btn-primary" id="chooseBtn">Choose PDF</button>
       <p class="dz-fine">No server, no account, no upload.</p>
-      <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
       <p class="dz-error" id="fileError" role="alert" hidden></p>
+    </div>
+
+    <div id="sessBar" class="sess-bar" hidden>
+      <span class="sess-dot" aria-hidden="true"></span>
+      <span class="sess-msg" id="sessMsg">Saved in this browser</span>
+      <span class="sess-actions">
+        <button type="button" class="sess-btn sess-go" id="sessGo" hidden>&#9654; Continue</button>
+        <button type="button" class="sess-btn" id="sessForget">Forget</button>
+      </span>
     </div>
 
     <div id="workbench" class="workbench" hidden>
@@ -137,7 +146,10 @@
           <label class="fld">
             <span>Edge margin <i id="vMargin">0 mm</i></span>
             <input type="range" id="optMargin" min="0" max="12" step="0.5" value="0">
-            <small>0 = the demo look: slides touch all four edges. Add 5–8 mm for home printers.</small>
+            <ul class="note-list">
+              <li><b>0 mm</b> — the demo look: slides touch all four sheet edges.</li>
+              <li><b>5–8 mm</b> — for home printers that can't print right up to the edge (full-bleed).</li>
+            </ul>
           </label>
           <div class="fld">
             <span class="lbl">Middle band</span>
@@ -164,28 +176,97 @@
               <label title="Cornell strip — cue column left, summary line low"><input type="radio" name="linestyle" value="cornell"><svg viewBox="0 0 30 16" aria-hidden="true" stroke-width="1"><path d="M2 2h26M2 14h26M2 2v12M28 2v12M10 2v9M2 11h26"/></svg><span>Cornell</span></label>
             </div>
           </div>
-          <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>e.g. “37 / 100” centred in the band</em></span></label>
+          <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>position, style &amp; starting number — pick below</em></span></label>
+          <div class="ps-opts" id="numOpts" hidden>
+            <div class="fld"><span class="lbl">Position</span>
+              <div class="seg num-grid" role="radiogroup" aria-label="Number position">
+                <label><input type="radio" name="numpos" id="npTL"><span>↖ top-left</span></label>
+                <label><input type="radio" name="numpos" id="npTC"><span>↑ top-centre</span></label>
+                <label><input type="radio" name="numpos" id="npTR"><span>↗ top-right</span></label>
+                <label><input type="radio" name="numpos" id="npBL"><span>↙ bottom-left</span></label>
+                <label><input type="radio" name="numpos" id="npBC"><span>↓ bottom-centre</span></label>
+                <label><input type="radio" name="numpos" id="npBR"><span>↘ bottom-right</span></label>
+                <label><input type="radio" name="numpos" id="npGap" checked><span>◫ middle gap (classic)</span></label>
+              </div>
+            </div>
+            <div class="fld"><span class="lbl">Style</span>
+              <div class="seg" role="radiogroup" aria-label="Number style">
+                <label><input type="radio" name="numfmt" id="nfFrac" checked><span>3 / 20</span></label>
+                <label><input type="radio" name="numfmt" id="nfPlain"><span>3</span></label>
+                <label><input type="radio" name="numfmt" id="nfPage"><span>Page 3</span></label>
+                <label><input type="radio" name="numfmt" id="nfDash"><span>– 3 –</span></label>
+                <label><input type="radio" name="numfmt" id="nfOf"><span>3 of 20</span></label>
+              </div>
+            </div>
+            <div class="fld"><span class="lbl">Start at &amp; size</span>
+              <div class="num-inline">
+                <input type="number" id="numStart" value="1" min="0" max="99999" step="1" aria-label="Starting number">
+                <div class="seg" role="radiogroup" aria-label="Number size">
+                  <label><input type="radio" name="numsize" id="nsS"><span>small</span></label>
+                  <label><input type="radio" name="numsize" id="nsM" checked><span>medium</span></label>
+                  <label><input type="radio" name="numsize" id="nsL"><span>large</span></label>
+                </div>
+              </div>
+              <ul class="note-list">
+                <li><b>Start at</b> — the first sheet gets this number instead of 1, so a second file can continue where the first ended (e.g. 21, 22, 23…).</li>
+                <li><b>Total in "n / last"</b> follows it too — start 21 with 10 sheets shows "21 / 30", not "21 / 10".</li>
+              </ul>
+            </div>
+          </div>
+          <label class="sw"><input type="checkbox" id="optSep"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Dotted separator</b><em>a black dotted line runs top&#8594;bottom through the middle of the sheet, so the left and right notes read as separate</em></span></label>
           <label class="sw psRow"><input type="checkbox" id="optPrint"><span class="track"><span class="thumb"></span></span>
-            <span class="sw-t"><b>Print-Saver inversion ◐</b><em>dark board notes → printer-friendly: black → white paper · white text &amp; every colour → black ink</em></span></label>
+            <span class="sw-t"><b>Print-Saver inversion ◐</b><em>prints dark-board notes as white paper with black ink — the settings below decide how</em></span></label>
           <div class="ps-opts" id="psOpts" hidden>
+            <ul class="note-list">
+              <li><b>What it does</b> — a dark page comes out as white paper with black ink, so a toner-heavy deck prints cheap and never soaks the sheet.</li>
+              <li><b>Pages become images</b> — text is no longer selectable, but every sheet stays the exact same size and page count.</li>
+              <li><b>Off</b> — the original vector PDF is packed untouched (sharpest text, but a dark page prints dark).</li>
+            </ul>
             <div class="fld"><span class="lbl">Raster quality</span>
               <div class="seg" role="radiogroup" aria-label="Print DPI">
                 <label><input type="radio" name="psdpi" id="dpi96"><span>96 · 1×</span></label>
                 <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · 2×</span></label>
                 <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3× max</span></label>
               </div>
-              <small><b>HQ engine v2:</b> scans rendered at 1×/2×/3× native (your pick) with 2× supersample + area-average (SSAA), and an <b>ink-bias response curve</b> keeps inverted handwriting at full visual weight — no thin/broken strokes. Colours → solid black. (Text not selectable; uncheck for full vector.)</small>
+              <ul class="note-list">
+                <li><b>Resolution</b> — scans render at 1× / 2× / 3× their own native sharpness (96 / 150 / 220 dpi); vector pages use the same pick.</li>
+                <li><b>Smooth edges</b> — 2× supersampling with area-averaging (SSAA), so curves stay smooth instead of jagged.</li>
+                <li><b>Ink-bias curve</b> — a γ=1.7 response gives inverted handwriting its full visual weight; thin strokes never break up.</li>
+                <li><b>Cost</b> — higher dpi = cleaner print but a bigger file and slower run. 150 is the balanced default.</li>
+              </ul>
             </div>
-            <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>invert only dark pages — already-white pages pass through untouched</em></span></label>
+            <div class="fld"><span class="lbl">Colour style</span>
+              <div class="seg seg-wrap" role="radiogroup" aria-label="Print-Saver colour style">
+                <label><input type="radio" name="psstyle" id="psInk" checked><span>Black ink</span></label>
+                <label><input type="radio" name="psstyle" id="psPure"><span>Pure B&amp;W</span></label>
+                <label><input type="radio" name="psstyle" id="psKeep"><span>Keep colours</span></label>
+                <label><input type="radio" name="psstyle" id="psWhite"><span>White paper</span></label>
+                <label><input type="radio" name="psstyle" id="psNeg"><span>True negative</span></label>
+              </div>
+              <ul class="note-list">
+                <li><b>Black ink</b> — normal black &amp; white. Edges stay smooth and soft.</li>
+                <li><b>Pure B&amp;W</b> — every dot is fully black or fully white, no grey at all. Best for handwriting.</li>
+                <li><b>Keep colours</b> — coloured highlights stay coloured, just darkened so they print cleanly.</li>
+                <li><b>True negative</b> — every colour flips to its opposite (blue → orange), like a photo negative.</li>
+
+                <li><b>White paper</b> — paper is left exactly as it is; every colour and every dark mark becomes solid black ink. A <i>dark area</i> on the page (a blackboard panel, a dark slide) is flipped inside itself, so that board prints as white paper with black ink on it — the same as what a photo-negative tool does to it. This is the style for a page that is already white: Black ink and Pure B&amp;W leave such a page untouched.</li>
+              </ul>
+            </div>
+            <label class="sw"><input type="checkbox" id="optAutoInv" checked><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Auto</b><em>what it actually does — the two points below</em></span></label>
+            <ul class="note-list">
+              <li><b>ON (default)</b> — only dark pages are flipped; pages that are already white stay as they are.</li>
+              <li><b>OFF</b> — every page is flipped, even light ones (light notes would turn dark — leave it ON unless you want that).</li>
+            </ul>
           </div>
         </div>
 
         <div class="card prev">
-          <h3>Live preview <em>first two sheets · same engine as the final PDF</em></h3>
+          <h3>Live preview <em>first two sheets large, then every sheet in order · same engine as the final PDF</em></h3>
           <div class="prev-row">
             <figure class="sheet-fig"><canvas id="pv1"></canvas><figcaption>sheet 1 · pages 1–4</figcaption></figure>
             <figure class="sheet-fig"><canvas id="pv2"></canvas><figcaption>sheet 2 · pages 5–8</figcaption></figure>
           </div>
+          <div class="prev-strip" id="prevStrip" aria-label="Every sheet in the finished PDF"></div>
         </div>
       </div>
 
@@ -194,6 +275,7 @@
         <div class="progress" id="progressBox" hidden aria-live="polite">
           <div class="pbar"><div class="pfill" id="pfill"></div></div>
           <span id="pstatus">starting…</span>
+          <span class="p-eta" id="pEta"></span>
         </div>
       </div>
 
@@ -230,8 +312,11 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=15"></script>
-<script src="enhance.js?v=12"></script>
-<script src="app4up.js?v=15"></script>
+<script src="session.js?v=43"></script>
+<script src="converter.js?v=43"></script>
+<script src="raster-client.js?v=43"></script>
+<script src="enhance.js?v=43"></script>
+<script src="review.js?v=43"></script>
+<script src="app4up.js?v=43"></script>
 </body>
 </html>

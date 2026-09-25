@@ -3,7 +3,7 @@
   'use strict';
 
   // Build stamp: confirm in DevTools console that no stale cached app.js is running.
-  var BUILD = 5;
+  var BUILD = 12;
   console.info('[Notes2A4] app.js build', BUILD, '· 2-up A4 packer (demo layout)');
   if (typeof NotesConverter === 'undefined' || !NotesConverter.sheetLayout) {
     document.addEventListener('DOMContentLoaded', function () {
@@ -30,12 +30,20 @@
   /* ---------- element refs ---------- */
   var dz = $('dropzone'), fileInput = $('fileInput'), fileErr = $('fileError');
   var wb = $('workbench'), result = $('result'), thumbs = $('thumbs');
-  var goBtn = $('goBtn'), pBox = $('progressBox'), pFill = $('pfill'), pStatus = $('pstatus');
+  var goBtn = $('goBtn'), pBox = $('progressBox'), pFill = $('pfill'), pStatus = $('pstatus'),
+      pEta = $('pEta');
   var opt = {
     paper: $('optPaper'), margin: $('optMargin'),
     gapAuto: $('gapAuto'), gapFixed: $('gapFixed'), gap: $('optGap'),
-    lines: $('optLines'), nums: $('optNums')
+    lines: $('optLines'), nums: $('optNums'),
+    numOpts: $('numOpts'), numStart: $('numStart'),
+    np: { gap: $('npGap'), tl: $('npTL'), tc: $('npTC'), tr: $('npTR'), bl: $('npBL'), bc: $('npBC'), br: $('npBR') },
+    nf: { frac: $('nfFrac'), plain: $('nfPlain'), page: $('nfPage'), dash: $('nfDash'), of: $('nfOf') },
+    ns: { s: $('nsS'), m: $('nsM'), l: $('nsL') }
   };
+  function numPosVal() { var p = opt.np; for (var k in p) if (p[k] && p[k].checked) return k; return 'gap'; }
+  function numFmtVal() { var p = opt.nf; for (var k in p) if (p[k] && p[k].checked) return k; return 'frac'; }
+  function numSizeVal() { return opt.ns.l && opt.ns.l.checked ? 11 : (opt.ns.s && opt.ns.s.checked ? 6.5 : 8); }
 
   /* ---------- helpers ---------- */
   function readOptions() {
@@ -46,14 +54,37 @@
       gap: parseFloat(opt.gap.value) * MM,
       lines: opt.lines.checked,
       lineStyle: (document.querySelector('input[name="linestyle"]:checked') || { value: 'solid' }).value,
-      pageNumbers: opt.nums.checked
+      pageNumbers: opt.nums.checked,
+      numPos: numPosVal(), numFmt: numFmtVal(),
+      numStart: parseInt(opt.numStart.value, 10) || 1, numSize: numSizeVal()
     });
   }
 
-  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220') };
+  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), sInk: $('psInk'), sPure: $('psPure'), sKeep: $('psKeep'), sNeg: $('psNeg'), sWhite: $('psWhite') };
   function printMode() { return !!(printEls.on && printEls.on.checked); }
   function printDpi() { return printEls.d220 && printEls.d220.checked ? 220 : (printEls.d96 && printEls.d96.checked ? 96 : 150); }
   function printAuto() { return printEls.auto.checked; }
+  function printStyle() {
+    if (printEls.sNeg && printEls.sNeg.checked) return 'neg';
+    if (printEls.sKeep && printEls.sKeep.checked) return 'keep';
+    if (printEls.sPure && printEls.sPure.checked) return 'pure';
+    if (printEls.sWhite && printEls.sWhite.checked) return 'white';
+    return 'ink';
+  }
+  /* Keep-colours checkbox — part of the run signature, so an interrupted
+     Print-Saver run is only resumed when the colour rule is unchanged too. */
+  function printKeepColour() { return !!(printEls.sKeep && printEls.sKeep.checked); }
+  /* One entry point for all three colour styles: ink / keep / neg (true negative). */
+  /* The map is fed one band of the supersampled canvas at a time, and every band
+     hands control back to the browser — this is what keeps the tab responsive
+     while a 33-page print-saver run is binarising pages. Same maths, same output
+     (the Node tests compare the banded result with the one-shot result byte for
+     byte). */
+  async function printMapAsync(provider, bw, bh, W, H, hooks) {
+    var st = printStyle();
+    if (st === 'neg') return NotesConverter.printSaver.negMapAsync(provider, bw, bh, W, H, printAuto(), hooks);
+    return NotesConverter.printSaver.hqMapAsync(provider, bw, bh, W, H, printAuto(), st === 'keep', st === 'pure', hooks, st === 'white');
+  }
   function refreshPrintBadge() {
     var el = $('fbOut'); if (!el) return;
     var t = el.textContent.replace(' · ◐print', '');
@@ -64,6 +95,51 @@
     fileErr.hidden = false; fileErr.textContent = msg;
   }
   function clearError() { fileErr.hidden = true; }
+
+  /* ---------- reload-proof session: source + options + result + checkpoints ----------
+     Everything below is local-only (OPFS/IndexedDB inside this browser). */
+  var SESS_SEL = '#workbench input, #workbench select';
+  var restoring = false;
+  var sessBar = $('sessBar'), sessMsg = $('sessMsg'), sessGo = $('sessGo');
+  function sessReady() { return !!(window.NotesSession && NotesSession.supported()); }
+  function sessNote(msg, showGo) {
+    if (!sessBar) return;
+    sessBar.hidden = false;
+    if (sessMsg) sessMsg.textContent = msg;
+    if (sessGo) sessGo.hidden = !showGo;
+  }
+  function sessKill() {
+    if (sessReady()) NotesSession.clearAll();
+    if (sessBar) sessBar.hidden = true;
+  }
+  function printSig() {                       // image settings — a run is resumed only when these match
+    return [printDpi(), printStyle(), printAuto() ? 1 : 0, printKeepColour() ? 1 : 0].join('|');
+  }
+  function syncAfterRestore() {
+    if (opt.gap) opt.gap.disabled = opt.gapAuto.checked;
+    if (printEls.opts && printEls.on) printEls.opts.hidden = !printEls.on.checked;
+    if (opt.numOpts && opt.nums) opt.numOpts.hidden = !opt.nums.checked;
+    if (opt.margin) opt.margin.dispatchEvent(new Event('input'));
+  }
+  async function restoreResult(meta) {
+    var url = await NotesSession.resultUrl();
+    if (!url) return;
+    state.out.url = url;
+    var dl = $('dlBtn');
+    dl.href = url; dl.download = meta.name;
+    $('openBtn').href = url;
+    if (meta.info) {
+      $('rsIn').textContent = meta.info.in;
+      $('rsOut').textContent = meta.info.out;
+      $('rsMeta').textContent = meta.info.meta + ' · restored from this browser, no re-conversion needed';
+    } else {
+      $('rsMeta').textContent = 'Saved result — ' + fmtMB(meta.size) + ' PDF restored from this browser.';
+    }
+    result.hidden = false;
+    if (meta.size <= (NotesSession.THUMB_LIMIT || 96 * 1048576) && meta.info && meta.info.out) {
+      try { await makeThumbs(await NotesSession.resultBytes(), meta.info.out); } catch (e) {}
+    }
+  }
 
   /* ---------- file intake ---------- */
   $('chooseBtn').addEventListener('click', function (e) { e.stopPropagation(); fileInput.click(); });
@@ -76,10 +152,30 @@
     dz.addEventListener(ev, function (e) { e.preventDefault(); dz.classList.remove('drag'); });
   });
   dz.addEventListener('drop', function (e) {
-    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-    if (f) handleFile(f);
+    var fs = e.dataTransfer && e.dataTransfer.files;
+    if (fs && fs.length) handleFiles(fs);
   });
-  fileInput.addEventListener('change', function () { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+  fileInput.addEventListener('change', function () { if (fileInput.files.length) handleFiles(fileInput.files); });
+
+  /* Accept one PDF — or several: they are merged in order, then loaded as one. */
+  async function handleFiles(files) {
+    if (files.length === 1) return handleFile(files[0]);
+    clearError();
+    var ordered = await NotesFX.orderPdfs(files);      // arrange up/down before merging
+    if (!ordered) return;                              // cancelled
+    if (ordered.length === 1) return handleFile(ordered[0]);
+    pBox.hidden = false; pFill.style.width = '10%';
+    try {
+      var m = await NotesFX.mergePdfs(ordered, function (d, t, nm) {
+        pFill.style.width = (10 + d / t * 80).toFixed(0) + '%';
+        pStatus.textContent = 'merging ' + d + ' of ' + t + ' \u00b7 ' + nm;
+      });
+      await handleFile(m.file);
+    } catch (err) {
+      pBox.hidden = true;
+      showError('Could not merge PDFs (' + (err && err.message || err) + ').');
+    }
+  }
 
   async function handleFile(file) {
     clearError();
@@ -106,7 +202,13 @@
         pg.cleanup();
       }
       pBox.hidden = true;
+      if (window.PageReview) PageReview.setSource(buf, file.name);
       afterLoad();
+      if (sessReady() && !restoring) {
+        NotesSession.saveFiles([{ name: state.name, bytes: state.bytes }]);
+        NotesSession.runClear();                       // new file ⇒ old checkpoints are meaningless
+        sessNote('Saved in this browser — reload, close or crash, this file and your settings stay.');
+      }
       if (window.NotesFX) NotesFX.toast(state.pages + ' pages parsed — nothing was uploaded');
     } catch (err) {
       pBox.hidden = true;
@@ -162,7 +264,20 @@
   [opt.gapAuto, opt.gapFixed].forEach(function (r) {
     r.addEventListener('change', function () { opt.gap.disabled = opt.gapAuto.checked; schedulePreview(); });
   });
+  // numbering options: reveal panel with the checkbox, refresh preview on any change
+  function numListeners(sched) {
+    if (!opt.numOpts) return;
+    opt.nums.addEventListener('change', function () { opt.numOpts.hidden = !opt.nums.checked; });
+    opt.numOpts.hidden = !opt.nums.checked;
+    var els = [opt.numStart];
+    for (var k in opt.np) els.push(opt.np[k]);
+    for (var k2 in opt.nf) els.push(opt.nf[k2]);
+    for (var k3 in opt.ns) els.push(opt.ns[k3]);
+    els.forEach(function (el) { if (el) el.addEventListener('change', sched); });
+    if (opt.numStart) opt.numStart.addEventListener('input', sched);
+  }
   printListeners(schedulePreview);
+  numListeners(schedulePreview);
 
   /* ---------- live preview (same geometry engine as converter) ---------- */
   async function renderPreview() {
@@ -174,21 +289,109 @@
     for (var s = 0; s < 2; s++) {
       var fig = figures[s], canvas = $('pv' + (s + 1));
       var aIdx = 2 * s, bIdx = 2 * s + 1;
+      fig.style.cursor = 'zoom-in';
       if (aIdx >= state.pages) { fig.hidden = true; fig.classList.remove('loading'); continue; }
       fig.hidden = false; fig.classList.add('loading');
       await paintSheetPreview(canvas, page, opts, aIdx, bIdx);
       fig.classList.remove('loading');
+      wireZoom();
       if (gen !== state.gen) return; // superseded
     }
+    renderSheetStrip(gen);                       // then every sheet, small, in the background
   }
 
-  async function paintSheetPreview(canvas, page, opts, aIdx, bIdx) {
+  /* ---------- every sheet as a small tile ----------
+     The preview column used to be one tall empty card (the options column is much
+     longer), which looked broken. It now shows all sheets: tiny, in order, drawn
+     one at a time so the UI stays free, and cancelled the moment anything changes. */
+
+  /* a run and the preview strip must not fight over the CPU: the strip stops,
+     says so, and is finished off once the result is on screen */
+  function renderStripAgain() {
+    if (typeof renderSheetStrip === 'function') renderSheetStrip(state.gen);
+    else if (typeof renderPageStrip === 'function') renderPageStrip(state.gen);
+  }
+  function resumePreviewStrip() {
+    if (!state.stripPaused) return;
+    state.stripPaused = false;
+    setTimeout(function () {
+      if (!state.doc || goBtn.disabled || document.hidden) return;
+      renderStripAgain();
+    }, 400);
+  }
+  var stripToken = 0;
+  async function renderSheetStrip(gen) {
+    var host = $('prevStrip');
+    if (!host || !state.doc) return;
+    var my = ++stripToken;
+    var total = Math.ceil(state.pages / 2);
+    var show = Math.min(total, 24);
+    var opts = readOptions(), page = NotesConverter.PAPERS[opts.paper];
+    var strip = (window.NotesFX && NotesFX.thumbStrip)
+      ? NotesFX.thumbStrip(host, show, 'drawing all ' + total + ' sheet' + (total === 1 ? '' : 's') + '\u2026')
+      : null;
+    for (var s = 0; s < show; s++) {
+      if (my !== stripToken || gen !== state.gen) return;                     // changed under us
+      if (document.hidden) {                                                  // tab in the background: no point
+        if (strip) strip.prune('previews paused \u2014 they finish when you come back to this tab');
+        NotesFX.whenVisible().then(function () { if (my === stripToken) renderStripAgain(); });
+        return;
+      }
+      if (goBtn.disabled || state.running) {                                  // a run has started: stop cleanly
+        if (strip) strip.prune('previews paused while the PDF is being made \— they come back when it finishes');
+        state.stripPaused = true;
+        return;
+      }
+      var fig = document.createElement('figure');
+      var cv = document.createElement('canvas');
+      var cap = document.createElement('figcaption');
+      var aIdx = 2 * s, bIdx = 2 * s + 1;
+      var last = Math.min(state.pages, aIdx + 2);
+      cap.textContent = 'sheet ' + (s + 1) + ' \u00b7 ' + (aIdx + 1 === last ? 'page ' + (aIdx + 1) : 'pages ' + (aIdx + 1) + '\u2013' + last);
+      fig.appendChild(cv); fig.appendChild(cap);
+      await paintSheetPreview(cv, page, opts, aIdx, bIdx, 168);
+      if (my !== stripToken || gen !== state.gen) return;
+      if (strip) strip.place(fig, s);
+      await NotesFX.uiYield();
+    }
+    if (strip) strip.note(total + ' sheet' + (total === 1 ? '' : 's') + ' in the finished PDF' +
+      (total > show ? ' \u00b7 first ' + show + ' shown' : '') + ' \u00b7 click a big preview to enlarge');
+  }
+
+  /* Click a preview sheet → HD view rendered by the same engine as the PDF. */
+  function wireZoom() {
+    var figs = document.querySelectorAll('.sheet-fig');
+    figs.forEach(function (fig, sIdx) {
+      if (fig.dataset.zoomWired) return;
+      fig.dataset.zoomWired = '1';
+      fig.style.cursor = 'zoom-in';
+      fig.title = 'Click for an HD look at this sheet';
+      var hint = document.createElement('span');
+      hint.className = 'zoom-hint'; hint.textContent = '\u2922 click to enlarge';
+      fig.appendChild(hint);
+      fig.addEventListener('click', function () {
+        if (!state.doc) return;
+        var opts = readOptions();
+        var page = NotesConverter.PAPERS[opts.paper];
+        var aIdx = 2 * sIdx, bIdx = 2 * sIdx + 1;
+        if (aIdx >= state.pages) return;
+        NotesFX.zoomSheet({
+          aspect: page.w / page.h,
+          caption: 'sheet ' + (sIdx + 1) + ' \u00b7 pages ' + (aIdx + 1) + (bIdx < state.pages ? ('\u2013' + (bIdx + 1)) : '') +
+            ' \u00b7 HD render, same engine as the PDF' + (printMode() ? ' \u00b7 ' + printDpi() + ' dpi b&w' : ''),
+          render: function (cv) { return paintSheetPreview(cv, page, opts, aIdx, bIdx, cv.parentElement.clientWidth || 1200); }
+        });
+      });
+    });
+  }
+
+  async function paintSheetPreview(canvas, page, opts, aIdx, bIdx, cssWOverride) {
     var L = NotesConverter.sheetLayout(
       state.sizes[aIdx],
       bIdx < state.pages ? state.sizes[bIdx] : null,
       opts, page
     );
-    var cssW = Math.max(240, canvas.parentElement.clientWidth || 300);
+    var cssW = cssWOverride || Math.max(240, canvas.parentElement.clientWidth || 300);
     var dpr = Math.min(2, window.devicePixelRatio || 1);
     var pxPerPt = cssW / page.w;
     canvas.style.width = '100%';
@@ -203,7 +406,9 @@
       if (!box) return;
       var pdfPage = await state.doc.getPage(pageIdx1);
       var vw = pdfPage.getViewport({ scale: 1 }).width;
-      var targetPx = Math.max(40, Math.round(box.width * pxPerPt * quality));
+      // render at the canvas's real device pixels (× a little headroom) — the old
+      // code ignored dpr, so on a 2× screen every slide was upscaled → blurry
+      var targetPx = Math.max(40, Math.round(box.width * pxPerPt * dpr * (quality || 1)));
       var vp = pdfPage.getViewport({ scale: targetPx / vw });
       var off = document.createElement('canvas');
       off.width = Math.round(vp.width); off.height = Math.round(vp.height);
@@ -211,18 +416,21 @@
       pdfPage.cleanup();
       if (printMode()) {
         var octx = off.getContext('2d');
-        var idat = octx.getImageData(0, 0, off.width, off.height);
-        var hmP = NotesConverter.printSaver.hqMap(idat, idat.width, idat.height, printAuto());
-        octx.putImageData(new ImageData(hmP.imageData.data, idat.width, idat.height), 0, 0);
+        var hmP = await printMapAsync(
+          function (y0, rows) { return octx.getImageData(0, y0, off.width, rows); },
+          off.width, off.height, off.width, off.height,
+          { band: 192, progress: function () { return NotesFX.uiPaint(); } });
+        octx.putImageData(new ImageData(hmP.imageData.data, off.width, off.height), 0, 0);
       }
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(off,
         box.x * pxPerPt,
         (page.h - box.y - box.height) * pxPerPt,
         box.width * pxPerPt, box.height * pxPerPt
       );
     }
-    await slide(aIdx + 1, L.top, 1.5);
-    if (bIdx < state.pages) await slide(bIdx + 1, L.bottom, 1.5);
+    await slide(aIdx + 1, L.top);
+    if (bIdx < state.pages) await slide(bIdx + 1, L.bottom);
 
     if (opts.lines) {
       var sty = opts.lineStyle || 'solid';
@@ -274,14 +482,12 @@
     }
     if (opts.pageNumbers) {
       var sheets = Math.ceil(state.pages / 2);
-      var txt = (aIdx / 2 + 1) + ' / ' + sheets;
-      ctx.fillStyle = '#7a869e'; ctx.font = '7px system-ui';
-      if (opts.lines) {
-        ctx.fillText(txt, (L.gap.x + 10) * pxPerPt, (page.h - L.gap.y - L.gap.h + 12) * pxPerPt + 6);
-      } else {
-        var tw = ctx.measureText(txt).width;
-        ctx.fillText(txt, (cssW - tw) / 2, (page.h - L.gap.y - 5) * pxPerPt - 4);
-      }
+      var txt = NotesConverter.numText(aIdx / 2, sheets, opts);
+      var fpx = opts.numSize * pxPerPt;
+      ctx.fillStyle = '#7a869e'; ctx.font = fpx.toFixed(2) + 'px system-ui';
+      var twPt = ctx.measureText(txt).width / pxPerPt;
+      var pp = NotesConverter.numPlace(opts.numPos, L, page, twPt, opts.numSize, opts);
+      ctx.fillText(txt, pp.x * pxPerPt, (page.h - pp.y) * pxPerPt);
     }
   }
 
@@ -317,7 +523,7 @@
      - vector/text pages: full requested dpi, 2× supersampled when it fits
      The map (colours→solid black, dark→white, edges→grey ramp) is
      NotesConverter.printSaver.hqMap — the same function the Node tests run. */
-  async function printRasterPage(pg) {
+  async function printRasterPage(pg, sub) {
     var dpi = printDpi(), want = dpi / 72;
     var cap = await nativePP(pg);
     var mul = dpi >= 200 ? 3 : (dpi >= 120 ? 2 : 1);
@@ -327,76 +533,219 @@
     var ss = (lW * lH <= 34000000 && lW <= 16000 && lH <= 16000) ? 2 : 1;   // area-based: 220 tier keeps SSAA
     var outW = pg.getViewport({ scale: outSc });
     var W = Math.max(2, Math.round(outW.width)), H = Math.max(2, Math.round(outW.height));
-    var cv = document.createElement('canvas');
-    cv.width = Math.max(2, Math.round(vp1.width * outSc * ss));
-    cv.height = Math.max(2, Math.round(vp1.height * outSc * ss));
-    var cx = cv.getContext('2d', { willReadFrequently: true });
-    cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
-    await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
-    var idat = cx.getImageData(0, 0, cv.width, cv.height);
-    var hm = NotesConverter.printSaver.hqMap(idat, W, H, printAuto());
+    var bw = Math.max(2, Math.round(vp1.width * outSc * ss));       // supersampled size
+    var bh = Math.max(2, Math.round(vp1.height * outSc * ss));
+    /* Render the supersampled page in horizontal STRIPS instead of one giant
+       canvas. A 220 dpi A4 page is 4762×6736 = 32 Mpx — drawing that in a single
+       pdf.js call blocks the main thread for seconds, which is what produces the
+       "Page Unresponsive" dialog. offsetY counts whole device pixels, so a strip
+       is rasterised exactly like those rows of the full page: the pixels are the
+       same, only the timing changes (and the 128 MB canvas is never allocated). */
+    var stripRows = Math.max(ss, ss * 96);
+    var hook = { band: stripRows, progress: async function (f, phase) { if (sub) sub(f, phase); await NotesFX.uiPaint(); } };
+    var renderStrip = async function (y0, rows) {
+      var cv = document.createElement('canvas');
+      cv.width = bw; cv.height = rows;
+      var cx = cv.getContext('2d', { willReadFrequently: true });
+      cx.fillStyle = '#fff'; cx.fillRect(0, 0, bw, rows);
+      await pg.render({ canvasContext: cx, viewport: pg.getViewport({ scale: outSc * ss, offsetY: -y0 }) }).promise;
+      var id = cx.getImageData(0, 0, bw, rows);
+      cv.width = 0; cv.height = 0;                                  // release the strip immediately
+      return id;
+    };
+    var tag2 = cap > 0 ? 'HQ ' + mul + '\u00d7 supersampled ' + W + 'px' : 'vector-sharp ' + Math.round(outSc * 72) + ' dpi';
+    var st = printStyle();
+    /* Off-thread first: the map over ~32 Mpx and the PNG encode are the heavy,
+       block-the-tab parts. The worker gets the strips (transferred, never copied)
+       and hands back the encoded page; the main thread only draws them. */
+    if (window.NotesRaster && NotesRaster.supported()) {
+      try {
+        var wres = await NotesRaster.mapPage({
+          kind: st === 'neg' ? 'neg' : 'hq', auto: printAuto(), keepColour: st === 'keep', pure: st === 'pure', white: st === 'white',
+          bw: bw, bh: bh, W: W, H: H, band: stripRows, provider: renderStrip,
+          encode: { mime: 'image/png', previewMax: 720 },
+          onProgress: function (done, total) { if (sub) sub(done / total, 'binarising'); },
+          onStrip: function () { return NotesFX.uiPaint(); }
+        });
+        return {
+          bytes: new Uint8Array(wres.bytes), blank: !!wres.blank, status: tag2,
+          preview: wres.preview ? { data: new Uint8ClampedArray(wres.preview.data), width: wres.preview.w, height: wres.preview.h } : null
+        };
+      } catch (err) {
+        console.warn('raster worker could not do this page, using the main thread:', err);
+      }
+    }
+    var hm;
+    if (sub) sub(0, 'rendering');
+    await NotesFX.uiPaint(true);                // let the bar move before the first strip
+    try {
+      hm = await printMapAsync(renderStrip, bw, bh, W, H, hook);
+    } catch (err) {                             // older pdf.js / odd page: one canvas, the old way
+      console.warn('strip rendering unavailable, falling back to a full-page render:', err);
+      var cvF = document.createElement('canvas');
+      cvF.width = bw; cvF.height = bh;
+      var cxF = cvF.getContext('2d', { willReadFrequently: true });
+      cxF.fillStyle = '#fff'; cxF.fillRect(0, 0, bw, bh);
+      await NotesFX.uiPaint(true);
+      await pg.render({ canvasContext: cxF, viewport: pg.getViewport({ scale: outSc * ss }) }).promise;
+      hm = await printMapAsync(function (y0, rows) { return cxF.getImageData(0, y0, bw, rows); }, bw, bh, W, H, hook);
+      cvF.width = 0; cvF.height = 0;
+    }
     var small = document.createElement('canvas');
     small.width = W; small.height = H;
     var sx = small.getContext('2d');
     sx.putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
-    var tag = cap > 0 ? 'HQ ' + mul + '\u00d7 supersampled ' + W + 'px' : 'vector-sharp ' + Math.round(outSc * 72) + ' dpi';
-    return { canvas: small, status: tag };
+    return { canvas: small, status: tag2, blank: false, bytes: null, preview: null };
   }
 
-  async function buildPrintItems(onPage) {
-    var n = state.pages, items = new Array(n);
+  async function buildPrintItems(onPage, checkpoint, setStep) {   // progress comes from convert(): it owns the clock
+    var n = state.pages, items = new Array(n), reused = 0;
     for (var i = 0; i < n; i++) {
+      if (checkpoint) {                               // a page this run already rendered → reuse it
+        var hit = await NotesSession.pageGet(i);
+        if (hit) {
+          items[i] = { bytes: hit, w: state.sizes[i].w, h: state.sizes[i].h };
+          reused++;
+          if (onPage) await onPage(i + 1, n, 'checkpoint', true);
+          continue;
+        }
+      }
       var pg = await state.doc.getPage(i + 1);
-      var r = await printRasterPage(pg);
+      var r = await printRasterPage(pg, function (f, phase) {
+        setStep((i + f) / n * 0.6, 'page ' + (i + 1) + ' of ' + n + ' · ' +
+          (phase === 'writing' ? 'writing the file' : (phase === 'rendering' || phase === 'downsample') ? 'rendering the page' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
+          ' ' + Math.round(f * 100) + '%', 'page ' + (i + 1) + ' of ' + n);
+      });
       pg.cleanup();
+      var liveCv = r.canvas || (r.preview ? previewCanvas(r.preview) : null);
+      if (liveCv) NotesFX.liveShow(liveCv, 'page ' + (i + 1) + ' / ' + n + ' · ' + r.status);
       items[i] = {
-        bytes: await new Promise(function (res2, rej) {
-          r.canvas.toBlob(function (bl) { bl.arrayBuffer().then(function (ab) { res2(new Uint8Array(ab)); }, rej); }, 'image/png');
-        }),
+        bytes: r.bytes || await canvasToPng(r.canvas),
         w: state.sizes[i].w, h: state.sizes[i].h
       };
+      if (checkpoint) {
+        await NotesSession.pagePut(i, items[i].bytes);                                  // survive a reload
+        await NotesSession.runSave({ phase: 'render', page: i + 1, pages: n, kind: 'print' });
+      }
       if (onPage) await onPage(i + 1, n, r.status);
     }
+    state.reusedPages = reused;
     return items;
   }
+  /* a small canvas from the worker's preview pixels (for the live view) */
+  function previewCanvas(prev) {
+    var cv = document.createElement('canvas');
+    cv.width = prev.width; cv.height = prev.height;
+    cv.getContext('2d').putImageData(new ImageData(prev.data, prev.width, prev.height), 0, 0);
+    return cv;
+  }
+  function canvasToPng(cv) {
+    return new Promise(function (res2, rej) {
+      cv.toBlob(function (bl) { bl.arrayBuffer().then(function (ab) { res2(new Uint8Array(ab)); }, rej); }, 'image/png');
+    });
+  }
+
   function printListeners(schedule) {
     if (!printEls.on) return;
     printEls.on.addEventListener('change', function () { printEls.opts.hidden = !printEls.on.checked; schedule(); refreshPrintBadge(); });
-    [printEls.auto, printEls.d96, printEls.d150, printEls.d220].forEach(function (el) { el.addEventListener('change', schedule); });
+    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.sInk, printEls.sPure, printEls.sKeep, printEls.sNeg, printEls.sWhite].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
   }
   /* ---------- convert ---------- */
   goBtn.addEventListener('click', convert);
 
   async function convert() {
     if (!state.bytes || goBtn.disabled) return;
-    goBtn.disabled = true; result.hidden = true;
-    pBox.hidden = false; pFill.style.width = '2%'; pStatus.textContent = 'embedding pages…';
+    goBtn.disabled = true; result.hidden = true; state.running = true;
+ NotesFX.keepRendering(true);   // frames must not stall a hidden tab
+    pBox.hidden = false;
     var prevCard = document.querySelector('.card.prev');
     if (prevCard) prevCard.classList.add('busy');
     var t0 = performance.now();
+    /* ---- progress: one place writes the bar, the status line and the tab title,
+       so every phase reports the same way and they can never disagree. The
+       estimate is smoothed (one slow page must not make it jump) and refreshed
+       once a second, so it stays honest during a long phase as well. */
+    var etaSmooth = null, etaReady = false, etaMoveFrac = -1, etaMoveAt = Date.now(),
+        STUCK_MS = (NotesFX.stuckMs || 15000), lastStep = null, ticker = null;
+    /* a bare estimate string, not a fragment of the sentence: it is shown in its
+       own chip next to the bar (legible at a glance) and in the tab title, which
+       is the only progress a background tab can show */
+    var etaText = function (frac) {
+      etaReady = false;                                  // until a real estimate exists
+      if (frac >= 0.999) return '';                      // finished: no estimate needed
+      var now = Date.now();
+      if (!(frac > etaMoveFrac + 0.0005)) {              // this phase has not moved on
+        /* a percentage that is not moving with a time left that keeps growing is a
+           lie: say what is true instead (pdf.js used to stall exactly like this in a
+           hidden tab, because it renders by animation frames and a hidden tab has none) */
+        if (now - etaMoveAt > STUCK_MS) return 'still working…';
+      } else { etaMoveFrac = frac; etaMoveAt = now; }
+      var elapsed = performance.now() - t0;
+      if (!(frac > 0.005) || elapsed < 1500) return 'estimating time left…';
+      var left = (elapsed / frac) * (1 - frac);
+      etaSmooth = (etaSmooth === null) ? left : (etaSmooth * 0.7 + left * 0.3);
+      var txt = NotesFX.eta ? NotesFX.eta(etaSmooth) : '';
+      etaReady = !!txt;
+      return txt;
+    };
+    var setEta = function (eta) {
+      if (!pEta) return;
+      pEta.textContent = eta || '';
+      pEta.className = 'p-eta' + (eta && !etaReady ? ' est' : '');
+    };
+    var setStep = function (frac, text, label) {
+      lastStep = { frac: frac, text: text, label: label };
+      pFill.style.width = (frac * 100).toFixed(1) + '%';
+      pStatus.textContent = text;                        // what is happening
+      var eta = etaText(frac);
+      setEta(eta);                                       // how long is left
+      NotesFX.titleProgress(frac, 1, label, etaReady ? eta : '');
+    };
+    var stopTicker = function () { if (ticker) { clearInterval(ticker); ticker = null; } };
+    /* once a second: refresh the estimate (and the tab title) — this is what makes
+       the run look alive from another tab, and it stays correct even while a long
+       synchronous phase is in progress */
+    ticker = setInterval(function () {
+      if (lastStep && goBtn.disabled) setStep(lastStep.frac, lastStep.text, lastStep.label);
+    }, 1000);
+    setStep(0.02, 'embedding pages…', '');            // the run has visibly started
     try {
       var res;
+      var sig = printSig();
+      var ck = false;
       if (printMode()) {
-        pStatus.textContent = 'rendering pages…';
-        var items = await buildPrintItems(function (d, t, st) {
-          pFill.style.width = (d / t * 60).toFixed(1) + '%';
-          pStatus.textContent = 'page ' + d + ' of ' + t + ' · binarising ' + (st || 'at ' + printDpi() + ' dpi…');
-          return new Promise(function (r) { setTimeout(r, 0); });
-        });
-        pFill.style.width = '65%'; pStatus.textContent = 'packing sheets…';
-        res = await NotesConverter.buildFromImages(items, readOptions(), function (d, t) {
-          pFill.style.width = (65 + d / t * 32).toFixed(1) + '%';
-          pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
-          return new Promise(function (r) { setTimeout(r, 0); });
+        if (sessReady()) {                              // adopt the checkpoint set if the settings match
+          var hand = await NotesSession.runBegin(sig, state.pages, 'print');
+          ck = true;
+          if (hand.have) pStatus.textContent = 'resuming — ' + hand.have + ' page' + (hand.have === 1 ? '' : 's') + ' already rendered…';
+        }
+        if (pStatus.textContent.indexOf('resuming') < 0) pStatus.textContent = 'rendering pages…';
+        var items = await buildPrintItems(function (d, t, st, cached) {
+          setStep(d / t * 0.6, 'page ' + d + ' of ' + t + ' · ' + (cached ? 'from checkpoint' : 'binarising ' + (st || 'at ' + printDpi() + ' dpi…')),
+            'page ' + d + ' of ' + t);
+          return NotesFX.uiPaint();
+        }, ck, setStep);
+        setStep(0.65, 'packing sheets…', 'packing');
+        if (sessReady()) await NotesSession.runSave({ phase: 'pack', page: state.pages, pages: state.pages, kind: 'print' });
+        res = await NotesConverter.buildFromImages(items, readOptions(), function (d, t, phase) {
+          var frac = d / t;
+          setStep(0.65 + frac * 0.32,
+            phase === 'writing' ? 'writing the file'
+              : phase === 'encoding' ? 'placing page images ' + d + ' / ' + t
+              : 'sheet ' + d + ' of ' + t,
+            phase === 'writing' ? 'writing the file' : 'sheet ' + d + ' of ' + t);
+          return NotesFX.uiPaint();                      // real frames, not just event-loop turns
         });
       } else {
+        if (sessReady()) await NotesSession.runBegin(sig + '|vector', state.pages, 'vector');
         res = await NotesConverter.build(state.bytes, readOptions(), function (d, t) {
-          pFill.style.width = (6 + d / t * 88).toFixed(1) + '%';
-          pStatus.textContent = 'sheet ' + d + ' of ' + t + '…';
-          return new Promise(function (r) { setTimeout(r, 0); });
+          setStep(0.06 + d / t * 0.88, 'sheet ' + d + ' of ' + t, 'sheet ' + d + ' of ' + t);
+          if (sessReady() && (d === t || d % 4 === 0)) NotesSession.runSave({ phase: 'build', page: d, pages: t, kind: 'vector' });
+          return NotesFX.uiPaint();                      // real frames, not just event-loop turns
         });
       }
-      pFill.style.width = '100%'; pStatus.textContent = 'done';
+      setStep(1, 'done', '');
+      NotesFX.titleDone(); NotesFX.liveDone();
       state.out.bytes = res.bytes;
       if (state.out.url) URL.revokeObjectURL(state.out.url);
       state.out.url = URL.createObjectURL(new Blob([res.bytes], { type: 'application/pdf' }));
@@ -413,39 +762,76 @@
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed into ' + res.sheets + ' ' +
         NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' sheets · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
-        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi b&w' : '');
+        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative', white:'white kept'})[printStyle()] : '');
 
-      await makeThumbs(res.bytes, res.sheets);
+      /* the bytes are ready, so the result card — and the Download button —
+         appear NOW; previews and the reload-proof save happen behind it */
+      renderThumbsSoon(res.bytes, res.sheets);
       result.hidden = false;
+      resumePreviewStrip();                        // previews paused for the run? finish them now
       if (prevCard) prevCard.classList.remove('busy');
       if (window.NotesFX) NotesFX.toast(res.sheets + ' sheets ready · ' + (printMode() ? 'print-saver ' + printDpi() + ' dpi' : 'pure vector'));
       result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       setTimeout(function () { pBox.hidden = true; }, 900);
+      if (sessReady()) {                                // keep the finished PDF: reload → instant result
+        var meta2 = $('rsMeta').textContent;
+        NotesSession.saveResult({
+          bytes: res.bytes, name: dl.download, kind: printMode() ? 'print' : 'vector',
+          info: { in: res.sourcePages, out: res.sheets, meta: meta2 }
+        }).then(function () {                           // queued in order, so runClear still runs after
+          NotesSession.runClear();                      // checkpoints are no longer needed
+          sessNote('Saved · ' + res.sheets + ' sheet' + (res.sheets === 1 ? '' : 's') + ' ready — reloading keeps this result and the download link.');
+        });
+      }
     } catch (err) {
+      stopTicker();
       pStatus.textContent = 'failed: ' + (err && err.message || err);
+      setEta('');
+      NotesFX.titleDone(false); NotesFX.liveDone();
       if (prevCard) prevCard.classList.remove('busy');
       console.error(err);
     }
+    stopTicker();
+    state.running = false;
+    NotesFX.keepRendering(false);
     goBtn.disabled = false;
   }
 
-  async function makeThumbs(bytes, sheets) {
-    thumbs.innerHTML = '';
+  var thumbToken = 0;
+  /* Previews must never hold back the result: placeholders appear instantly and
+     the real sheets swap themselves in one by one, in the background. */
+  function renderThumbsSoon(bytes, sheets) {
+    var mine = ++thumbToken;
+    var strip = (window.NotesFX && NotesFX.thumbStrip) ? NotesFX.thumbStrip(thumbs, Math.min(sheets, 6)) : null;
+    setTimeout(function () {
+      if (mine !== thumbToken) return;
+      makeThumbs(bytes, sheets, mine, strip).catch(function (e) { console.warn('previews:', e); });
+    }, 30);
+  }
+  async function makeThumbs(bytes, sheets, token, strip) {
+    var stale = function () { return token !== undefined && token !== thumbToken; };
+    if (strip === undefined) thumbs.innerHTML = '';                 // restored-result path
     if (state.out.doc) { try { state.out.doc.destroy(); } catch (e) {} }
     var doc = state.out.doc = await pdfjsLib.getDocument({ data: new Uint8Array(bytes).slice(0) }).promise;
+    if (stale()) return;
     var show = Math.min(sheets, 6);
     for (var i = 1; i <= show; i++) {
+      await NotesFX.parkWhileHidden();               // cosmetic: wait for the user to come back
+      if (stale()) return;
       var pg = await doc.getPage(i);
       var w0 = pg.getViewport({ scale: 1 }).width;
       var vp = pg.getViewport({ scale: 170 / w0 });
       var c = document.createElement('canvas');
       c.width = Math.round(vp.width); c.height = Math.round(vp.height);
       await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      if (stale()) { pg.cleanup(); return; }
       var img = document.createElement('img');
       img.src = c.toDataURL('image/png');
       img.alt = 'Packed sheet ' + i + ' preview';
-      thumbs.appendChild(img);
+      if (strip) strip.place(img, i - 1);
+      else thumbs.appendChild(img);
       pg.cleanup();
+      await NotesFX.uiPaint();                       // stay responsive while previews render
     }
     if (sheets > show) {
       var more = document.createElement('p');
@@ -457,7 +843,9 @@
 
   /* ---------- reset ---------- */
   function resetAll() {
-    if (state.out.url) URL.revokeObjectURL(state.out.url);
+    if (state.out.url && !sessReady()) URL.revokeObjectURL(state.out.url);
+    if (sessReady()) { NotesSession.clearFiles(); NotesSession.clearResult(); NotesSession.runClear(); }
+    if (sessBar) sessBar.hidden = true;
     state.bytes = null; state.out = { bytes: null, doc: null, url: '' };
     fileInput.value = '';
     wb.hidden = true; dz.hidden = false; result.hidden = true; pBox.hidden = true; clearError();
@@ -465,6 +853,40 @@
   }
   $('resetBtn').addEventListener('click', resetAll);
   $('againBtn').addEventListener('click', resetAll);
+
+  /* ---------- boot: pull back whatever the last session left in this browser ---------- */
+  (async function bootSession() {
+    if (!window.NotesSession) return;
+    try { await NotesSession.init(); } catch (e) { return; }
+    if (!sessReady()) return;
+    if (sessGo) sessGo.addEventListener('click', function () { sessGo.hidden = true; convert(); });
+    var forget = $('sessForget');
+    if (forget) forget.addEventListener('click', function () { sessKill(); if (window.NotesFX) NotesFX.toast('This browser no longer keeps anything'); });
+    NotesSession.autoSaveOpts($('workbench'), SESS_SEL);
+    var savedOpts = await NotesSession.loadOpts();
+    if (savedOpts && NotesSession.apply(savedOpts, NotesSession.collect(SESS_SEL))) syncAfterRestore();
+    var files = await NotesSession.loadFiles();
+    var meta = await NotesSession.loadResultMeta();
+    if (!files.length) {
+      if (meta) sessNote('Your last result (' + fmtMB(meta.size) + ') is still saved here — pick the PDF again to re-pack, or Forget to wipe it.', false);
+      return;
+    }
+    restoring = true;
+    await handleFile(NotesSession.toFile(files[0]));
+    restoring = false;
+    if (meta) await restoreResult(meta);
+    var run = await NotesSession.runLoad();
+    if (run && run.phase !== 'done' && run.pages) {
+      var st = await NotesSession.pageStats();
+      sessNote('Your last run stopped at page ' + run.page + ' of ' + run.pages + ' — press Continue and it carries on from there' +
+        (st.count ? ' (' + st.count + ' page' + (st.count === 1 ? '' : 's') + ' already rendered are reused)' : '') + '.', true);
+    } else if (meta) {
+      sessNote('Restored — file, settings and your last result are all back. Reload-safe.');
+    } else {
+      sessNote('Restored — file and settings are back. Reload-safe.');
+    }
+    if (window.NotesFX) NotesFX.toast('Session restored from this browser');
+  })();
 
   /* ---------- scroll reveal ---------- */
   if ('IntersectionObserver' in window) {

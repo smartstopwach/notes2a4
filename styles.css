@@ -19,6 +19,7 @@
   --acc:#34d399; --acc2:#10b981; --ind:#818cf8; --warn:#fbbf24; --err:#f87171;
   --line:rgba(148,163,204,.16); --line-soft:rgba(148,163,204,.10);
   --sheet:#fff;
+  --topbar:72px;                       /* height of the sticky topbar (preview column sticks below it) */
   --panel-grad:linear-gradient(180deg,#151d38,#101830);
   --rim:inset 0 1px 0 rgba(255,255,255,.055);
   /* spacing scale 4 → 96 */
@@ -314,7 +315,12 @@ h2{font-size:clamp(1.8rem,3.1vw,2.35rem);margin:0 0 var(--s3)}
 .fb-out{color:var(--acc);font-weight:800}
 .fb-odd{color:var(--warn);font-size:.8rem;border:1px dashed rgba(251,191,36,.5);border-radius:var(--pill);padding:3px 10px}
 #resetBtn{margin-left:auto}
-.cols{display:grid;grid-template-columns:340px 1fr;gap:var(--s5);align-items:stretch}
+.cols{display:grid;grid-template-columns:340px 1fr;gap:var(--s5);align-items:start}
+/* the preview column used to stretch to the full height of the (much taller)
+   options column, leaving a big empty card. It now keeps its own height and
+   follows the scroll, so the previews stay in view while options are changed. */
+.card.prev{position:sticky;top:calc(var(--topbar,72px) + 10px);align-self:start}
+@media (max-width:920px){.card.prev{position:static}}
 @media (max-width:920px){.cols{grid-template-columns:1fr}}
 .card{background:var(--panel-grad);border:1px solid var(--line);border-radius:var(--r2);padding:1.15rem 1.2rem;
   box-shadow:var(--e1),var(--rim);animation:fadeUp .5s var(--ease-out) both}
@@ -343,6 +349,9 @@ input[type=range]:disabled{opacity:.35}
 .lbl{display:flex;justify-content:space-between;font-size:.83rem;color:var(--dim);margin-bottom:.35rem;font-weight:700}
 /* segmented control (gap mode, dpi) */
 .seg{display:flex;gap:6px;margin-bottom:.4rem}
+/* five colour styles no longer fit one row: this variant wraps into a tidy grid */
+.seg.seg-wrap{flex-wrap:wrap}
+.seg.seg-wrap label{flex:1 1 30%;min-width:88px}
 .seg label{flex:1;position:relative}
 .seg input{position:absolute;opacity:0;pointer-events:none}
 .seg span{display:block;text-align:center;font-size:.8rem;color:var(--dim);border:1px solid var(--line);
@@ -393,6 +402,12 @@ input[type=range]:disabled{opacity:.35}
 
 /* preview */
 .prev-row{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+/* every sheet (or page) as a small tile — fills the column instead of empty space */
+.prev-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:.6rem;margin-top:1rem}
+.prev-strip figure{margin:0}
+.prev-strip canvas{display:block;width:100%;height:auto;background:#fff;border-radius:5px;border:1px solid var(--line)}
+.prev-strip figcaption{text-align:center;font-size:.62rem;line-height:1.25;color:var(--faint);margin-top:.25rem}
+.prev-strip .thumb-note{margin:.1rem 0 0}
 .sheet-fig{margin:0;position:relative}
 .sheet-fig canvas{display:block;width:100%;height:auto;background:#fff;
   border-radius:8px;box-shadow:0 18px 40px -18px #000,0 0 0 1px rgba(255,255,255,.08);
@@ -407,15 +422,23 @@ input[type=range]:disabled{opacity:.35}
 @media (max-width:560px){.prev-row{grid-template-columns:1fr}}
 /* run row + progress */
 .run-row{display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap;margin-top:var(--s5)}
-.progress{flex:1;min-width:220px;display:flex;align-items:center;gap:.7rem}
-.pbar{flex:1;height:8px;background:var(--bg2);border:1px solid var(--line);border-radius:var(--pill);overflow:hidden}
+.progress{flex:1;min-width:220px;display:flex;align-items:center;gap:.7rem;flex-wrap:wrap}
+.pbar{flex:1 1 200px;height:8px;background:var(--bg2);border:1px solid var(--line);border-radius:var(--pill);overflow:hidden}
 .pfill{position:relative;height:100%;width:0;border-radius:inherit;overflow:hidden;
   background:linear-gradient(90deg,var(--acc2),var(--acc));transition:width .3s var(--ease-out)}
 .pfill::after{content:"";position:absolute;inset:0;
   background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.35) 50%,transparent 70%);
   transform:translateX(-100%);animation:sheen 1.25s linear infinite}
 @keyframes sheen{to{transform:translateX(100%)}}
-#pstatus{font-size:.8rem;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+#pstatus{font-size:.8rem;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;
+  flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* the estimate lives in its own chip: legible at a glance, and duplicated
+   in the tab title so a background tab still shows time left */
+.p-eta{font-size:.78rem;font-weight:700;color:var(--acc);background:rgba(52,211,153,.10);
+  border:1px solid rgba(52,211,153,.30);border-radius:var(--pill);padding:.12rem .5rem;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.p-eta:empty{display:none}
+.p-eta.est{color:var(--dim);background:var(--bg2);border-color:var(--line);font-weight:600}
 
 /* ---------- 10 · result ---------- */
 .result{position:relative;overflow:hidden;margin-top:var(--s6);
@@ -430,6 +453,10 @@ input[type=range]:disabled{opacity:.35}
 .rs-big em{font-style:normal;font-size:.8rem;color:var(--faint);font-weight:500}
 .rs-sub{color:var(--dim);font-size:.86rem}
 .res-btns{display:flex;gap:var(--s3);flex-wrap:wrap}
+.thumbs .thumb-sk,.prev-strip .thumb-sk{position:relative;padding-top:141%;border-radius:6px;background:linear-gradient(100deg,#e9eef6 30%,#f7f9fd 50%,#e9eef6 70%);background-size:220% 100%;animation:thumbshine 1.5s linear infinite;border:1px solid #dbe3f1}
+@keyframes thumbshine{from{background-position:120% 0}to{background-position:-120% 0}}
+.thumbs .thumb-note,.prev-strip .thumb-note{grid-column:1/-1;margin:.1rem 0 0;color:var(--faint);font-size:.78rem}
+@media (prefers-reduced-motion:reduce){.thumbs .thumb-sk,.prev-strip .thumb-sk{animation:none}}
 .thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:.7rem;margin-top:1.1rem}
 .thumbs img{width:100%;display:block;border-radius:6px;background:#fff;
   box-shadow:0 10px 24px -12px #000,0 0 0 1px rgba(255,255,255,.06);
@@ -507,3 +534,54 @@ input[type=range]:disabled{opacity:.35}
   .anim-stage{transform:none!important}
 }
 /* (4-up studio overrides live in fourup.css) */
+
+/* ---------- sheet-number options ---------- */
+.num-grid{flex-wrap:wrap}
+.num-grid label{flex:1 1 30%;min-width:31%}
+.num-grid label:last-child{flex-basis:100%}
+.num-inline{display:flex;gap:8px;align-items:stretch}
+.num-inline input[type=number]{width:86px;background:var(--card,#141a28);border:1px solid var(--line,#3a4356);
+  color:var(--ink,#e8ecf5);border-radius:9px;padding:.4rem .55rem;font:600 .85rem system-ui;text-align:center}
+.num-inline .seg{flex:1;margin-bottom:0}
+
+/* ---------- session bar: "saved in this browser, reload is safe" ---------- */
+.sess-bar{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin:0 0 1rem;padding:.55rem .8rem;
+  border:1px solid #274a3a;background:linear-gradient(90deg,#0f2a20,#12262f);border-radius:14px;
+  font:600 .82rem/1.35 system-ui,-apple-system,"Segoe UI",sans-serif;color:#bdf3d3}
+.sess-bar[hidden]{display:none}
+.sess-dot{width:9px;height:9px;border-radius:50%;background:#34d399;box-shadow:0 0 0 3px #34d39933;flex:0 0 auto}
+.sess-msg{flex:1 1 12rem;min-width:0;color:#cdeee0;font-weight:500}
+.sess-actions{display:flex;gap:.4rem;flex:0 0 auto}
+.sess-btn{border:1px solid #2f5a48;background:#15342a;color:#cdeee0;border-radius:9px;padding:.32rem .6rem;
+  font:600 .78rem system-ui,sans-serif;cursor:pointer}
+.sess-btn:hover{background:#1b4436;border-color:#3b6f59}
+.sess-btn.sess-go{background:#0f766e;border-color:#14b8a6;color:#eafff9}
+.sess-btn.sess-go:hover{background:#0d9488}
+@media (max-width:520px){.sess-bar{font-size:.78rem}.sess-actions{width:100%}.sess-btn{flex:1}}
+
+/* ---------- option explanations as scannable bullets ---------- */
+.note-list{margin:.55rem 0 .1rem;padding:0;list-style:none;display:grid;gap:.3rem}
+.note-list li{position:relative;padding-left:1.05rem;font:500 .8rem/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;
+  color:#aab6cc}
+.note-list li::before{content:"";position:absolute;left:.16rem;top:.5em;width:5px;height:5px;border-radius:50%;
+  background:#5eead4;box-shadow:0 0 0 2px #5eead433}
+.note-list li b{color:#e6ecf7;font-weight:600}
+@media (max-width:520px){.note-list li{font-size:.76rem}}
+
+/* ---------- HD sheet zoom (click a preview sheet) ---------- */
+body.zoom-lock{overflow:hidden}
+.zoom-box{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
+  background:rgba(5,8,16,.86);backdrop-filter:blur(3px);padding:14px}
+.zoom-box[hidden]{display:none}
+.zoom-inner{position:relative;background:#fff;border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.55);overflow:hidden}
+.zoom-inner canvas{display:block;background:#fff}
+.zoom-x{position:absolute;top:8px;right:8px;z-index:2;width:34px;height:34px;border-radius:50%;border:1px solid #cbd5e1;
+  background:rgba(255,255,255,.94);color:#0f172a;font:600 20px/1 system-ui,sans-serif;cursor:pointer}
+.zoom-x:hover{background:#fff}
+.zoom-cap{position:absolute;left:0;right:0;bottom:0;padding:.45rem .7rem;background:linear-gradient(transparent,rgba(8,12,22,.82));
+  color:#e8eefc;font:600 .78rem/1.3 system-ui,sans-serif;text-align:center}
+.zoom-hint{position:absolute;right:8px;bottom:34px;padding:.22rem .5rem;border-radius:999px;
+  background:rgba(8,12,22,.72);color:#dbe6fb;font:600 .68rem/1.2 system-ui,sans-serif;pointer-events:none;opacity:.9}
+.sheet-fig{position:relative}
+.sheet-fig:hover .zoom-hint{opacity:1;background:rgba(13,148,136,.9)}
+@media print{.zoom-box,.zoom-hint{display:none!important}}
