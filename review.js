@@ -2,14 +2,14 @@
  * Shared by all three tools (2-up, 4-up, Invert Lab). Fully standalone:
  *   - injects a "Review pages" button into the .filebar (next to ✕ remove)
  *   - fullscreen overlay: ONE page at a time, rendered large
- *   - keyboard: ← / → move · Delete / Backspace toggle-remove · Enter apply · Esc close
+ *   - keyboard: ← / → move · Delete / Backspace toggle-remove · Enter keep + next · A apply · Esc close
  *   - Apply rebuilds the PDF (pdf-lib copyPages, vector 1:1 — no re-render) and feeds it
  *     back through the tool's own #fileInput, so every badge/preview refreshes naturally.
  * API used by the apps:  PageReview.setSource(bytes /*Uint8Array*\/, name)
  */
 (function () {
   'use strict';
-  var BUILD = 1;
+  var BUILD = 2;
   console.info('[Notes2A4] review.js build', BUILD, '· page review + delete');
 
   var $ = function (id) { return document.getElementById(id); };
@@ -53,7 +53,7 @@
       '.pr-jump{width:70px;background:#141a28;border:1px solid #3a4356;color:#e8ecf5;border-radius:8px;padding:.45rem .5rem;font:600 .9rem system-ui;text-align:center}',
       '.pr-keys{color:#6c7891;font-size:.78rem}',
       '.pr-keys kbd{background:#1d2434;border:1px solid #39445c;border-bottom-width:2px;border-radius:5px;padding:.1rem .4rem;color:#aeb9cf;font:600 .74rem system-ui}',
-      '.pr-loading::after{content:"";position:absolute;width:38px;height:38px;border-radius:50%;border:3px solid #3a4356;border-top-color:#8ab4ff;animation:prspin .8s linear infinite}',
+      '.pr-peek{animation:prpeek .6s ease 2}@keyframes prpeek{50%{box-shadow:0 0 0 3px rgba(74,222,128,.45);transform:translateY(-2px)}}.pr-loading::after{content:"";position:absolute;width:38px;height:38px;border-radius:50%;border:3px solid #3a4356;border-top-color:#8ab4ff;animation:prspin .8s linear infinite}',
       '@keyframes prspin{to{transform:rotate(360deg)}}',
       '@media (max-width:700px){.pr-nav{width:40px;height:64px}.pr-frame canvas{max-height:62vh}}'
     ].join('\n');
@@ -75,18 +75,18 @@
         '<span class="pr-chip-del" id="prDelCount" hidden>0 removed</span>' +
         '<span class="sp"></span>' +
         '<button class="pr-btn pr-danger" id="prRemove" type="button">🗑 Remove page <kbd style="opacity:.7">Del</kbd></button>' +
-        '<button class="pr-btn pr-apply" id="prApply" type="button">✓ Apply — keep <span id="prKeep">all</span></button>' +
+        '<button class="pr-btn pr-apply" id="prApply" type="button">✓ Apply — keep <span id="prKeep">all</span> <kbd style="opacity:.7">A</kbd></button>' +
         '<button class="pr-btn" id="prClose" type="button">✕ Close</button>' +
       '</div>' +
       '<div class="pr-stage">' +
         '<button class="pr-nav" id="prPrev" type="button" aria-label="Previous page">‹</button>' +
         '<div class="pr-frame" id="prFrame"><canvas id="prCanvas"></canvas>' +
-          '<div class="pr-x"><span>REMOVED — press Del to restore</span></div></div>' +
+          '<div class="pr-x"><span>REMOVED — Del restores · Enter keeps</span></div></div>' +
         '<button class="pr-nav" id="prNext" type="button" aria-label="Next page">›</button>' +
       '</div>' +
       '<div class="pr-bottom">' +
         '<label class="pr-count">go to <input class="pr-jump" id="prJump" type="number" min="1" step="1"></label>' +
-        '<span class="pr-keys"><kbd>←</kbd><kbd>→</kbd> move &nbsp; <kbd>Del</kbd>/<kbd>⌫</kbd> remove/restore &nbsp; <kbd>Enter</kbd> apply &nbsp; <kbd>Esc</kbd> close</span>' +
+        '<span class="pr-keys"><kbd>←</kbd><kbd>→</kbd> move &nbsp; <kbd>Del</kbd>/<kbd>⌫</kbd> remove/restore &nbsp; <kbd>Enter</kbd> keep → next &nbsp; <kbd>A</kbd> apply &nbsp; <kbd>Esc</kbd> close</span>' +
       '</div>';
     document.body.appendChild(ov);
     ui = {
@@ -118,7 +118,8 @@
     else if (k === 'Delete' || k === 'Backspace') { toggleRemove(); }
     else if (k === 'Home') { go(0); }
     else if (k === 'End') { go(src.pages - 1); }
-    else if (k === 'Enter') { apply(); }
+    else if (k === 'Enter') { keepNext(); }
+    else if (k === 'a' || k === 'A') { apply(); }
     else if (k === 'Escape') { close(); }
     else return;
     e.preventDefault(); e.stopPropagation();
@@ -208,6 +209,20 @@
     if (removed[cur] && cur < src.pages - 1) go(cur + 1);
   }
 
+  /* Enter = "keep this page in the PDF" then hop to the next one. If the page was
+     marked removed (e.g. by mistake) Enter un-marks it — the flow never blocks:
+     you can mash Enter through the whole deck and only Del takes pages out. */
+  function keepNext() {
+    removed[cur] = 0;
+    if (cur < src.pages - 1) { go(cur + 1); return; }
+    refreshHUD();
+    // last page kept — nudge towards Apply so the decision actually lands
+    if (!ui.apply.disabled) {
+      ui.apply.classList.add('pr-peek');
+      setTimeout(function () { ui.apply.classList.remove('pr-peek'); }, 1400);
+    }
+  }
+
   /* ---------- open / close / apply ---------- */
   async function open() {
     if (!src.bytes) return;
@@ -278,7 +293,7 @@
     b.id = 'reviewBtn'; b.type = 'button';
     b.className = 'btn btn-tiny';
     b.innerHTML = '🔍 Review pages';
-    b.title = 'Big per-page preview — remove unwanted pages (← → · Del)';
+    b.title = 'Big per-page preview — remove unwanted pages (← → · Del remove · Enter keep → next)';
     var reset = $('resetBtn');
     bar.insertBefore(b, reset || null);
     b.addEventListener('click', open);
