@@ -5,8 +5,8 @@
 (function () {
   'use strict';
 
-  var BUILD = 11;
-  console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + black-ink mode');
+  var BUILD = 12;
+  console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
       var bar = document.createElement('div');
@@ -35,8 +35,12 @@
     fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
     styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'), styleWhite: $('styleWhite'),
     dpiFld: $('dpiFld'), fmtFld: $('fmtFld'), skipRow: $('skipRow'),
-    keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow')
+    keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow'),
+    ovLines: $('ivLines'), ovLineOpts: $('ivLineOpts'),
+    ovSep: $('ivSep'), ovSepOpts: $('ivSepOpts'),
+    ovNums: $('ivNums'), ovNumOpts: $('ivNumOpts'), ovNumStart: $('ivNumStart')
   };
+  var OV = window.InvertOverlays || null;   // overlays.js (vector finishing touches)
 
   function dpi() { return opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96); }
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
@@ -50,6 +54,36 @@
   function vectorMode() { return !!(opt.styleVec && opt.styleVec.checked); }
   function keepColour() { return !!(opt.keepColour && opt.keepColour.checked); }
   function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !(opt.styleInk.checked || (opt.styleWhite && opt.styleWhite.checked)); }  // pure/white mode: no colour row (nothing grey or coloured is left to keep)
+  /* ---------- overlays: ruled lines + dotted separator + sheet numbers ---------- */
+  function ovChecked(name) {
+    var q = document.querySelector('input[name=' + name + ']:checked');
+    return (q && q.value) || '';
+  }
+  function ovOpts() {
+    return {
+      lines: (opt.ovLines && opt.ovLines.checked) ? (ovChecked('ivlinestyle') || 'solid') : false,
+      sep: (opt.ovSep && opt.ovSep.checked) ? (ovChecked('ivsep') || 'v') : 'off',
+      nums: !!(opt.ovNums && opt.ovNums.checked),
+      numPos: ovChecked('ivnumpos') || 'bc',
+      numFmt: ovChecked('ivnumfmt') || 'frac',
+      numStart: (opt.ovNumStart && parseInt(opt.ovNumStart.value, 10)) || 1,
+      numSize: ($('ivNsL') && $('ivNsL').checked) ? 11 : (($('ivNsS') && $('ivNsS').checked) ? 6.5 : 8)
+    };
+  }
+  function ovAny(o) { return !!(o.lines || o.sep !== 'off' || o.nums); }
+  function ovNote(o) {
+    if (!ovAny(o)) return '';
+    var parts = [];
+    if (o.lines) parts.push('ruled ' + o.lines);
+    if (o.sep !== 'off') parts.push('separator');
+    if (o.nums) parts.push('numbers');
+    return ' · overlays: ' + parts.join(' + ');
+  }
+  function syncOverlayRows() {
+    if (opt.ovLineOpts) opt.ovLineOpts.hidden = !(opt.ovLines && opt.ovLines.checked);
+    if (opt.ovSepOpts) opt.ovSepOpts.hidden = !(opt.ovSep && opt.ovSep.checked);
+    if (opt.ovNumOpts) opt.ovNumOpts.hidden = !(opt.ovNums && opt.ovNums.checked);
+  }
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(m) { fileErr.hidden = false; fileErr.textContent = m; }
   function clearError() { fileErr.hidden = true; fileErr.textContent = ''; }
@@ -76,7 +110,7 @@
   function invSig() {
     return [Math.round(dpi()), fmt(), styleName(), keepColour() ? 1 : 0, opt.skip.checked ? 1 : 0].join('|');
   }
-  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); syncVectorRows(); }
+  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); syncVectorRows(); syncOverlayRows(); }
   function syncVectorRows() {
     var v = vectorMode();
     if (opt.dpiFld) opt.dpiFld.hidden = v;          // Sharpness / Encoding / Skip blank are raster-only
@@ -575,6 +609,17 @@
         pStatus.textContent = 'applying 255 - c to the PDF itself…';
         if (sessReady()) { await NotesSession.runClear(); }
         var vres = await NotesConverter.vectorNegative(state.bytes);
+        var ovoV = ovOpts(), ovOnV = OV && ovAny(ovoV);
+        if (ovOnV) {                                     // vector pass: overlay each page of the flipped PDF
+          var vo = await PDFLibns.PDFDocument.load(vres.bytes);
+          var vfont = ovoV.nums ? await vo.embedFont(PDFLibns.StandardFonts.Helvetica) : null;
+          var vpages = vo.getPages();
+          for (var vi = 0; vi < vpages.length; vi++) {
+            var vsz = vpages[vi].getSize();
+            OV.drawPage(vpages[vi], ovoV, { i: vi, n: vpages.length, w: vsz.width, h: vsz.height, font: vfont });
+          }
+          vres.bytes = await vo.save();
+        }
         setStep(1, 'done', '');
         if (state.out.url) URL.revokeObjectURL(state.out.url);
         state.out.url = URL.createObjectURL(new Blob([vres.bytes], { type: 'application/pdf' }));
@@ -587,7 +632,7 @@
         $('rsMeta').textContent = n + (n === 1 ? ' page' : ' pages') +
           ' inverted 1:1 · true negative (exact vector, 255 − c per channel) · text stays sharp and selectable · sizes unchanged · ' +
           fmtMB(state.bytes.length) + ' → ' + fmtMB(vres.bytes.length) + ' · ' +
-          ((performance.now() - t0) / 1000).toFixed(2) + 's · 100% on-device';
+          ((performance.now() - t0) / 1000).toFixed(2) + 's · 100% on-device' + ovNote(ovoV);
         renderThumbsSoon(vres.bytes, n);               // previews are background work
         result.hidden = false;                          // …so the Download button shows NOW
         if (prevCard) prevCard.classList.remove('busy');
@@ -621,6 +666,8 @@
     try {
       var outDoc = await PDFLibns.PDFDocument.create();
       var skipped = 0, reused = 0;
+      var ovo = ovOpts(), ovOn = OV && ovAny(ovo);
+      var ovFont = (ovOn && ovo.nums) ? await outDoc.embedFont(PDFLibns.StandardFonts.Helvetica) : null;
       for (var i = 1; i <= n; i++) {
         var bytes = ck ? await NotesSession.pageGet(i - 1) : null;      // finished page from the last run
         var r = null, blank = false;
@@ -648,6 +695,7 @@
         var size = state.sizes[i - 1];
         var outPg = outDoc.addPage([size.w, size.h]);
         outPg.drawImage(img, { x: 0, y: 0, width: size.w, height: size.h });
+        if (ovOn) OV.drawPage(outPg, ovo, { i: i - 1, n: n, w: size.w, h: size.h, font: ovFont });
         if (r) {                                                       // the worker path brings pixels, not a canvas
           var liveCv = r.canvas || (r.preview ? previewCanvas(r.preview) : null);
           if (liveCv) NotesFX.liveShow(liveCv, 'page ' + i + ' / ' + n + ' · ' + styleName() + (blank && skip ? ' · blank' : ''));
@@ -677,7 +725,7 @@
         n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + styleName() + ' · sizes unchanged · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(saved.length) + ' · ' + dpi() + ' dpi ' + (fmt() === 'png' ? 'PNG' : 'JPEG') +
         (skipped ? ' · ' + skipped + ' blank page' + (skipped === 1 ? '' : 's') + ' kept white' : '') + ' · ' +
-        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device';
+        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + ovNote(ovo);
 
       /* show the result immediately; previews + the reload-proof save follow */
       renderThumbsSoon(saved, n);
@@ -761,8 +809,12 @@
   [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite].forEach(function (el) {
     if (el) el.addEventListener('change', function () { syncKeepColourRow(); syncVectorRows(); });
   });
+  [opt.ovLines, opt.ovSep, opt.ovNums].forEach(function (el) {
+    if (el) el.addEventListener('change', syncOverlayRows);
+  });
   syncKeepColourRow();
   syncVectorRows();
+  syncOverlayRows();
 
   function resetAll() {
     state.bytes = null; state.doc = null; state.pages = 0; state.sizes = [];
