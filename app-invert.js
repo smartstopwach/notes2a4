@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 12;
+  var BUILD = 13;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -38,9 +38,45 @@
     keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow'),
     ovLines: $('ivLines'), ovLineOpts: $('ivLineOpts'),
     ovSep: $('ivSep'), ovSepOpts: $('ivSepOpts'),
-    ovNums: $('ivNums'), ovNumOpts: $('ivNumOpts'), ovNumStart: $('ivNumStart')
+    ovNums: $('ivNums'), ovNumOpts: $('ivNumOpts'), ovNumStart: $('ivNumStart'),
+    band2up: $('iv2up'), band4up: $('iv4up')
   };
   var OV = window.InvertOverlays || null;   // overlays.js (vector finishing touches)
+  /* packer layout band-keep: 'h' = 2-up gap rows stay white, 'v' = 4-up band
+     columns stay white, null = the whole page flips (default) */
+  function bandMode() {
+    if (opt.band2up && opt.band2up.checked) return 'h';
+    if (opt.band4up && opt.band4up.checked) return 'v';
+    return null;
+  }
+  /* white-band detection on a small render of one page: the band in top-left
+     pt {axis, t0, t1}, or null (toggle off, no overlay lib, no band found) */
+  var detCanvas = null;
+  async function detectBand(pgNum) {
+    var axis = bandMode();
+    if (!axis || !OV || !OV.findBand || !state.doc) return null;
+    if (!detCanvas) detCanvas = document.createElement('canvas');
+    var ds = 0.35;
+    var cx = await renderPageScaled(pgNum, ds, detCanvas);
+    var b = null;
+    try {
+      b = OV.findBand(cx.getImageData(0, 0, detCanvas.width, detCanvas.height), axis, ds);
+    } catch (e) { b = null; }
+    if (!b) return null;
+    return { axis: axis, t0: b.a0 / ds, t1: b.a1 / ds };   // px → top-left pt
+  }
+  /* top-left pt band → pdf-lib bottom-left pt (for unflip + ruling) */
+  function bandToPdf(band, w, h) {
+    if (!band) return null;
+    return band.axis === 'h' ? { axis: 'h', y0: h - band.t1, y1: h - band.t0 }
+                             : { axis: 'v', x0: band.t0, x1: band.t1 };
+  }
+  /* rsMeta band-kept note; empty when the toggles were off */
+  function bandKeptNote(kept, n, wasOn) {
+    if (!wasOn) return '';
+    var miss = n - kept;
+    return 'white band kept on ' + kept + '/' + n + ' pages' + (miss ? ' (' + miss + ' had no band)' : '') + ' · ';
+  }
 
   function dpi() { return opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96); }
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
@@ -108,9 +144,9 @@
     return whiteMode() ? 'white paper (colour → black)' : pureMode() ? 'pure b&w' : (inkMode() ? 'black ink' : 'true negative');
   }
   function invSig() {
-    return [Math.round(dpi()), fmt(), styleName(), keepColour() ? 1 : 0, opt.skip.checked ? 1 : 0].join('|');
+    return [Math.round(dpi()), fmt(), styleName(), keepColour() ? 1 : 0, opt.skip.checked ? 1 : 0, bandMode() || 'off'].join('|');
   }
-  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); syncVectorRows(); syncOverlayRows(); }
+  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); syncVectorRows(); syncOverlayRows(); if (opt.band2up && opt.band4up && opt.band2up.checked && opt.band4up.checked) opt.band4up.checked = false; }
   function syncVectorRows() {
     var v = vectorMode();
     if (opt.dpiFld) opt.dpiFld.hidden = v;          // Sharpness / Encoding / Skip blank are raster-only
@@ -135,12 +171,23 @@
 
   /* ---------- core: invert a pixel buffer in place; returns blankness ----------
      blank = every RGB channel ≥ 252 (a pure white page — nothing to flip). */
-  function invertPixels(idat, flip) {
+  function invertPixels(idat, flip, skip) {
     var d = idat.data, blank = true;
-    for (var i = 0; i < d.length; i += 4) {
-      var r = d[i], g = d[i + 1], b = d[i + 2];
-      if (blank && (r < 252 || g < 252 || b < 252)) blank = false;
-      if (flip) { d[i] = 255 - r; d[i + 1] = 255 - g; d[i + 2] = 255 - b; }
+    if (!skip) {                                     // the hot path, byte-identical to before
+      for (var i = 0; i < d.length; i += 4) {
+        var r = d[i], g = d[i + 1], b = d[i + 2];
+        if (blank && (r < 252 || g < 252 || b < 252)) blank = false;
+        if (flip) { d[i] = 255 - r; d[i + 1] = 255 - g; d[i + 2] = 255 - b; }
+      }
+      return blank;
+    }                                                // band-keep: rows (or cols) a0..a1 stay original
+    var w = idat.width;
+    for (var p = 0; p < d.length; p += 4) {
+      var px = p >> 2, y = (px / w) | 0;
+      if (skip.rows ? (y >= skip.a0 && y < skip.a1) : (px - y * w >= skip.a0 && px - y * w < skip.a1)) continue;
+      var r2 = d[p], g2 = d[p + 1], b2 = d[p + 2];
+      if (blank && (r2 < 252 || g2 < 252 || b2 < 252)) blank = false;
+      if (flip) { d[p] = 255 - r2; d[p + 1] = 255 - g2; d[p + 2] = 255 - b2; }
     }
     return blank;
   }
@@ -270,7 +317,15 @@
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else {
       var id = x2.getImageData(0, 0, c2.width, c2.height);
-      invertPixels(id, true);
+      var psk = null, pAxis = bandMode();            // the band toggle shows in the preview too
+      if (pAxis && OV && OV.findBand) {
+        try {
+          var pb = OV.findBand(c1.getContext('2d').getImageData(0, 0, c1.width, c1.height),
+            pAxis, c1.width / Math.max(1, vp.width));
+          if (pb) psk = { rows: pAxis === 'h', a0: pb.a0, a1: pb.a1 };
+        } catch (e) { psk = null; }
+      }
+      invertPixels(id, true, psk);
       x2.putImageData(id, 0, 0);
     }
     (await state.doc.getPage(pageNum)).cleanup();
@@ -380,7 +435,7 @@
   }
 
   /* ---------- per-page raster + invert (same SSAA guard as the print engine) ---------- */
-  async function rasterInverted(pgNum, sub) {
+  async function rasterInverted(pgNum, sub, band) {
     var pg = await state.doc.getPage(pgNum);
     var vp1 = pg.getViewport({ scale: 1 });
     var outSc = dpi() / 72;
@@ -388,6 +443,19 @@
     var ss = (bigW * bigH <= 34000000 && bigW <= 16000 && bigH <= 16000) ? 2 : 1;   // 2× supersample → area-averaged down
     var W = Math.max(2, Math.round(vp1.width * outSc)), H = Math.max(2, Math.round(vp1.height * outSc));
     var bw = Math.max(2, Math.round(vp1.width * outSc * ss)), bh = Math.max(2, Math.round(vp1.height * outSc * ss));
+    /* band-keep (true negative only): the white band in supersampled px */
+    var bandBh = null;
+    if (band && (band.axis === 'h' || band.axis === 'v')) {
+      var bk = outSc * ss, bmax = band.axis === 'h' ? bh : bw;
+      var ba0 = Math.max(0, Math.round(band.t0 * bk)), ba1 = Math.min(bmax, Math.round(band.t1 * bk));
+      if (ba1 > ba0) bandBh = { rows: band.axis === 'h', a0: ba0, a1: ba1 };
+    }
+    var stripSkip = function (y0, rows) {            // strip-relative skip, or null off-band
+      if (!bandBh) return null;
+      if (!bandBh.rows) return bandBh;               // columns run through every strip whole
+      var r0 = Math.max(bandBh.a0 - y0, 0), r1 = Math.min(bandBh.a1 - y0, rows);
+      return r1 > r0 ? { rows: true, a0: r0, a1: r1 } : null;
+    };
     /* The page is rendered in horizontal strips — one giant 32 Mpx pdf.js call was
        the longest block in the whole run (that is what froze the tab). offsetY is
        a whole number of device pixels, so the strips are rasterised exactly like
@@ -445,8 +513,9 @@
         for (var wy = 0; wy < bh; wy += stripRows) {
           var wrows = Math.min(stripRows, bh - wy);
           var wid = await renderStrip(wy, wrows);
-          if (blank2) blank2 = invertPixels(wid, false);
-          invertPixels(wid, true);
+          var wsk = stripSkip(wy, wrows);
+          if (blank2) blank2 = invertPixels(wid, false, wsk);
+          invertPixels(wid, true, wsk);
           bx2.putImageData(wid, 0, wy);
           if (sub) sub((wy + wrows) / bh, 'flip');
           await NotesFX.uiPaint();
@@ -495,8 +564,9 @@
         for (var y0 = 0; y0 < bh; y0 += stripRows) {
           var rows = Math.min(stripRows, bh - y0);
           var id2 = await renderStrip(y0, rows);
-          if (blank) blank = invertPixels(id2, false);
-          invertPixels(id2, true);
+          var sk2 = stripSkip(y0, rows);
+          if (blank) blank = invertPixels(id2, false, sk2);
+          invertPixels(id2, true, sk2);
           bx.putImageData(id2, 0, y0);
           if (sub) sub((y0 + rows) / bh, 'flip');
           await NotesFX.uiPaint();
@@ -509,8 +579,9 @@
         for (var y1 = 0; y1 < bh; y1 += stripRows) {
           var rows2 = Math.min(stripRows, bh - y1);
           var id3 = fat2.ctx.getImageData(0, y1, bw, rows2);
-          if (blank) blank = invertPixels(id3, false);
-          invertPixels(id3, true);
+          var sk3 = stripSkip(y1, rows2);
+          if (blank) blank = invertPixels(id3, false, sk3);
+          invertPixels(id3, true, sk3);
           bx.putImageData(id3, 0, y1);
           if (sub) sub((y1 + rows2) / bh, 'flip');
           await NotesFX.uiPaint();
@@ -609,14 +680,25 @@
         pStatus.textContent = 'applying 255 - c to the PDF itself…';
         if (sessReady()) { await NotesSession.runClear(); }
         var vres = await NotesConverter.vectorNegative(state.bytes);
+        var bOnV = bandMode(), bandVs = null, bandVN = 0;   // 2-up/4-up: detect the white band per page
+        if (bOnV && OV && OV.unflipBand) {
+          bandVs = [];
+          for (var bi = 1; bi <= n; bi++) {
+            var bb = await detectBand(bi);
+            bandVs.push(bb);
+            if (bb) bandVN++;
+          }
+        }
         var ovoV = ovOpts(), ovOnV = OV && ovAny(ovoV);
-        if (ovOnV) {                                     // vector pass: overlay each page of the flipped PDF
+        if (ovOnV || bandVN) {                           // vector pass: restore bands + overlay each page
           var vo = await PDFLibns.PDFDocument.load(vres.bytes);
-          var vfont = ovoV.nums ? await vo.embedFont(PDFLibns.StandardFonts.Helvetica) : null;
+          var vfont = (ovOnV && ovoV.nums) ? await vo.embedFont(PDFLibns.StandardFonts.Helvetica) : null;
           var vpages = vo.getPages();
           for (var vi = 0; vi < vpages.length; vi++) {
             var vsz = vpages[vi].getSize();
-            OV.drawPage(vpages[vi], ovoV, { i: vi, n: vpages.length, w: vsz.width, h: vsz.height, font: vfont });
+            var vband = (bandVs && bandVs[vi]) ? bandToPdf(bandVs[vi], vsz.width, vsz.height) : null;
+            if (vband) OV.unflipBand(vpages[vi], vband, vsz.width, vsz.height);
+            if (ovOnV) OV.drawPage(vpages[vi], ovoV, { i: vi, n: vpages.length, w: vsz.width, h: vsz.height, font: vfont, bandOnly: !!bOnV, band: vband });
           }
           vres.bytes = await vo.save();
         }
@@ -631,7 +713,7 @@
         $('rsOut').textContent = n;
         $('rsMeta').textContent = n + (n === 1 ? ' page' : ' pages') +
           ' inverted 1:1 · true negative (exact vector, 255 − c per channel) · text stays sharp and selectable · sizes unchanged · ' +
-          fmtMB(state.bytes.length) + ' → ' + fmtMB(vres.bytes.length) + ' · ' +
+          fmtMB(state.bytes.length) + ' → ' + fmtMB(vres.bytes.length) + ' · ' + bandKeptNote(bandVN, n, bOnV && bandVs) +
           ((performance.now() - t0) / 1000).toFixed(2) + 's · 100% on-device' + ovNote(ovoV);
         renderThumbsSoon(vres.bytes, n);               // previews are background work
         result.hidden = false;                          // …so the Download button shows NOW
@@ -665,19 +747,22 @@
     }
     try {
       var outDoc = await PDFLibns.PDFDocument.create();
-      var skipped = 0, reused = 0;
+      var skipped = 0, reused = 0, bandN = 0, bandMiss = 0;
       var ovo = ovOpts(), ovOn = OV && ovAny(ovo);
       var ovFont = (ovOn && ovo.nums) ? await outDoc.embedFont(PDFLibns.StandardFonts.Helvetica) : null;
       for (var i = 1; i <= n; i++) {
         var bytes = ck ? await NotesSession.pageGet(i - 1) : null;      // finished page from the last run
         var r = null, blank = false;
+        var bOn = bandMode();                                  // 2-up/4-up: detect this page's white band
+        var band = (bOn && OV) ? await detectBand(i) : null;
+        if (bOn && OV) { if (band) bandN++; else bandMiss++; }
         if (bytes) { reused++; }
         else {
           r = await rasterInverted(i, function (f, phase) {
             setStep((i - 1 + f) / n * 0.88, 'page ' + i + ' of ' + n + ' · ' +
               (phase === 'rendering' || phase === 'downsample' ? 'rendering the page' : phase === 'flip' ? 'flipping colours' : phase === 'measure' ? 'measuring the ink' : 'binarising') +
               ' ' + Math.round(f * 100) + '%', 'page ' + i + ' of ' + n);
-          });
+          }, band);
           bytes = r.bytes || await canvasBytes(r.canvas);
           blank = !!r.blank;
           if (skip && blank) {          // blank page stays white: embed the un-inverted look (white sheet)
@@ -695,7 +780,8 @@
         var size = state.sizes[i - 1];
         var outPg = outDoc.addPage([size.w, size.h]);
         outPg.drawImage(img, { x: 0, y: 0, width: size.w, height: size.h });
-        if (ovOn) OV.drawPage(outPg, ovo, { i: i - 1, n: n, w: size.w, h: size.h, font: ovFont });
+        var rband = bandToPdf(band, size.w, size.h);
+        if (ovOn) OV.drawPage(outPg, ovo, { i: i - 1, n: n, w: size.w, h: size.h, font: ovFont, bandOnly: !!bOn, band: rband });
         if (r) {                                                       // the worker path brings pixels, not a canvas
           var liveCv = r.canvas || (r.preview ? previewCanvas(r.preview) : null);
           if (liveCv) NotesFX.liveShow(liveCv, 'page ' + i + ' / ' + n + ' · ' + styleName() + (blank && skip ? ' · blank' : ''));
@@ -724,7 +810,8 @@
       $('rsMeta').textContent =
         n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + styleName() + ' · sizes unchanged · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(saved.length) + ' · ' + dpi() + ' dpi ' + (fmt() === 'png' ? 'PNG' : 'JPEG') +
-        (skipped ? ' · ' + skipped + ' blank page' + (skipped === 1 ? '' : 's') + ' kept white' : '') + ' · ' +
+        (skipped ? ' · ' + skipped + ' blank page' + (skipped === 1 ? '' : 's') + ' kept white' : '') +
+        ((bandN + bandMiss) ? ' · white band kept on ' + bandN + '/' + n + ' pages' + (bandMiss ? ' (' + bandMiss + ' had no band)' : '') : '') + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + ovNote(ovo);
 
       /* show the result immediately; previews + the reload-proof save follow */
@@ -811,6 +898,15 @@
   });
   [opt.ovLines, opt.ovSep, opt.ovNums].forEach(function (el) {
     if (el) el.addEventListener('change', syncOverlayRows);
+  });
+  /* 2-up / 4-up band-keep: mutually exclusive, and the preview re-renders */
+  if (opt.band2up) opt.band2up.addEventListener('change', function () {
+    if (opt.band2up.checked && opt.band4up) opt.band4up.checked = false;
+    schedulePreview();
+  });
+  if (opt.band4up) opt.band4up.addEventListener('change', function () {
+    if (opt.band4up.checked && opt.band2up) opt.band2up.checked = false;
+    schedulePreview();
   });
   syncKeepColourRow();
   syncVectorRows();

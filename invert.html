@@ -174,6 +174,16 @@
             </ul>
           </div>
           <label class="sw psRow" id="skipRow"><input type="checkbox" id="optSkip"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Skip blank pages</b><em>a page that is already pure white stays pure white instead of becoming a black sheet</em></span></label>
+          <div class="fld" id="bandFld">
+            <span class="lbl">Packer layout — keep the white middle band white</span>
+            <label class="sw"><input type="checkbox" id="iv2up"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>2-up to invert</b><em>two slides flip, the white gap between them stays white</em></span></label>
+            <label class="sw"><input type="checkbox" id="iv4up"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>4-up to invert</b><em>four slides flip, the white middle band stays white</em></span></label>
+            <ul class="note-list">
+              <li><b>Made for packer PDFs</b> — each page's white middle band is detected and left white while the slides around it flip.</li>
+              <li><b>Ruling moves into the band</b> — enable Ruled lines below and the ruling draws only inside the white band.</li>
+              <li><b>Bandless pages flip fully</b> — nothing is ever lost: only near-white rows are ever kept.</li>
+            </ul>
+          </div>
           <div class="fld" id="ovlFld">
             <span class="lbl">Overlays — ruled lines · dotted separator · sheet numbers</span>
             <label class="sw"><input type="checkbox" id="ivLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b><em>full-page faint ruling for writing over the print — pick a style once enabled</em></span></label>
@@ -293,13 +303,13 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=43"></script>
+<script src="session.js?v=44"></script>
 <script src="converter.js?v=42"></script>
 <script src="raster-client.js?v=42"></script>
 <script src="enhance.js?v=44"></script>
 <script src="review.js?v=45"></script>
-<script src="overlays.js?v=1"></script>
-<script src="app-invert.js?v=43"></script>
+<script src="overlays.js?v=2"></script>
+<script src="app-invert.js?v=44"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

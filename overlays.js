@@ -79,9 +79,28 @@
 
   /** Horizontal rule rows for a full page: {x0, x1, ys, gy0, gy1}. */
   function ruleRows(w, h, step, mg) {
+    return ruleRowsBand(w, h, step, mg, null);
+  }
+
+  /**
+   * Rule rows, optionally confined to a packer white band (pdf-lib
+   * bottom-left pt). band = {axis:'h', y0, y1} (2-up gap rows) or
+   * {axis:'v', x0, x1} (4-up band columns). A band too narrow to hold a
+   * single row yields no rows (never a crash, never a stray line).
+   */
+  function ruleRowsBand(w, h, step, mg, band) {
     var x0 = mg, x1 = w - mg, top = h - mg, bot = mg;
+    if (band && band.axis === 'h' && isFinite(band.y0) && isFinite(band.y1)) {
+      top = Math.min(band.y1, h - 4);
+      bot = Math.max(band.y0, 4);
+    } else if (band && band.axis === 'v' && isFinite(band.x0) && isFinite(band.x1)) {
+      x0 = Math.max(band.x0 + 10, 4);
+      x1 = Math.min(band.x1 - 10, w - 4);
+    }
     var ys = [];
-    for (var y = top; y >= bot - 0.01; y -= step) ys.push(y);
+    if (x1 - x0 >= 20) {
+      for (var y = top; y >= bot - 0.01; y -= step) ys.push(y);
+    }
     return { x0: x0, x1: x1, ys: ys, gy0: bot, gy1: top };
   }
 
@@ -99,6 +118,109 @@
    * Draw all enabled overlays onto one pdf-lib page. Returns counts drawn.
    * The page keeps its size; overlays sit on top of whatever is there.
    */
+  /* ============ packer white-band detection (2-up / 4-up keep) ============
+     The packer's 2-up gap and the 4-up middle column are wide, near-empty
+     white strips in the middle of each sheet. findBand locates that strip on
+     a low-res top-left RGBA render so Invert Lab can leave it white while
+     the slides around it flip. Safety invariant: only ~white rows/cols are
+     ever reported, so keeping a band can never destroy real content.
+     Tolerates packer ruling (grey full-span lines), dotted separators and
+     gap sheet numbers by merging small non-white gaps. */
+
+  var BAND_WHITE = 240;        // a channel >= this counts as white
+  var BAND_FRAC = 0.90;        // a row/col qualifies when >= this fraction is white
+  var BAND_AVG = 0.97;         // qualifying rows/cols must average >= this white
+  var BAND_NONBAND_MAX = 0.30; // merged non-white gap rows/cols inside the band must stay below this
+  var BAND_GLOBAL_MAX = 0.98;  // a page whiter than this overall has no band (blank page)
+
+  /**
+   * img: {data: Uint8ClampedArray|Array, w|width, h|height} top-left RGBA.
+   * axis: 'h' = full-width white rows (2-up gap), 'v' = full-height white
+   * cols (4-up band). scale: render scale in px per pt (min sizes derive).
+   * Returns {axis, a0, a1} px, end-exclusive, or null.
+   */
+  function findBand(img, axis, scale) {
+    var W = img.w || img.width, H = img.h || img.height, d = img.data;
+    if (!W || !H || !d || !d.length) return null;
+    scale = scale || 1;
+    var minLen = Math.max(4, Math.round(12 * scale));   // bands under ~12pt are noise
+    var mergeGap = Math.max(1, Math.round(4 * scale));  // ruling / dots / numbers bridge
+    var n = axis === 'v' ? W : H;                      // scan lines across the strip direction
+    var span = axis === 'v' ? H : W;                   // pixels inside one scan line
+    if (n < 8 || span < 8) return null;
+    var lo = Math.floor(n * 0.2), hi = Math.ceil(n * 0.8);  // bands live in the middle 60%
+
+    function whiteFrac(i) {
+      var white = 0;
+      if (axis === 'v') {
+        for (var y = 0; y < H; y++) {
+          var o = (y * W + i) * 4;
+          if (d[o] >= BAND_WHITE && d[o + 1] >= BAND_WHITE && d[o + 2] >= BAND_WHITE) white++;
+        }
+      } else {
+        var row = i * W * 4;
+        for (var x = 0; x < W; x++) {
+          var p = row + x * 4;
+          if (d[p] >= BAND_WHITE && d[p + 1] >= BAND_WHITE && d[p + 2] >= BAND_WHITE) white++;
+        }
+      }
+      return white / span;
+    }
+
+    // global guard: a ~blank page has no band worth keeping
+    var gWhite = 0, gTot = 0;
+    for (var gi = lo; gi < hi; gi += 4) { gWhite += whiteFrac(gi); gTot++; }
+    if (gTot && gWhite / gTot > BAND_GLOBAL_MAX) return null;
+
+    // qualifying runs in the middle window, merged across small gaps
+    var runs = [], cur = null;
+    for (var i = lo; i < hi; i++) {
+      var q = whiteFrac(i);
+      if (q >= BAND_FRAC) {
+        if (!cur) cur = { a0: i, sum: 0, cnt: 0 };
+        cur.sum += q; cur.cnt++;
+      } else if (cur) {
+        cur.a1 = i; runs.push(cur); cur = null;
+      }
+    }
+    if (cur) { cur.a1 = hi; runs.push(cur); }
+    if (!runs.length) return null;
+    var merged = [];
+    runs.forEach(function (r) {
+      var last = merged[merged.length - 1];
+      if (last && r.a0 - last.a1 <= mergeGap) {
+        last.a1 = r.a1; last.sum += r.sum; last.cnt += r.cnt;
+      } else merged.push({ a0: r.a0, a1: r.a1, sum: r.sum, cnt: r.cnt });
+    });
+    var best = null;
+    merged.forEach(function (m) {
+      var len = m.a1 - m.a0;
+      if (len < minLen) return;
+      if ((len - m.cnt) / len > BAND_NONBAND_MAX) return;  // gaps would mean crossing a slide
+      if (m.sum / m.cnt < BAND_AVG) return;               // sparse text pages are not bands
+      if (!best || len > best.a1 - best.a0) best = m;
+    });
+    if (!best) return null;
+    return { axis: axis, a0: best.a0, a1: best.a1 };
+  }
+
+  /**
+   * Restore a band on an exact-vector page: a second white Difference rect
+   * over the band un-flips |255-|255-c|| back to c. band uses pdf-lib
+   * bottom-left pt ({axis:'h', y0, y1} or {axis:'v', x0, x1}).
+   */
+  function unflipBand(pg, band, w, h) {
+    if (!band) return null;
+    var r;
+    if (band.axis === 'v') {
+      r = { x: band.x0, y: 0, w: band.x1 - band.x0, h: h };
+    } else {
+      r = { x: 0, y: band.y0, w: w, h: band.y1 - band.y0 };
+    }
+    pg.drawRectangle({ x: r.x, y: r.y, width: r.w, height: r.h, color: rgb(1, 1, 1), blendMode: 'Difference' });
+    return r;
+  }
+
   function drawPage(pg, opts, info) {
     var o = normOpts(opts);
     var counts = { lines: 0, seps: 0, nums: 0 };
@@ -107,7 +229,13 @@
 
     if (o.lines) {
       var sty = o.lines;
-      var R = ruleRows(w, h, o.lineStep, o.lineMargin);
+      // a layout toggle on + a detected band: rule only inside the white
+      // band; the toggle on + NO band: skip ruling entirely (page-level
+      // lines would land on slides, so silence beats clutter)
+      var band = info.bandOnly ? (info.band || 'skip') : null;
+      var R = band === 'skip' ? { x0: 0, x1: 0, ys: [], gy0: 0, gy1: 0 }
+        : band ? ruleRowsBand(w, h, o.lineStep, o.lineMargin, band)
+               : ruleRows(w, h, o.lineStep, o.lineMargin);
       var col = (sty === 'grid' || sty === 'dots' || sty === 'graph') ? rgb(0.74, 0.78, 0.84) : rgb(0.66, 0.7, 0.76);
       var vcol = rgb(0.74, 0.78, 0.84), vheavy = rgb(0.58, 0.63, 0.71);
       if (sty !== 'columns' && sty !== 'staff') {
@@ -185,6 +313,9 @@
     numText: numText,
     numPlace: numPlace,
     ruleRows: ruleRows,
+    ruleRowsBand: ruleRowsBand,
+    findBand: findBand,
+    unflipBand: unflipBand,
     sepLines: sepLines,
     drawPage: drawPage
   };

@@ -146,5 +146,124 @@ console.log('\n=== INVERT OVERLAYS ===\n');
   check('drawPage: numbers without a font are skipped safely', threw2 === false);
 }
 
+/* ---------- 8) findBand: packer 2-up gap + 4-up band detection ---------- */
+function synthBand(W, H, paint) {
+  const d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const v = paint(x, y), o = (y * W + x) * 4;
+    d[o] = v; d[o + 1] = v; d[o + 2] = v; d[o + 3] = 255;
+  }
+  return { data: d, w: W, h: H };
+}
+{
+  // clean 2-up gap: dark slides top/bottom, white middle rows 60..140
+  const img = synthBand(100, 200, (x, y) => (y >= 60 && y < 140 ? 255 : 20));
+  const b = OV.findBand(img, 'h', 1);
+  check('findBand: clean 2-up gap rows detected', !!b && b.axis === 'h' && b.a0 === 60 && b.a1 === 140,
+    b ? b.a0 + '..' + b.a1 : 'null');
+}
+{
+  // noisy band: grey ruling rows every 10px + a dark number blob inside
+  const img = synthBand(100, 200, (x, y) => {
+    if (y < 60 || y >= 140) return 20;
+    if ((y - 60) % 10 === 0) return 150;                       // ruling row
+    if (x >= 5 && x < 13 && y >= 98 && y < 106) return 30;     // gap sheet number
+    return 255;
+  });
+  const b = OV.findBand(img, 'h', 1);
+  check('findBand: ruling + gap number tolerated, band still found',
+    !!b && b.a0 <= 62 && b.a1 >= 138, b ? b.a0 + '..' + b.a1 : 'null');
+}
+{
+  // 4-up middle column: dark slides left/right, white cols 40..62
+  const img = synthBand(100, 200, (x, y) => (x >= 40 && x < 62 ? 255 : 20));
+  const b = OV.findBand(img, 'v', 1);
+  check('findBand: 4-up middle column detected', !!b && b.axis === 'v' && b.a0 === 40 && b.a1 === 62,
+    b ? b.a0 + '..' + b.a1 : 'null');
+}
+{
+  // dotted separator column through a 4-up band merges back together
+  const img = synthBand(100, 200, (x, y) => {
+    if (x < 40 || x >= 62) return 20;
+    if (x === 50 && y % 4 === 0) return 30;                    // vertical dots
+    return 255;
+  });
+  const b = OV.findBand(img, 'v', 1);
+  check('findBand: dotted separator column merged, band whole',
+    !!b && b.a0 <= 42 && b.a1 >= 60, b ? b.a0 + '..' + b.a1 : 'null');
+}
+{
+  const white = synthBand(60, 60, () => 255);
+  check('findBand: blank page has no band', OV.findBand(white, 'h', 0.5) === null);
+  const dark = synthBand(60, 60, () => 15);
+  check('findBand: all-dark page has no band', OV.findBand(dark, 'h', 0.5) === null);
+  const tiny = synthBand(60, 60, () => 255);
+  check('findBand: degenerate tiny image is safe', OV.findBand({ data: [], w: 0, h: 0 }, 'h', 1) === null && tiny !== null);
+}
+{
+  // sparse text page: middle rows 95% white qualify row-wise but fail the
+  // 97% band average — text must never be mistaken for a keep-band
+  const img = synthBand(100, 200, (x, y) => {
+    if (y < 60 || y >= 140) return 20;
+    return (x % 20 === 0) ? 30 : 255;
+  });
+  check('findBand: sparse text rows rejected (not a band)', OV.findBand(img, 'h', 1) === null);
+  // narrow white run under the ~12pt minimum is noise
+  const img2 = synthBand(100, 200, (x, y) => (y >= 96 && y < 104 ? 255 : 20));
+  check('findBand: sub-12pt run rejected', OV.findBand(img2, 'h', 1) === null);
+}
+
+/* ---------- 9) unflipBand: second Difference rect restores the band ---------- */
+{
+  const calls = [];
+  const fake = { drawRectangle: (o) => calls.push(o) };
+  const r = OV.unflipBand(fake, { axis: 'h', y0: 100, y1: 200 }, 595, 842);
+  check('unflipBand: 2-up rect spans full width over band rows',
+    r && r.x === 0 && r.y === 100 && r.w === 595 && r.h === 100 &&
+    calls.length === 1 && calls[0].blendMode === 'Difference', JSON.stringify(r));
+  const calls2 = [];
+  const fake2 = { drawRectangle: (o) => calls2.push(o) };
+  const r2 = OV.unflipBand(fake2, { axis: 'v', x0: 200, x1: 300 }, 595, 842);
+  check('unflipBand: 4-up rect spans full height over band cols',
+    r2 && r2.x === 200 && r2.y === 0 && r2.w === 100 && r2.h === 842, JSON.stringify(r2));
+  const calls3 = [];
+  check('unflipBand: null band draws nothing', OV.unflipBand({ drawRectangle: (o) => calls3.push(o) }, null, 595, 842) === null && calls3.length === 0);
+  const doc = await PDFDocument.create();
+  const pg = doc.addPage([595, 842]);
+  OV.unflipBand(pg, { axis: 'h', y0: 335, y1: 507 }, 595, 842);
+  const raw = Buffer.from(await doc.save({ useObjectStreams: false })).toString('latin1');
+  check('unflipBand: real page carries the Difference restore', raw.indexOf('Difference') >= 0);
+}
+
+/* ---------- 10) ruleRowsBand: ruling confined to the band ---------- */
+{
+  const R = OV.ruleRowsBand(595, 842, 25.5, 36, { axis: 'h', y0: 335, y1: 507 });
+  const inside = R.ys.length > 0 && R.ys.every((y) => y >= 335 - 0.01 && y <= 507 + 0.01);
+  check('ruleRowsBand: 2-up rows stay inside band rows', inside && R.x0 === 36 && R.x1 === 595 - 36, R.ys.length + ' rows');
+  const Rv = OV.ruleRowsBand(595, 842, 25.5, 36, { axis: 'v', x0: 236, x1: 358 });
+  check('ruleRowsBand: 4-up rows narrow into band cols', Rv.x0 === 246 && Rv.x1 === 348 && Rv.ys.length > 0);
+  const Rn = OV.ruleRowsBand(595, 842, 25.5, 36, { axis: 'v', x0: 290, x1: 305 });
+  check('ruleRowsBand: too-narrow band yields no rows', Rn.ys.length === 0);
+}
+
+/* ---------- 11) drawPage honours bandOnly ---------- */
+{
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const pg = doc.addPage([595, 842]);
+  const c = OV.drawPage(pg, { lines: 'solid', lineStep: 25.5, lineMargin: 36 },
+    { i: 0, n: 3, w: 595, h: 842, font: font, bandOnly: true, band: { axis: 'h', y0: 335, y1: 507 } });
+  check('drawPage: bandOnly + band rules only the band', c.lines > 0 && c.lines < 12, c.lines + ' lines');
+  const pg2 = doc.addPage([595, 842]);
+  const c2 = OV.drawPage(pg2, { lines: 'solid', sep: 'both', nums: true, numPos: 'bc', numFmt: 'plain', numSize: 'm', numStart: 1 },
+    { i: 0, n: 3, w: 595, h: 842, font: font, bandOnly: true, band: null });
+  check('drawPage: bandOnly + no band skips lines but keeps seps/nums',
+    c2.lines === 0 && c2.seps === 2 && c2.nums === 1, JSON.stringify(c2));
+  const pg3 = doc.addPage([595, 842]);
+  const c3 = OV.drawPage(pg3, { lines: 'solid', lineStep: 25.5, lineMargin: 36 },
+    { i: 2, n: 3, w: 595, h: 842, font: font });
+  check('drawPage: without bandOnly the band is ignored (full page)', c3.lines > 20, c3.lines + ' lines');
+}
+
 console.log('\n' + (fail === 0 ? 'ALL OVERLAY CHECKS PASSED' : fail + ' OVERLAY CHECK(S) FAILED') + '  (' + pass + ' passed)\n');
 process.exit(fail ? 1 : 0);

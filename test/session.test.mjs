@@ -284,7 +284,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     const expect = {
       'index.html': { lists: 6, bullets: 18 },   // + White paper
       '4up.html': { lists: 6, bullets: 18 },
-      'invert.html': { lists: 4, bullets: 16 }   // + Overlays (ruled lines · separator · numbers)
+      'invert.html': { lists: 5, bullets: 19 }   // + Overlays (ruled lines · separator · numbers) + band-keep
     };
     for (const h of htmls) {
       const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');
@@ -298,7 +298,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
         !/<small>Black ink flips/.test(src) && !/<small>Pages become full-page images/.test(src) &&
         !/<small><b>HQ engine v2:<\/b>/.test(src) && !/<small>0 = slides touch/.test(src) &&
         !/<small>0 = the demo look/.test(src));
-      const switchCount = { 'index.html': 4, '4up.html': 5, 'invert.html': 5 }[h];   // + 3 overlay toggles
+      const switchCount = { 'index.html': 4, '4up.html': 5, 'invert.html': 7 }[h];   // + 3 overlay toggles + 2 band toggles
       check('markup: ' + h + ' every switch (toggle) has its own explanation', (() => {
         const rows = [...src.matchAll(/<label class="sw[^"]*"[^>]*>[\s\S]*?<\/label>/g)].map((m) => m[0]);
         return rows.length === switchCount && rows.every((r) => /<em>/.test(r));
