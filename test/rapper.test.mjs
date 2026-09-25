@@ -103,6 +103,32 @@ console.log('\n=== THE RAPPER core ===\n');
   check('hitCover: only the rect here', RC.hitCover(covers, 20, 20) === 0);
   check('hitCover: brush hits near its points', RC.hitCover(covers, 305, 305) === 2);
   check('hitCover: empty space misses', RC.hitCover(covers, 500, 500) === -1);
+  check('hitCover: tolerance forgives near-misses (touch)', RC.hitCover(covers, 115, 15, 10) === 0 && RC.hitCover(covers, 115, 15) === -1);
+  check('hitCover: default tolerance is 0 (old behaviour kept)', RC.hitCover(covers, 111, 20) === -1);
+}
+
+/* ---------- 6b) chooseApplySource: the button never "does nothing" ---------- */
+{
+  const all = { 1: [{ id: 'a' }], 2: [], 3: [{ id: 'b' }, { id: 'c' }] };
+  const a = RC.chooseApplySource(all, 3, 3);
+  check('chooseApplySource: current page wins when it has covers', a && a.page === 3 && a.covers.length === 2);
+  const b = RC.chooseApplySource(all, 2, 3);
+  check('chooseApplySource: empty current page falls back to first non-empty', b && b.page === 1 && b.covers.length === 1);
+  check('chooseApplySource: nothing anywhere → null', RC.chooseApplySource({ 1: [], 2: [] }, 1, 2) === null);
+}
+
+/* ---------- 6c) pixelate accepts real ImageData shape ({data,width,height}) ---------- */
+{
+  const W = 20, H = 20;
+  const d = new Uint8ClampedArray(W * H * 4);
+  for (let i = 0; i < W * H; i++) { d[i * 4] = i % 256; d[i * 4 + 1] = 9; d[i * 4 + 2] = 9; d[i * 4 + 3] = 255; }
+  const before = d.slice();
+  let threw = false, changed = false;
+  try {
+    RC.pixelateRegion({ data: d, width: W, height: H }, { x: 0, y: 0, w: W, h: H }, 10);
+    for (let i = 0; i < d.length; i += 4) if (d[i] !== before[i]) { changed = true; break; }
+  } catch (e) { threw = true; }
+  check('pixelate: ImageData shape works (what canvas hands the app)', threw === false && changed === true);
 }
 
 /* ---------- 7) real overlay write: ops land in the PDF ---------- */
@@ -180,6 +206,21 @@ console.log('\n=== THE RAPPER core ===\n');
   check('editor wiring: scroll-reveal present (.reveal would stay invisible otherwise)',
     revealCount > 0 && appSrc.includes("querySelectorAll('.reveal')") && appSrc.includes("classList.add('in')"),
     revealCount + ' .reveal blocks');
+  /* app↔core contract: these exact call shapes shipped broken once (silent no-ops) */
+  const pixCalls = [...appSrc.matchAll(/RC\.pixelateRegion\(([^,]+),/g)].map((m) => m[1].trim());
+  check('app↔core: pixelate gets the ImageData object (not .data, .w, .h)',
+    pixCalls.length === 2 && pixCalls.every((a) => a === 'img'), pixCalls.join(' | '));
+  check('app↔core: hitCover result used as an index (0 is a valid hit)',
+    /RC\.hitCover\([^)]*\)\s*>=\s*0/.test(appSrc) && appSrc.includes('var hit = list[hi]'));
+  check('app↔core: apply-to-all uses the smart source picker',
+    appSrc.includes('RC.chooseApplySource(covers, cur, pageCount)'));
+  /* focus mode wiring: button → body class → CSS takes over */
+  const css = readFileSync(new URL('../rapper.css', import.meta.url), 'utf8');
+  check('focus mode: button exists, toggles body.rp-focus, CSS hides the chrome',
+    html.includes('id="rp-focus"') && appSrc.includes("classList.toggle('rp-focus'") &&
+    css.includes('body.rp-focus .topbar') && appSrc.includes("k === 'f'"));
+  check('touch ease: double-tap deletes, coarse pointers get bigger targets',
+    appSrc.includes("addEventListener('dblclick'") && css.includes('@media (pointer:coarse)'));
 
   /* minimal stub DOM — just enough for the IIFE top level + one tool switch */
   const mkEl = (tag) => {

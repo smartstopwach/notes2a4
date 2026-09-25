@@ -101,7 +101,7 @@
    * text under it becomes unreadable mush, which is the whole point.
    */
   function pixelateRegion(img, rect, block) {
-    var d = img.data, W = img.w, H = img.h;
+    var d = img.data, W = img.w || img.width, H = img.h || img.height;
     var bs = Math.max(2, Math.round(block) || 8);
     var x0 = Math.max(0, Math.floor(rect.x)), y0 = Math.max(0, Math.floor(rect.y));
     var x1 = Math.min(W, Math.ceil(rect.x + rect.w)), y1 = Math.min(H, Math.ceil(rect.y + rect.h));
@@ -173,18 +173,20 @@
   /**
    * Hit-test: topmost cover under point (x, y) in top-left pt space.
    * Brushes hit within their radius of any stored point. Returns index or -1.
+   * Optional tol (pt) expands every target — fat-finger friendly on touch.
    */
-  function hitCover(covers, x, y) {
+  function hitCover(covers, x, y, tol) {
+    var t = Math.max(0, +tol || 0);
     for (var i = (covers || []).length - 1; i >= 0; i--) {
       var c = covers[i];
       if (!c) continue;
       if (c.type === 'brush') {
-        var pts = c.points || [], r = (c.radius || 4) + 2;
+        var pts = c.points || [], r = (c.radius || 4) + 2 + t;
         for (var k = 0; k < pts.length; k++) {
           var dx = pts[k][0] - x, dy = pts[k][1] - y;
           if (dx * dx + dy * dy <= r * r) return i;
         }
-      } else if (x >= c.x && x <= c.x + c.w && y >= c.y && y <= c.y + c.h) {
+      } else if (x >= c.x - t && x <= c.x + c.w + t && y >= c.y - t && y <= c.y + c.h + t) {
         return i;
       }
     }
@@ -194,6 +196,20 @@
   /** Deep-copy a cover list (for apply-to-all / undo snapshots). */
   function cloneCovers(covers) {
     return JSON.parse(JSON.stringify(covers || []));
+  }
+
+  /**
+   * Pick the template page for "apply to all": the current page when it has
+   * covers, otherwise the first page (in order) that does. Returns
+   * { page, covers } or null when no page has anything to apply.
+   */
+  function chooseApplySource(all, cur, pageCount) {
+    all = all || {};
+    if ((all[cur] || []).length) return { page: cur, covers: all[cur] };
+    for (var p = 1; p <= pageCount; p++) {
+      if (p !== cur && (all[p] || []).length) return { page: p, covers: all[p] };
+    }
+    return null;
   }
 
   return {
@@ -206,6 +222,7 @@
     pixelateRegion: pixelateRegion,
     applyVectorCovers: applyVectorCovers,
     hitCover: hitCover,
-    cloneCovers: cloneCovers
+    cloneCovers: cloneCovers,
+    chooseApplySource: chooseApplySource
   };
 });

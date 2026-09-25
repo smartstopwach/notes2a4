@@ -49,7 +49,7 @@ var recent = [];
 var uid = 1;
 
 var SWATCHES = ['#ffffff', '#f8fafc', '#fef3c7', '#12172b', '#000000', '#b91c1c', '#1d4ed8', '#15803d'];
-var BUILD = 'rapper/1';
+var BUILD = 'rapper/2';
 
 function status(html) { statusEl.innerHTML = html; }
 function pageCovers(p) { return covers[p] || (covers[p] = []); }
@@ -292,7 +292,10 @@ function drawPixelPreview(ctx, c) {
   dw = Math.min(baseCv.width - dx, dw); dh = Math.min(baseCv.height - dy, dh);
   try {
     var img = bctx.getImageData(dx, dy, dw, dh);
-    RC.pixelateRegion(img.data, dw, dh, { x: 0, y: 0, w: dw, h: dh }, Math.max(2, Math.round((c.block || 12) * dpr * view.scale / 2)));
+    /* preview blocks match export blocks: scale by (preview px/pt) / (export px/pt) */
+    var dpiPrev = +((document.querySelector('input[name=rpdpi]:checked') || {}).value || 200);
+    var blkPrev = Math.max(2, Math.round((c.block || 12) * (view.scale * dpr) / (dpiPrev / 72)));
+    RC.pixelateRegion(img, { x: 0, y: 0, w: dw, h: dh }, blkPrev);
     if (!pixTmp) pixTmp = document.createElement('canvas');
     pixTmp.width = dw; pixTmp.height = dh;
     pixTmp.getContext('2d').putImageData(img, 0, 0);
@@ -467,6 +470,19 @@ overCv.style.touchAction = 'none';
 overCv.addEventListener('pointerdown', onDown);
 overCv.addEventListener('pointermove', onMove);
 window.addEventListener('pointerup', onUp);
+/* double-click / double-tap a cover to delete it (touch has no Del key) */
+overCv.addEventListener('dblclick', function (e) {
+  if (!pdf || exporting || tool !== 'select') return;
+  var pos = evPos(e);
+  var hi = RC.hitCover(covers[cur] || [], css2pt(pos.x), css2pt(pos.y), 10 / view.scale);
+  if (hi >= 0) {
+    pushUndo();
+    covers[cur].splice(hi, 1);
+    sel = null;
+    drawOverlay(); refreshBadges(); refreshSummary();
+    status('Cover deleted. <span class="cov">Undo:</span> Ctrl+Z');
+  }
+});
 
 function onDown(e) {
   if (!pdf || exporting) return;
@@ -486,8 +502,10 @@ function onDown(e) {
       var corner = c0 && c0.type !== 'brush' ? hitCorner(c0, pt) : null;
       if (corner) { pushUndo(); drag = { mode: 'resize', cover: c0, corner: corner, start: pt, orig: { x: c0.x, y: c0.y, w: c0.w, h: c0.h } }; return; }
     }
-    var hit = RC.hitCover(covers[cur] || [], pt.x, pt.y, 6 / view.scale);
-    if (hit) {
+    var list = covers[cur] || [];
+    var hi = RC.hitCover(list, pt.x, pt.y, 10 / view.scale);   /* core returns an INDEX */
+    if (hi >= 0) {
+      var hit = list[hi];
       sel = { id: hit.id };
       pushUndo();
       var orig = hit.type === 'brush'
@@ -523,7 +541,7 @@ function onMove(e) {
       var c = findCover(cur, sel.id);
       overCv.style.cursor = (c && c.type !== 'brush' && hitCorner(c, pt)) ? 'nwse-resize' : '';
     } else if (tool === 'select') {
-      overCv.style.cursor = RC.hitCover(covers[cur] || [], pt.x, pt.y, 6 / view.scale) ? 'move' : '';
+      overCv.style.cursor = RC.hitCover(covers[cur] || [], pt.x, pt.y, 10 / view.scale) >= 0 ? 'move' : '';
     }
     return;
   }
@@ -587,16 +605,25 @@ function deleteSel() {
 /* ---------- batch actions ---------- */
 $('rp-all').addEventListener('click', function () {
   if (!pdf) return;
-  var src = covers[cur] || [];
-  if (!src.length) { status('Page ' + cur + ' has no covers — draw some first, then apply to all.'); return; }
+  /* smart source: current page if it has covers, else the first page that does —
+     so the button never "does nothing" just because you browsed to another page */
+  var found = RC.chooseApplySource(covers, cur, pageCount);
+  if (!found) {
+    status('No covers anywhere yet — draw on any page first, then apply to all.');
+    toast('Draw a cover first ✏️');
+    return;
+  }
   pushUndo();
-  var tmpl = RC.cloneCovers(src);
+  var tmpl = RC.cloneCovers(found.covers);
   for (var p = 1; p <= pageCount; p++) {
-    if (p === cur) continue;
+    if (p === found.page) continue;
     covers[p] = RC.cloneCovers(tmpl).map(function (c) { c.id = 'c' + (uid++); return c; });
   }
   drawOverlay(); refreshBadges(); refreshSummary();
-  status('Applied <b>' + src.length + ' cover' + (src.length > 1 ? 's' : '') + '</b> to all <b>' + pageCount + ' pages</b>. <span class="cov">Undo:</span> Ctrl+Z');
+  var msg = 'Applied <b>' + tmpl.length + ' cover' + (tmpl.length > 1 ? 's' : '') + '</b> from page ' +
+    found.page + ' to all <b>' + pageCount + ' pages</b>';
+  status(msg + '. <span class="cov">Undo:</span> Ctrl+Z');
+  toast('✓ ' + tmpl.length + ' cover' + (tmpl.length > 1 ? 's' : '') + ' → all ' + pageCount + ' pages');
 });
 $('rp-clear1').addEventListener('click', function () {
   if (!pdf || !(covers[cur] || []).length) return;
@@ -627,12 +654,25 @@ function setZoom(z) {
   renderPage();
 }
 
+/* ---------- focus mode: whole viewport becomes the editor ---------- */
+var focusBtn = $('rp-focus');
+function setFocus(on) {
+  var want = (on === undefined) ? !document.body.classList.contains('rp-focus') : !!on;
+  document.body.classList.toggle('rp-focus', want);
+  focusBtn.innerHTML = want ? '✕ Exit' : '⛶ Focus';
+  focusBtn.title = want ? 'Exit full-screen edit (Esc)' : 'Full-screen edit (F)';
+  if (want) status('Focus mode — tools on the left, big page on the right. <b>Esc</b> exits.');
+  if (pdf) renderPage();   /* refit the page to its new (much bigger) box */
+}
+focusBtn.addEventListener('click', function () { setFocus(); });
+
 /* ---------- keyboard ---------- */
 document.addEventListener('keydown', function (e) {
   var tag = (e.target && e.target.tagName) || '';
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); doRedo(); return; }
+  if (e.key === 'Escape') { setFocus(false); return; }
   if (!pdf || exporting) return;
   var k = e.key.toLowerCase();
   if (k === 'v') setTool('select');
@@ -644,6 +684,7 @@ document.addEventListener('keydown', function (e) {
   else if (k === 'delete' || k === 'backspace') { e.preventDefault(); deleteSel(); }
   else if (k === 'arrowleft') { e.preventDefault(); gotoPage(cur - 1); }
   else if (k === 'arrowright') { e.preventDefault(); gotoPage(cur + 1); }
+  else if (k === 'f') setFocus();
   else if (k === '+' || k === '=') setZoom(zoom * 1.25);
   else if (k === '-' || k === '_') setZoom(zoom / 1.25);
   else if (k === '0') setZoom(1);
@@ -729,7 +770,7 @@ async function bakeRasterPage(out, pg, p, list, dpi, size, fmt) {
   list.forEach(function (c) {
     if (c.type !== 'pixel') return;
     var b = coverBounds(c);
-    RC.pixelateRegion(img.data, cv.width, cv.height, {
+    RC.pixelateRegion(img, {
       x: b.x * scale, y: b.y * scale, w: b.w * scale, h: b.h * scale
     }, c.block || 12);
   });
