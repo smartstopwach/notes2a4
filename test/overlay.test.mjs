@@ -8,6 +8,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 
 const require = createRequire(import.meta.url);
 const OV = require('../overlays.js');
+const CV = require('../converter.js');
 
 let pass = 0, fail = 0;
 const check = (name, ok, extra) => {
@@ -175,10 +176,10 @@ function synthBand(W, H, paint) {
     !!b && b.a0 <= 62 && b.a1 >= 138, b ? b.a0 + '..' + b.a1 : 'null');
 }
 {
-  // 4-up middle column: dark slides left/right, white cols 40..62
+  // vertical band (symmetric v-axis support): dark left/right, white cols 40..62
   const img = synthBand(100, 200, (x, y) => (x >= 40 && x < 62 ? 255 : 20));
   const b = OV.findBand(img, 'v', 1);
-  check('findBand: 4-up middle column detected', !!b && b.axis === 'v' && b.a0 === 40 && b.a1 === 62,
+  check('findBand: vertical band columns detected', !!b && b.axis === 'v' && b.a0 === 40 && b.a1 === 62,
     b ? b.a0 + '..' + b.a1 : 'null');
 }
 {
@@ -189,7 +190,7 @@ function synthBand(W, H, paint) {
     return 255;
   });
   const b = OV.findBand(img, 'v', 1);
-  check('findBand: dotted separator column merged, band whole',
+  check('findBand: v-axis dotted column merged, band whole',
     !!b && b.a0 <= 42 && b.a1 >= 60, b ? b.a0 + '..' + b.a1 : 'null');
 }
 {
@@ -224,7 +225,7 @@ function synthBand(W, H, paint) {
   const calls2 = [];
   const fake2 = { drawRectangle: (o) => calls2.push(o) };
   const r2 = OV.unflipBand(fake2, { axis: 'v', x0: 200, x1: 300 }, 595, 842);
-  check('unflipBand: 4-up rect spans full height over band cols',
+  check('unflipBand: vertical rect spans full height over band cols',
     r2 && r2.x === 200 && r2.y === 0 && r2.w === 100 && r2.h === 842, JSON.stringify(r2));
   const calls3 = [];
   check('unflipBand: null band draws nothing', OV.unflipBand({ drawRectangle: (o) => calls3.push(o) }, null, 595, 842) === null && calls3.length === 0);
@@ -241,7 +242,7 @@ function synthBand(W, H, paint) {
   const inside = R.ys.length > 0 && R.ys.every((y) => y >= 335 - 0.01 && y <= 507 + 0.01);
   check('ruleRowsBand: 2-up rows stay inside band rows', inside && R.x0 === 36 && R.x1 === 595 - 36, R.ys.length + ' rows');
   const Rv = OV.ruleRowsBand(595, 842, 25.5, 36, { axis: 'v', x0: 236, x1: 358 });
-  check('ruleRowsBand: 4-up rows narrow into band cols', Rv.x0 === 246 && Rv.x1 === 348 && Rv.ys.length > 0);
+  check('ruleRowsBand: vertical band narrows rows into band cols', Rv.x0 === 246 && Rv.x1 === 348 && Rv.ys.length > 0);
   const Rn = OV.ruleRowsBand(595, 842, 25.5, 36, { axis: 'v', x0: 290, x1: 305 });
   check('ruleRowsBand: too-narrow band yields no rows', Rn.ys.length === 0);
 }
@@ -263,6 +264,92 @@ function synthBand(W, H, paint) {
   const c3 = OV.drawPage(pg3, { lines: 'solid', lineStep: 25.5, lineMargin: 36 },
     { i: 2, n: 3, w: 595, h: 842, font: font });
   check('drawPage: without bandOnly the band is ignored (full page)', c3.lines > 20, c3.lines + ' lines');
+}
+
+/* ---------- 12) real packer geometry: the layout's own band must be found ----------
+   Regression net for the "4-up toggle does nothing" bug: the 4-up middle band
+   is a HORIZONTAL strip (quadLayout), so row detection must cover it on real
+   layouts — auto and fixed gap, 2-up and 4-up. Synthetic renders at the same
+   0.35 detection scale the app uses, with text-like slide content. */
+const MM = 72 / 25.4, DET = 0.35, A4P = { w: 595.28, h: 841.89 }, S169 = { w: 1280, h: 720 };
+let tseed = 0;
+function trnd() { tseed = (tseed * 1103515245 + 12345) & 0x7fffffff; return tseed / 0x7fffffff; }
+function synthLayout(L, slides) {
+  const W = Math.round(L.W * DET), H = Math.round(L.H * DET);
+  const d = new Uint8ClampedArray(W * H * 4).fill(255);
+  const px = (x, y, v) => { const o = (y * W + x) * 4; d[o] = d[o + 1] = d[o + 2] = v; };
+  slides.forEach((s) => {
+    if (!s) return;
+    const x0 = Math.max(0, Math.round(s.x * DET)), x1 = Math.min(W, Math.round((s.x + s.width) * DET));
+    const y0 = Math.max(0, Math.round((L.H - s.y - s.height) * DET)), y1 = Math.min(H, Math.round((L.H - s.y) * DET));
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      if (y % 7 < 2 && trnd() < 0.28) px(x, y, 40);       // text-line stripes
+      else if (trnd() < 0.004) px(x, y, 60);
+    }
+  });
+  return { data: d, w: W, h: H };
+}
+function layoutBandRows(L) {
+  const g = L.gap;
+  return { a0: Math.round((L.H - g.y - g.h) * DET), a1: Math.round((L.H - g.y) * DET) };
+}
+function coversBand(det, exp) {   // detected run must cover the layout band (edge slop allowed)
+  if (!det) return false;
+  const ov = Math.max(0, Math.min(det.a1, exp.a1) - Math.max(det.a0, exp.a0));
+  const dc = Math.abs((det.a0 + det.a1) / 2 - (exp.a0 + exp.a1) / 2);
+  return ov / Math.max(1, exp.a1 - exp.a0) >= 0.6 && dc <= 12;
+}
+{
+  tseed = 42;
+  const L = CV.quadLayout([S169, S169, S169, S169], { margin: 0, gapMode: 'auto', gap: 0 }, A4P);
+  const b = OV.findBand(synthLayout(L, L.slides), 'h', DET);
+  check('findBand: real 4-up auto band covered', coversBand(b, layoutBandRows(L)),
+    b ? b.a0 + '..' + b.a1 + ' vs ' + layoutBandRows(L).a0 + '..' + layoutBandRows(L).a1 : 'null');
+}
+{
+  tseed = 42;   // fixed gap centres the block: top/bottom padding must NOT win over the 8mm band
+  const L = CV.quadLayout([S169, S169, S169, S169], { margin: 0, gapMode: 'fixed', gap: 8 * MM }, A4P);
+  const b = OV.findBand(synthLayout(L, L.slides), 'h', DET);
+  check('findBand: real 4-up fixed 8mm band found, padding ignored', coversBand(b, layoutBandRows(L)),
+    b ? b.a0 + '..' + b.a1 + ' vs ' + layoutBandRows(L).a0 + '..' + layoutBandRows(L).a1 : 'null');
+}
+{
+  tseed = 42;
+  const L = CV.sheetLayout(S169, S169, { margin: 12 * MM, gapMode: 'auto', gap: 0 }, A4P);
+  const b = OV.findBand(synthLayout(L, [L.top, L.bottom]), 'h', DET);
+  check('findBand: real 2-up auto gap covered', coversBand(b, layoutBandRows(L)),
+    b ? b.a0 + '..' + b.a1 + ' vs ' + layoutBandRows(L).a0 + '..' + layoutBandRows(L).a1 : 'null');
+}
+{
+  tseed = 42;
+  const L = CV.sheetLayout(S169, S169, { margin: 36, gapMode: 'fixed', gap: 8 * MM }, A4P);
+  const b = OV.findBand(synthLayout(L, [L.top, L.bottom]), 'h', DET);
+  check('findBand: real 2-up fixed 8mm gap covered', coversBand(b, layoutBandRows(L)),
+    b ? b.a0 + '..' + b.a1 + ' vs ' + layoutBandRows(L).a0 + '..' + layoutBandRows(L).a1 : 'null');
+}
+{
+  tseed = 42;   // partial sheet: one slide on top, unbounded white below — not a band
+  const L = CV.quadLayout([S169, null, null, null], { margin: 0, gapMode: 'auto', gap: 0 }, A4P);
+  check('findBand: partial sheet unbounded white is not a band',
+    OV.findBand(synthLayout(L, L.slides), 'h', DET) === null);
+}
+{
+  // nearest-to-centre wins: long off-centre run must lose to the short centred band
+  const img = synthBand(100, 200, (x, y) => ((y >= 40 && y < 90) || (y >= 95 && y < 110) ? 255 : 20));
+  const b = OV.findBand(img, 'h', 1);
+  check('findBand: centred short band beats long off-centre run', !!b && b.a0 === 95 && b.a1 === 110,
+    b ? b.a0 + '..' + b.a1 : 'null');
+}
+{
+  // padding trap, synthetic: white to both page edges, small centred band between slides
+  const img = synthBand(100, 200, (x, y) => {
+    if (y < 76 || y >= 131) return 255;                    // padding past the window edges
+    if (y >= 95 && y < 110) return 255;                    // the real band
+    return 20;                                             // slide content flanks
+  });
+  const b = OV.findBand(img, 'h', 1);
+  check('findBand: edge padding rejected, centred band found', !!b && b.a0 === 95 && b.a1 === 110,
+    b ? b.a0 + '..' + b.a1 : 'null');
 }
 
 console.log('\n' + (fail === 0 ? 'ALL OVERLAY CHECKS PASSED' : fail + ' OVERLAY CHECK(S) FAILED') + '  (' + pass + ' passed)\n');

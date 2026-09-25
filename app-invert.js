@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 13;
+  var BUILD = 14;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -42,11 +42,12 @@
     band2up: $('iv2up'), band4up: $('iv4up')
   };
   var OV = window.InvertOverlays || null;   // overlays.js (vector finishing touches)
-  /* packer layout band-keep: 'h' = 2-up gap rows stay white, 'v' = 4-up band
-     columns stay white, null = the whole page flips (default) */
+  /* packer layout band-keep: both packers leave a HORIZONTAL white strip in
+     the middle (2-up gap between slides, 4-up band between rows), so both
+     toggles detect full-width rows; null = the whole page flips (default) */
   function bandMode() {
     if (opt.band2up && opt.band2up.checked) return 'h';
-    if (opt.band4up && opt.band4up.checked) return 'v';
+    if (opt.band4up && opt.band4up.checked) return 'h';
     return null;
   }
   /* white-band detection on a small render of one page: the band in top-left

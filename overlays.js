@@ -84,8 +84,8 @@
 
   /**
    * Rule rows, optionally confined to a packer white band (pdf-lib
-   * bottom-left pt). band = {axis:'h', y0, y1} (2-up gap rows) or
-   * {axis:'v', x0, x1} (4-up band columns). A band too narrow to hold a
+   * bottom-left pt). band = {axis:'h', y0, y1} (packer middle-band rows) or
+   * {axis:'v', x0, x1} (vertical band). A band too narrow to hold a
    * single row yields no rows (never a crash, never a stray line).
    */
   function ruleRowsBand(w, h, step, mg, band) {
@@ -119,25 +119,30 @@
    * The page keeps its size; overlays sit on top of whatever is there.
    */
   /* ============ packer white-band detection (2-up / 4-up keep) ============
-     The packer's 2-up gap and the 4-up middle column are wide, near-empty
-     white strips in the middle of each sheet. findBand locates that strip on
-     a low-res top-left RGBA render so Invert Lab can leave it white while
-     the slides around it flip. Safety invariant: only ~white rows/cols are
-     ever reported, so keeping a band can never destroy real content.
-     Tolerates packer ruling (grey full-span lines), dotted separators and
-     gap sheet numbers by merging small non-white gaps. */
+     Both packers leave a wide, near-empty HORIZONTAL white strip in the
+     middle of each sheet (2-up: the gap between the slides; 4-up: the band
+     between the rows, shared by both columns — see quadLayout). findBand
+     locates that strip on a low-res top-left RGBA render so Invert Lab can
+     leave it white while the slides around it flip. Safety invariant: only
+     ~white rows/cols are ever reported, so keeping a band can never destroy
+     real content. Tolerates packer ruling (grey full-span lines), dotted
+     separators and gap sheet numbers by merging small non-white gaps. */
 
   var BAND_WHITE = 240;        // a channel >= this counts as white
   var BAND_FRAC = 0.90;        // a row/col qualifies when >= this fraction is white
   var BAND_AVG = 0.97;         // qualifying rows/cols must average >= this white
   var BAND_NONBAND_MAX = 0.30; // merged non-white gap rows/cols inside the band must stay below this
-  var BAND_GLOBAL_MAX = 0.98;  // a page whiter than this overall has no band (blank page)
+  var BAND_FLANK_DARK = 0.08;  // a flank line counts as content when >= this fraction is non-white
 
   /**
    * img: {data: Uint8ClampedArray|Array, w|width, h|height} top-left RGBA.
-   * axis: 'h' = full-width white rows (2-up gap), 'v' = full-height white
-   * cols (4-up band). scale: render scale in px per pt (min sizes derive).
-   * Returns {axis, a0, a1} px, end-exclusive, or null.
+   * axis: 'h' = full-width white rows (the packer middle band), 'v' =
+   * full-height white cols (symmetric support; no current packer emits one).
+   * scale: render scale in px per pt (min sizes derive).
+   * A run only counts when slide content flanks it on BOTH sides — that is
+   * what rejects blank pages and fixed-gap top/bottom padding (white on one
+   * side only). Nearest-to-centre wins, so a small centred band beats a long
+   * off-centre white stretch. Returns {axis, a0, a1} px, end-exclusive, or null.
    */
   function findBand(img, axis, scale) {
     var W = img.w || img.width, H = img.h || img.height, d = img.data;
@@ -167,11 +172,6 @@
       return white / span;
     }
 
-    // global guard: a ~blank page has no band worth keeping
-    var gWhite = 0, gTot = 0;
-    for (var gi = lo; gi < hi; gi += 4) { gWhite += whiteFrac(gi); gTot++; }
-    if (gTot && gWhite / gTot > BAND_GLOBAL_MAX) return null;
-
     // qualifying runs in the middle window, merged across small gaps
     var runs = [], cur = null;
     for (var i = lo; i < hi; i++) {
@@ -192,13 +192,26 @@
         last.a1 = r.a1; last.sum += r.sum; last.cnt += r.cnt;
       } else merged.push({ a0: r.a0, a1: r.a1, sum: r.sum, cnt: r.cnt });
     });
-    var best = null;
+    // a band sits BETWEEN slides: content must show on both flanks (this is
+    // what rejects blank pages and fixed-gap padding, white on one side only)
+    var flank = Math.max(8, Math.round(24 * scale));
+    function hasFlank(a0, a1, dir) {
+      var from = dir < 0 ? Math.max(0, a0 - flank) : a1;
+      var to = dir < 0 ? a0 : Math.min(n, a1 + flank);
+      for (var j = from; j < to; j++) {
+        if (1 - whiteFrac(j) >= BAND_FLANK_DARK) return true;
+      }
+      return false;
+    }
+    var best = null, bestDist = Infinity;
     merged.forEach(function (m) {
       var len = m.a1 - m.a0;
       if (len < minLen) return;
       if ((len - m.cnt) / len > BAND_NONBAND_MAX) return;  // gaps would mean crossing a slide
       if (m.sum / m.cnt < BAND_AVG) return;               // sparse text pages are not bands
-      if (!best || len > best.a1 - best.a0) best = m;
+      if (!hasFlank(m.a0, m.a1, -1) || !hasFlank(m.a0, m.a1, 1)) return;
+      var dist = Math.abs((m.a0 + m.a1) / 2 - n / 2);     // nearest-to-centre wins
+      if (dist < bestDist) { best = m; bestDist = dist; }
     });
     if (!best) return null;
     return { axis: axis, a0: best.a0, a1: best.a1 };
