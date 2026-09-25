@@ -1,6 +1,6 @@
 /* Node test for the shipped converter module (same code the browser runs).
  * Run:  node test/convert.test.mjs       (needs pdf-lib in node_modules)   */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { PDFDocument } from 'pdf-lib';
 
@@ -446,7 +446,8 @@ console.log('5e) hq-map:');
       }
       check('EXACT MATCH vs the reference tool: identical on every sampled point',
         diff === 0 && n > 20000, `${n} points · differing ${diff} · worst ${worst}`);
-      writeFileSync('/home/user/notes2a4/tmp-colortest/mine-negative.pdf', Buffer.from(vres.bytes));
+      mkdirSync(new URL('../tmp-colortest', import.meta.url), { recursive: true });
+      writeFileSync(new URL('../tmp-colortest/mine-negative.pdf', import.meta.url), Buffer.from(vres.bytes));
     } else {
       console.log('  SKIP  reference comparison (colour-probe-invert.pdf not present)');
     }

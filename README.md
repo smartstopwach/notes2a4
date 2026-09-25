@@ -137,6 +137,8 @@ node test/make-fixtures.mjs   # regenerate the in-repo sample PDFs/PNGs
 
 **`test/session.test.mjs` — 112 assertions**: the real `session.js` running against in-memory IndexedDB + OPFS stand-ins — byte-identical file round-trips in both engines, half-written-file recovery, options snapshot/apply (idempotent), result storage + cached object URL + replacement, run checkpoints (reuse on identical settings, invalidation on changed settings, clear), `clearAll`, plus wiring checks that all three apps call every session API, that every setting really sits inside `#workbench`, that `session.js` is cache-busted with the apps, and that all three previews render at device-pixel density and wire the HD click-to-enlarge view (so the old downscaled-render blur cannot come back).
 
+**`test/rapper.test.mjs` — 35 checks**: the real `rapper-core.js` cover engine — colour helpers, Y-flip math, gap-free brush dots, mosaic pixelate (region mushed, outside untouched, OOB clipped), vector-vs-raster routing, hit-testing, a real pdf-lib overlay build (filled-path ops + exact flipped position + opacity state in the saved bytes), undo-safe deep clones, plus a stub-DOM boot of the shipped `rapper.js` editor (every `rp-*` id it touches exists in `rapper.html`, tools/colour sliders wire up).
+
 ## Layout
 
 ```
@@ -184,6 +186,10 @@ MIT © 2026 smartstopwach
 - Hero stages are real CSS-3D (`perspective` + `preserve-3d` + per-layer `translateZ`), reacting to pointer proximity with a subtle tilt and a cursor light — see `enhance.js` (opt-in via `data-tilt`/`data-count`, fully disabled on touch and `prefers-reduced-motion`).
 - Motion language: enter = ease-out, exit = ease-in-out, progress = linear; UI ≤300 ms, complex reveals 400–700 ms. Icons are a single inline SVG set (no emoji).
 - `enhance.js` also owns the topbar scroll state, kinetic count-ups (400 → 200 / −75 %) and the toast layer; errors stay inline (`role="alert"`), skeletons shimmer while the engine paints.
+
+## The Rapper (`rapper.html`)
+
+Fourth standalone tool: the **TG-ID cover-up studio**. Coaching PDFs arrive with a stamped TG ID watermark on every page — The Rapper lets you **draw covers** over them (rectangle, ellipse, brush, mosaic-blur region), sample the exact paper colour with an **eyedropper**, **apply page-1 covers to all pages** in one click (stamps sit in the same spot), then export a clean `*-rapper.pdf`. Shape covers are baked as vector fills, so text underneath stays **selectable**; only pages with blur regions are re-rendered (150/200/300 dpi, JPEG/PNG). Select/move/resize, undo/redo, zoom, per-cover opacity, keyboard shortcuts (`V R E B M I`, arrows turn pages). No server, ever. `rapper.js` + `rapper-core.js` are standalone — they never touch `converter.js`. Covered by `test/rapper.test.mjs`.
 
 ## Invert Lab (`invert.html`)
 

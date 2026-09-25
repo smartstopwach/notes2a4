@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes2A4 · The Rapper — wrap stamped TG IDs on every page</title>
+<meta name="description" content="Cover stamped TG IDs on every page of your PDF. Shape covers, colour-matched patches, mosaic blur regions — apply to all pages at once, export a clean copy. 100% in-browser, no uploads.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0f1f'/%3E%3Crect x='7' y='5' width='18' height='22' rx='2' fill='%23fff'/%3E%3Crect x='10' y='15' width='12' height='6' rx='1' fill='%23fbbf24'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css?v=44">
+<link rel="stylesheet" href="rapper.css?v=1">
+<meta http-equiv="Cache-Control" content="no-cache">
+</head>
+<body id="top" class="rp-body">
+
+<header class="topbar">
+  <a class="brand" href="index.html" aria-label="Notes2A4 home">
+    <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
+      <rect x="6" y="3" width="20" height="26" rx="3" class="bm-sheet"/>
+      <rect x="9" y="6"  width="14" height="6" rx="1.5" class="bm-slide"/>
+      <rect x="9" y="20" width="14" height="6" rx="1.5" class="bm-slide"/>
+      <rect x="9" y="14" width="14" height="4" rx="1" fill="#fbbf24"/>
+    </svg>
+    <span class="brand-name">Notes<strong>2A4</strong></span>
+    <span class="brand-sub">The Rapper · cover-up studio</span>
+  </a>
+  <nav class="topnav" aria-label="Main">
+    <a href="index.html">2-up tool</a>
+    <a href="4up.html">4-up Studio ✦</a>
+    <a href="invert.html" class="nav-inv">Invert Lab</a>
+    <a href="#howRp">How it works</a>
+    <a href="#wrapRp">Wrap it</a>
+    <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener" class="nav-gh">GitHub</a>
+  </nav>
+  <span class="privacy-chip" title="Your file never leaves this tab"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg> <b>0% uploaded</b> <span class="pc-tail">— runs in your browser</span></span>
+</header>
+
+<main>
+  <!-- ============ HERO with the wrap animation ============ -->
+  <section class="rp-hero">
+    <div class="rp-copy reveal">
+      <span class="rp-tag">New mode · The Rapper</span>
+      <h1>Wrap every stamped <span class="grad">TG&nbsp;ID</span>,<br>on <em class="seri">every</em> page.</h1>
+      <p class="lead">Coaching PDFs come with <b>watermarked TG IDs on each page</b>. The Rapper lets you
+        <b>draw covers</b> over them — solid patches, colour-matched patches, or a <b>mosaic blur</b> —
+        then stamp the same covers on <b>all pages at once</b>.</p>
+      <p class="hinglish">PDF upload karo → stamp pe cover khincho → sab pages pe lagao → clean copy download. Poori processing aapke browser mein.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="#wrapRp">Wrap my PDF ↓</a>
+        <a class="btn btn-ghost" href="#howRp">See how it works</a>
+      </div>
+      <ul class="hero-stats">
+        <li><b>6</b><span>cover tools</span></li>
+        <li><b>×N</b><span>one click, all pages</span></li>
+        <li><b>100%</b><span>vector covers, selectable text</span></li>
+      </ul>
+    </div>
+
+    <div class="rp-anim" aria-hidden="true" data-tilt>
+      <div class="rp-stage" id="rp-stage">
+        <div class="rp-copies"><i></i><i></i></div>
+        <div class="rp-floor"></div>
+        <div class="rp-page"><div class="rp-lines"></div><div class="rp-stamp">TG-88231</div><div class="rp-wrap"></div></div>
+        <div class="rp-tools"><span class="rp-tool">▭</span><span class="rp-tool">◯</span><span class="rp-tool">▦</span></div>
+        <div class="rp-badge"><s>TG-88231</s><i>→</i><b>wrapped ✓</b></div>
+        <div class="rp-dims"><span>cover ×14 pages</span><i>same spot · one click</i></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOW ============ -->
+  <section id="howRp" class="fu-how">
+    <h2 class="reveal">Three steps to a clean copy</h2>
+    <div class="fu-howgrid">
+      <div class="fu-hitem reveal"><b>1</b><p><b>Cover.</b> Draw a rect, ellipse, brush stroke, or blur box over the stamp. The <b>dropper</b> samples the exact paper colour so patches disappear.</p></div>
+      <div class="fu-hitem reveal"><b>2</b><p><b>Multiply.</b> Stamps sit in the same spot on every page — one click applies page-1 covers to the whole file. Blur forgives small drifts.</p></div>
+      <div class="fu-hitem reveal"><b>3</b><p><b>Download.</b> Covers are baked into a new <b>*-rapper.pdf</b>. Shape covers stay vector, so text under them stays <b>selectable</b>; only blur pages get re-rendered.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ WORKBENCH ============ -->
+  <section id="wrapRp" class="convert">
+    <div class="convert-head reveal">
+      <h2>The Rapper — cover-up studio</h2>
+      <p class="sub">Upload → draw covers over the stamps → apply to all pages → download. Everything stays in this tab.</p>
+    </div>
+
+    <div id="rp-drop" class="panel dropzone reveal" role="button" tabindex="0" aria-label="Upload a PDF file">
+      <svg viewBox="0 0 64 64" class="dz-icon" aria-hidden="true">
+        <path d="M32 42 V18 m0 0 -9 9 m9 -9 9 9" class="dz-arrow"/>
+        <path d="M14 40 v8 a6 6 0 0 0 6 6 h24 a6 6 0 0 0 6-6 v-8" class="dz-tray"/>
+      </svg>
+      <p class="dz-title">Drop the PDF with stamped TG IDs</p>
+      <p class="dz-hint">coaching notes, watermarked scans — any page count · or</p>
+      <button type="button" class="btn btn-primary" id="rp-choose">Choose PDF</button>
+      <p class="dz-fine">No server, no account, no upload. Close the tab and everything is gone.</p>
+      <input type="file" id="rp-file" accept="application/pdf,.pdf" hidden>
+      <p class="dz-error" id="rp-err" role="alert" hidden></p>
+    </div>
+
+    <div id="rp-work" class="workbench" hidden>
+      <div class="filebar">
+        <span class="fb-name" id="rp-fname">file.pdf</span>
+        <span class="chip" id="rp-pages">— pages</span>
+        <span class="chip chip-ok" id="rp-covchip">0 covers</span>
+        <button class="btn btn-tiny" id="rp-remove" type="button">✕ remove</button>
+      </div>
+
+      <div class="cols rp-cols">
+        <div class="card opts rp-side">
+          <h3>Toolbox</h3>
+          <div class="fld">
+            <span class="lbl">Tools</span>
+            <div class="rp-tools2" role="toolbar" aria-label="Drawing tools">
+              <button type="button" class="rp-toolbtn on" data-t="select" title="Select / move / resize (V)"><span class="ic">↖</span>Select<span class="kbd">V</span></button>
+              <button type="button" class="rp-toolbtn" data-t="rect" title="Rectangle cover (R)"><span class="ic">▭</span>Rect<span class="kbd">R</span></button>
+              <button type="button" class="rp-toolbtn" data-t="ellipse" title="Ellipse cover (E)"><span class="ic">◯</span>Ellipse<span class="kbd">E</span></button>
+              <button type="button" class="rp-toolbtn" data-t="brush" title="Brush cover (B)"><span class="ic">🖌</span>Brush<span class="kbd">B</span></button>
+              <button type="button" class="rp-toolbtn" data-t="pixel" title="Mosaic blur region (M)"><span class="ic">▦</span>Blur<span class="kbd">M</span></button>
+              <button type="button" class="rp-toolbtn" data-t="drop" title="Eyedropper: sample colour from page (I)"><span class="ic">💧</span>Pick<span class="kbd">I</span></button>
+            </div>
+          </div>
+          <div class="fld">
+            <span class="lbl">Cover colour</span>
+            <div class="rp-swatches" id="rp-swatches"></div>
+            <div class="rp-custom"><input type="color" id="rp-color" value="#ffffff" aria-label="Custom cover colour"><code id="rp-hex">#ffffff</code></div>
+            <div class="rp-recent" id="rp-recent" title="Recently picked colours"></div>
+          </div>
+          <div class="fld">
+            <span class="lbl">Cover settings</span>
+            <label class="fld rp-range"><span>Opacity <i id="rp-opv">100%</i></span>
+              <input type="range" id="rp-op" min="10" max="100" value="100" step="5"></label>
+            <label class="fld rp-range"><span>Brush size <i id="rp-brv">24 pt</i></span>
+              <input type="range" id="rp-br" min="4" max="120" value="24" step="2"></label>
+            <label class="fld rp-range"><span>Blur block <i id="rp-blkv">12 px</i></span>
+              <input type="range" id="rp-blk" min="4" max="48" value="12" step="2"></label>
+          </div>
+          <div class="fld">
+            <span class="lbl">Batch</span>
+            <div class="rp-batch">
+              <button type="button" class="btn btn-ghost rp-btn" id="rp-all">⇄ Apply covers to all pages</button>
+              <button type="button" class="btn btn-ghost rp-btn" id="rp-clear1">⌫ Clear this page</button>
+              <button type="button" class="btn btn-ghost rp-btn rp-danger" id="rp-clearall">✕ Clear everything</button>
+            </div>
+            <ul class="note-list">
+              <li><b>Stamps sit in the same spot?</b> Cover page 1, press <b>Apply to all</b> — every page gets the same covers.</li>
+            </ul>
+          </div>
+          <div class="fld">
+            <span class="lbl">Export quality <em>only pages with blur get re-rendered; the rest stay vector-sharp</em></span>
+            <div class="seg" role="radiogroup" aria-label="Export quality">
+              <label><input type="radio" name="rpdpi" value="150"><span>150 · balanced</span></label>
+              <label><input type="radio" name="rpdpi" value="200" checked><span>200 · sharp</span></label>
+              <label><input type="radio" name="rpdpi" value="300"><span>300 · max</span></label>
+            </div>
+          </div>
+          <div class="fld">
+            <span class="lbl">Blur-page encoding</span>
+            <div class="seg" role="radiogroup" aria-label="Blur page encoding">
+              <label><input type="radio" name="rpfmt" value="jpg" checked><span>JPEG · smaller</span></label>
+              <label><input type="radio" name="rpfmt" value="png"><span>PNG · lossless</span></label>
+            </div>
+          </div>
+          <div class="fld">
+            <span class="lbl">Pages</span>
+            <div class="rp-strip" id="rp-strip"></div>
+          </div>
+        </div>
+
+        <div class="card prev rp-stagecard">
+          <h3>Page editor <em>draw right on the page — R rect · B brush · M blur · I pick colour</em></h3>
+          <div class="rp-bar">
+            <button type="button" class="rp-navbtn" id="rp-prev" title="Previous page (←)">← Prev</button>
+            <span class="pg">Page <b id="rp-pn">–</b> / <span id="rp-pc">–</span></span>
+            <button type="button" class="rp-navbtn" id="rp-next" title="Next page (→)">Next →</button>
+            <span class="sp"></span>
+            <div class="rp-zoom">
+              <button type="button" class="rp-navbtn" id="rp-zout" title="Zoom out (−)">−</button>
+              <b id="rp-zv">100%</b>
+              <button type="button" class="rp-navbtn" id="rp-zin" title="Zoom in (+)">+</button>
+              <button type="button" class="rp-navbtn" id="rp-zfit" title="Fit to panel (0)">Fit</button>
+            </div>
+            <span class="sp"></span>
+            <button type="button" class="rp-navbtn" id="rp-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
+            <button type="button" class="rp-navbtn" id="rp-redo" title="Redo (Ctrl+Y)">↪ Redo</button>
+            <button type="button" class="rp-navbtn" id="rp-del" title="Delete selected (Del)">🗑</button>
+          </div>
+          <div class="rp-canvasbox" id="rp-box">
+            <div class="rp-layers" id="rp-layers">
+              <canvas class="rp-base" id="rp-base"></canvas>
+              <canvas class="rp-over" id="rp-over" data-tool="select"></canvas>
+            </div>
+          </div>
+          <div class="rp-status" id="rp-status"><span>Open a PDF to start.</span></div>
+        </div>
+      </div>
+
+      <div class="run-row">
+        <button class="btn btn-primary btn-big" id="rp-go" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5M4 20h16"/></svg> Wrap it — download clean PDF</button>
+        <div class="progress" id="rp-progress" hidden aria-live="polite">
+          <div class="pbar"><div class="pfill" id="rp-pfill"></div></div>
+          <span id="rp-pstatus">starting…</span>
+          <span class="p-eta" id="rp-peta"></span>
+        </div>
+      </div>
+
+      <!-- result -->
+      <div class="card result" id="rp-result" hidden>
+        <div class="res-stats">
+          <div class="rs-big"><span id="rp-rsCov">0</span><em>covers baked</em></div>
+          <div class="rs-sub" id="rp-rsMeta">—</div>
+        </div>
+        <div class="res-btns">
+          <a class="btn btn-primary btn-big" id="rp-dl" href="#" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4.5-4.5M12 14l-4.5-4.5M4 20h16"/></svg> Download wrapped PDF</a>
+          <a class="btn btn-ghost" id="rp-open" href="#" target="_blank" rel="noopener">Open &amp; check</a>
+          <button class="btn btn-tiny" id="rp-again" type="button">Wrap another file</button>
+        </div>
+        <details class="print-tips">
+          <summary><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5"/><rect x="3.5" y="8" width="17" height="8" rx="2"/><rect x="7" y="13" width="10" height="8" rx="1"/></svg> Cover tips</summary>
+          <ul>
+            <li>Blur boxes forgive small stamp drift across pages — make them a little bigger than the stamp.</li>
+            <li>Shape covers stay vector: text under them stays selectable in the exported PDF.</li>
+            <li>Only pages with blur regions get re-rendered — everything else is byte-identical to your original.</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
+<footer class="foot">
+  <p>Notes2A4 The Rapper — the TG-ID cover-up studio. <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener">Source</a> · MIT.</p>
+  <p class="foot-dim">wrap the stamps, keep the notes · <a href="index.html">2-up packer</a> · <a href="4up.html">4-up Studio</a> · <a href="invert.html">Invert Lab</a></p>
+  <p class="foot-dim">Made for your personal study copies — please don't share someone else's paid content. 🙏</p>
+</footer>
+
+<script src="vendor/pdf.min.js"></script>
+<script>
+  window.pdfjsLib && (pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdf.worker.min.js');
+</script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="enhance.js?v=43"></script>
+<script src="rapper-core.js?v=1"></script>
+<script src="rapper.js?v=1"></script>
+<noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
+</body>
+</html>

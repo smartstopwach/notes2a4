@@ -110,6 +110,7 @@ h2{font-size:clamp(1.8rem,3.1vw,2.35rem);margin:0 0 var(--s3)}
   transition:transform .24s var(--ease-out)}
 .topnav a:hover::after{transform:scaleX(1)}
 .nav-4up,.nav-inv{color:var(--ind);font-weight:800}
+.nav-rp{color:var(--warn);font-weight:800}
 .nav-gh{color:var(--faint)}
 .privacy-chip{display:inline-flex;align-items:center;gap:7px;font-size:.8rem;color:var(--dim);
   border:1px solid var(--line-soft);background:rgba(52,211,153,.05);padding:7px 13px;border-radius:var(--pill);
