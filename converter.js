@@ -38,6 +38,7 @@
       gap: 40 * PT_PER_MM / 2, // pt, used only when gapMode === 'fixed'
       lines: false,       // ruled lines inside the middle band (room for handwritten notes)
       lineSpacing: 14,    // pt
+      lineStyle: 'solid',   // 'solid'|'dashed'|'dotted'|'grid'|'dots' — only when lines are on
       pageNumbers: false  // small "sheet / total" inside the band
     };
   }
@@ -53,6 +54,7 @@
     o.lines = !!o.lines;
     o.pageNumbers = !!o.pageNumbers;
     o.lineSpacing = Math.max(6, Math.min(36, +o.lineSpacing || 14));
+    if (['solid','dashed','dotted','grid','dots'].indexOf(o.lineStyle) < 0) o.lineStyle = 'solid';
     return o;
   }
 
@@ -70,6 +72,7 @@
     var n = Math.max(1, Math.floor((area1 - area0) / opts.lineSpacing));
     var step = (area1 - area0) / n;
     for (var i = 0; i < n; i++) lines.push(area1 - (i + 1) * step);
+    lines.step = step;   // realised step — grid & dot styles square off from it
     return lines;
   }
 
@@ -374,14 +377,24 @@
   /** Shared sheet decoration (ruled lines + sheet number) for both build paths. */
   function decorateSheet(pg, L, opts, font, s, nSheets, page) {
     if (opts.lines) {
+      var sty = opts.lineStyle || 'solid';
+      var x0 = L.gap.x + (L.lineInset || 10), x1 = L.gap.x + L.gap.w - (L.lineInset || 10);
+      var step = L.lines.step || opts.lineSpacing;
+      var col = (sty === 'grid' || sty === 'dots') ? rgb(0.74, 0.78, 0.84) : rgb(0.66, 0.7, 0.76);
       for (var li = 0; li < L.lines.length; li++) {
         var y = L.lines[li];
-        pg.drawLine({
-          start: { x: L.gap.x + (L.lineInset || 10), y: y },
-          end: { x: L.gap.x + L.gap.w - (L.lineInset || 10), y: y },
-          thickness: 0.6,
-          color: rgb(0.66, 0.7, 0.76)
-        });
+        var ln = { start: { x: x0, y: y }, end: { x: x1, y: y }, thickness: 0.6, color: col };
+        if (sty === 'dashed') { ln.thickness = 0.7; ln.dashArray = [6, 4]; }
+        else if (sty === 'dotted') { ln.thickness = 1.5; ln.lineCapStyle = 1; ln.dashArray = [0.1, 4.5]; }
+        else if (sty === 'grid') { ln.thickness = 0.45; }
+        else if (sty === 'dots') { ln.thickness = 1.5; ln.lineCapStyle = 1; ln.dashArray = [0.1, step]; ln.dashPhase = step / 2; }
+        pg.drawLine(ln);
+      }
+      if (sty === 'grid' && L.lines.length) {           // square grid: verticals at the same realised step
+        var gy0 = L.gap.y + 7, gy1 = L.gap.y + L.gap.h - 7;
+        for (var vx = x0 + step; vx < x1 - step / 2; vx += step) {
+          pg.drawLine({ start: { x: vx, y: gy0 }, end: { x: vx, y: gy1 }, thickness: 0.45, color: col });
+        }
       }
     }
     if (opts.pageNumbers && (L.gap.h >= 12 || opts.perSheet === 2)) {

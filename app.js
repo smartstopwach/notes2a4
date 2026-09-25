@@ -45,6 +45,7 @@
       gapMode: opt.gapFixed.checked ? 'fixed' : 'auto',
       gap: parseFloat(opt.gap.value) * MM,
       lines: opt.lines.checked,
+      lineStyle: (document.querySelector('input[name="linestyle"]:checked') || { value: 'solid' }).value,
       pageNumbers: opt.nums.checked
     });
   }
@@ -153,7 +154,10 @@
   opt.paper.addEventListener('change', schedulePreview);
   opt.margin.addEventListener('input', schedulePreview);
   opt.gap.addEventListener('input', schedulePreview);
-  opt.lines.addEventListener('change', schedulePreview);
+  opt.lines.addEventListener('change', function () { $('lineOpts').hidden = !opt.lines.checked; schedulePreview(); });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="linestyle"]'), function (r) {
+    r.addEventListener('change', schedulePreview);
+  });
   opt.nums.addEventListener('change', schedulePreview);
   [opt.gapAuto, opt.gapFixed].forEach(function (r) {
     r.addEventListener('change', function () { opt.gap.disabled = opt.gapAuto.checked; schedulePreview(); });
@@ -221,12 +225,26 @@
     if (bIdx < state.pages) await slide(bIdx + 1, L.bottom, 1.5);
 
     if (opts.lines) {
-      ctx.strokeStyle = '#c3cbd9'; ctx.lineWidth = 0.8;
+      var sty = opts.lineStyle || 'solid';
+      ctx.strokeStyle = (sty === 'grid' || sty === 'dots') ? '#bdc6d4' : '#c3cbd9';
+      ctx.lineWidth = 0.8; ctx.setLineDash([]); ctx.lineCap = 'butt';
+      var stepPx = (L.lines.step || opts.lineSpacing) * pxPerPt;
+      if (sty === 'dashed') { ctx.setLineDash([6 * pxPerPt, 4 * pxPerPt]); ctx.lineWidth = 0.9; }
+      else if (sty === 'dotted') { ctx.setLineDash([0.6, 5]); ctx.lineWidth = 1.6; ctx.lineCap = 'round'; }
+      else if (sty === 'grid') ctx.lineWidth = 0.55;
+      else if (sty === 'dots') { ctx.setLineDash([0.6, stepPx]); ctx.lineWidth = 1.6; ctx.lineCap = 'round'; }
       for (var i = 0; i < L.lines.length; i++) {
         var yPx = (page.h - L.lines[i]) * pxPerPt;
         var x0 = (L.gap.x + 10) * pxPerPt, x1 = (L.gap.x + L.gap.w - 10) * pxPerPt;
         ctx.beginPath(); ctx.moveTo(x0, yPx); ctx.lineTo(x1, yPx); ctx.stroke();
       }
+      if (sty === 'grid' && L.lines.length) {
+        var gy0 = (page.h - L.gap.y - L.gap.h + 7) * pxPerPt, gy1 = (page.h - L.gap.y - 7) * pxPerPt;
+        ctx.beginPath();
+        for (var vx = x0 + stepPx; vx < x1 - stepPx / 2; vx += stepPx) { ctx.moveTo(vx, gy0); ctx.lineTo(vx, gy1); }
+        ctx.stroke();
+      }
+      ctx.setLineDash([]); ctx.lineCap = 'butt';
     }
     if (opts.pageNumbers) {
       var sheets = Math.ceil(state.pages / 2);

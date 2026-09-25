@@ -352,6 +352,23 @@ input[type=range]:disabled{opacity:.35}
 @media (hover:hover){.seg span:hover{border-color:#3b4a80;color:var(--ink)}
 .seg input:checked+span:hover{color:#06251a}}
 .seg input:focus-visible+span{outline:2px solid var(--acc);outline-offset:2px}
+/* ruled-line style picker (revealed when Ruled lines is on) */
+.lopts{margin:-.25rem 0 .7rem;padding:.55rem .7rem .6rem;border-left:3px solid var(--acc);
+  background:rgba(52,211,153,.05);border-radius:0 10px 10px 0}
+.lopts .lbl{margin-bottom:.45rem}
+.lseg{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}
+.lseg label{position:relative;display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 2px 5px;
+  border:1px solid var(--line);border-radius:9px;background:var(--bg2);color:var(--dim);cursor:pointer;
+  font-size:.62rem;font-weight:700;letter-spacing:.02em;
+  transition:border-color .18s var(--ease-drawer),color .18s var(--ease-drawer),background-color .18s var(--ease-drawer),transform var(--dur-fast) var(--ease-out)}
+.lseg input{position:absolute;opacity:0;pointer-events:none}
+.lseg svg{width:34px;height:16px;stroke:currentColor;fill:none;stroke-width:1.5}
+.lseg circle{fill:currentColor;stroke:none}
+.lseg label:has(input:checked){border-color:var(--acc);color:var(--acc);background:rgba(52,211,153,.1)}
+.lseg label:active{transform:scale(.95)}
+.lseg label:has(input:focus-visible){outline:2px solid var(--acc);outline-offset:2px}
+@media (max-width:420px){.lseg svg{width:26px;height:13px}}
+
 /* switches (ruled lines, numbers, print-saver, auto-invert) */
 .sw{display:flex;gap:.6rem;align-items:flex-start;margin:.65rem 0;cursor:pointer;font-size:.85rem;color:var(--dim)}
 .sw input{position:absolute;opacity:0;pointer-events:none}

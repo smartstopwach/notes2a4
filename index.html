@@ -7,7 +7,7 @@
 <meta name="description" content="Free in-browser tool: stacks one 16:9 notes slide on top and one at the bottom of a white A4 sheet. Cuts a 400-page notebook into 200 print-ready pages. No uploads — everything runs locally.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
 <meta http-equiv="Cache-Control" content="no-cache">
-<link rel="stylesheet" href="styles.css?v=12">
+<link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body id="top">
 
@@ -184,7 +184,17 @@
             <input type="range" id="optGap" min="8" max="90" step="1" value="45" disabled>
             <small id="vGap">Auto: slides stay flush top &amp; bottom, remaining white space lands in the middle.</small>
           </div>
-          <label class="sw"><input type="checkbox" id="optLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b> in the gap<em>for writing notes during revision</em></span></label>
+          <label class="sw"><input type="checkbox" id="optLines"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Ruled lines</b> in the gap<em>for writing notes during revision — pick a style once enabled</em></span></label>
+          <div class="lopts" id="lineOpts" hidden>
+            <span class="lbl">Line style</span>
+            <div class="lseg" role="radiogroup" aria-label="Ruled line style">
+              <label><input type="radio" name="linestyle" value="solid" checked><svg viewBox="0 0 30 16" aria-hidden="true"><path d="M2 4.5h26M2 8h26M2 11.5h26"/></svg><span>Solid</span></label>
+              <label><input type="radio" name="linestyle" value="dashed"><svg viewBox="0 0 30 16" aria-hidden="true"><path d="M2 4.5h26M2 8h26M2 11.5h26" stroke-dasharray="4 3"/></svg><span>Dashed</span></label>
+              <label><input type="radio" name="linestyle" value="dotted"><svg viewBox="0 0 30 16" aria-hidden="true"><path d="M2 4.5h26M2 8h26M2 11.5h26" stroke-dasharray=".5 3.4" stroke-linecap="round"/></svg><span>Dotted</span></label>
+              <label><input type="radio" name="linestyle" value="grid"><svg viewBox="0 0 30 16" aria-hidden="true"><path d="M2 4.5h26M2 8h26M2 11.5h26M9.5 2v12M17 2v12M24.5 2v12"/></svg><span>Grid</span></label>
+              <label><input type="radio" name="linestyle" value="dots"><svg viewBox="0 0 30 16" aria-hidden="true"><circle cx="6" cy="4.5" r="1.2"/><circle cx="15" cy="4.5" r="1.2"/><circle cx="24" cy="4.5" r="1.2"/><circle cx="6" cy="8" r="1.2"/><circle cx="15" cy="8" r="1.2"/><circle cx="24" cy="8" r="1.2"/><circle cx="6" cy="11.5" r="1.2"/><circle cx="15" cy="11.5" r="1.2"/><circle cx="24" cy="11.5" r="1.2"/></svg><span>Dots</span></label>
+            </div>
+          </div>
           <label class="sw"><input type="checkbox" id="optNums"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Sheet numbers</b><em>e.g. “137 / 200” inside the gap</em></span></label>
           <label class="sw psRow"><input type="checkbox" id="optPrint"><span class="track"><span class="thumb"></span></span>
             <span class="sw-t"><b>Print-Saver inversion ◐</b><em>dark board notes → printer-friendly: black → white paper · white text &amp; every colour → black ink</em></span></label>
@@ -262,9 +272,9 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="converter.js?v=12"></script>
+<script src="converter.js?v=14"></script>
 <script src="enhance.js?v=12"></script>
-<script src="app.js?v=12"></script>
+<script src="app.js?v=14"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>
