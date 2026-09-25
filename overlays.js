@@ -234,6 +234,33 @@
     return r;
   }
 
+  /**
+   * Restore up to two bands (the 4-up union: horizontal AND vertical). hb =
+   * {y0, y1} rows and/or vb = {x0, x1} cols in pdf-lib bottom-left pt, either
+   * may be null. Two overlapping Difference rects would flip their crossing
+   * twice (back to black), so the vertical band is split around the
+   * horizontal one: full-width middle rect + at most two column stubs above
+   * and below it. Returns the rects drawn (for tests).
+   */
+  function unflipBands(pg, hb, vb, w, h) {
+    var drawn = [];
+    function rect(x, y, rw, rh) {
+      if (!(rw > 0 && rh > 0)) return;
+      pg.drawRectangle({ x: x, y: y, width: rw, height: rh, color: rgb(1, 1, 1), blendMode: 'Difference' });
+      drawn.push({ x: x, y: y, w: rw, h: rh });
+    }
+    if (hb && vb) {
+      rect(0, hb.y0, w, hb.y1 - hb.y0);
+      rect(vb.x0, hb.y1, vb.x1 - vb.x0, h - hb.y1);
+      rect(vb.x0, 0, vb.x1 - vb.x0, hb.y0);
+    } else if (hb) {
+      rect(0, hb.y0, w, hb.y1 - hb.y0);
+    } else if (vb) {
+      rect(vb.x0, 0, vb.x1 - vb.x0, h);
+    }
+    return drawn;
+  }
+
   function drawPage(pg, opts, info) {
     var o = normOpts(opts);
     var counts = { lines: 0, seps: 0, nums: 0 };
@@ -329,6 +356,7 @@
     ruleRowsBand: ruleRowsBand,
     findBand: findBand,
     unflipBand: unflipBand,
+    unflipBands: unflipBands,
     sepLines: sepLines,
     drawPage: drawPage
   };

@@ -352,5 +352,43 @@ function coversBand(det, exp) {   // detected run must cover the layout band (ed
     b ? b.a0 + '..' + b.a1 : 'null');
 }
 
+/* ---------- 13) unflipBands: 4-up union restore (horizontal AND vertical) ----------
+   Outside 2x2 tools may leave a vertical band or a full white cross; the app
+   keeps the union. Two overlapping Difference rects would flip their crossing
+   twice (back to black), so the vertical band splits around the horizontal. */
+{
+  const calls = [];
+  const fake = { drawRectangle: (o) => calls.push(o) };
+  const r = OV.unflipBands(fake, { y0: 100, y1: 200 }, null, 595, 842);
+  check('unflipBands: horizontal-only draws one full-width rect',
+    r.length === 1 && r[0].x === 0 && r[0].w === 595 && r[0].y === 100 && r[0].h === 100 &&
+    calls.length === 1 && calls[0].blendMode === 'Difference', JSON.stringify(r));
+}
+{
+  const fake = { drawRectangle: () => {} };
+  const r = OV.unflipBands(fake, null, { x0: 200, x1: 300 }, 595, 842);
+  check('unflipBands: vertical-only draws one full-height rect',
+    r.length === 1 && r[0].x === 200 && r[0].w === 100 && r[0].y === 0 && r[0].h === 842, JSON.stringify(r));
+}
+{
+  const fake = { drawRectangle: () => {} };
+  const r = OV.unflipBands(fake, { y0: 100, y1: 200 }, { x0: 200, x1: 300 }, 595, 842);
+  const disjoint = r.length === 3 &&
+    r[1].y >= 200 && r[1].y + r[1].h === 842 &&   // top stub sits above the middle rect
+    r[2].y === 0 && r[2].y + r[2].h <= 100 &&     // bottom stub sits below it
+    r.every((q) => q.w > 0 && q.h > 0);
+  check('unflipBands: cross splits into 3 disjoint rects (no double-flip)', disjoint, JSON.stringify(r));
+  const r2 = OV.unflipBands(fake, null, null, 595, 842);
+  check('unflipBands: no bands draws nothing', Array.isArray(r2) && r2.length === 0);
+}
+{
+  // outside-tool 2x2: dark quadrants with a white cross (rows + cols 90..110)
+  const img = synthBand(200, 200, (x, y) => ((y >= 90 && y < 110) || (x >= 90 && x < 110) ? 255 : 25));
+  const bh = OV.findBand(img, 'h', 1), bv = OV.findBand(img, 'v', 1);
+  check('findBand: white cross detected on BOTH axes',
+    !!bh && bh.a0 === 90 && bh.a1 === 110 && !!bv && bv.a0 === 90 && bv.a1 === 110,
+    'h→' + (bh ? bh.a0 + '..' + bh.a1 : 'null') + ' v→' + (bv ? bv.a0 + '..' + bv.a1 : 'null'));
+}
+
 console.log('\n' + (fail === 0 ? 'ALL OVERLAY CHECKS PASSED' : fail + ' OVERLAY CHECK(S) FAILED') + '  (' + pass + ' passed)\n');
 process.exit(fail ? 1 : 0);

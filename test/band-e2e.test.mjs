@@ -123,7 +123,7 @@ function realInvertPixels() {
   let i = src.indexOf('{', at), depth = 0;
   for (; i < src.length; i++) { if (src[i] === '{') depth++; if (src[i] === '}') { depth--; if (!depth) break; } }
   const fnSrc = src.slice(at, i + 1);
-  if (!fnSrc.includes('skip.rows')) throw new Error('extracted stale invertPixels (no skip support)');
+  if (!fnSrc.includes('skip.c1')) throw new Error('extracted stale invertPixels (no union skip support)');
   return eval('(' + fnSrc.replace('function invertPixels', 'function') + ')');
 }
 const invertPixels = realInvertPixels();
@@ -167,6 +167,9 @@ async function e2e(perSheet, slideIdx, label) {
   const b = OV.findBand(img, 'h', DET);
   check(label + ': findBand covers the real layout band', coversBand(b, exp),
     (b ? b.a0 + '..' + b.a1 : 'null') + ' vs layout ' + exp.a0 + '..' + exp.a1 + ' (band ' + L.gap.h.toFixed(0) + 'pt, page ' + pageW.toFixed(0) + 'x' + pageH.toFixed(0) + ')');
+  const bvv = OV.findBand(img, 'v', DET);
+  check(label + ': no vertical band on our own output (union is a no-op here)', bvv === null,
+    'v→' + (bvv ? bvv.a0 + '..' + bvv.a1 : 'null'));
   if (!b) return;
   // app-identical masking math at 150dpi: band pt → bh px → strip skip → REAL invertPixels
   const outSc = 150 / 72, ss = 2, k = outSc * ss;
@@ -174,7 +177,7 @@ async function e2e(perSheet, slideIdx, label) {
   // emulate flip at detection scale instead (same rows proportionally): skip in img coords
   const id = { data: img.data.slice(), width: img.w, height: img.h };
   const preBand = rowMean(id, b.a0, b.a1);
-  invertPixels(id, true, { rows: true, a0: b.a0, a1: b.a1 });
+  invertPixels(id, true, { r0: b.a0, r1: b.a1, c0: 0, c1: 0 });
   const postBand = rowMean(id, b.a0, b.a1);
   check(label + ': kept band rows stay white after REAL flip', Math.abs(postBand - preBand) < 0.01 && postBand > 240, 'mean ' + preBand.toFixed(1) + ' → ' + postBand.toFixed(1) + ' (pixel-identical = skipped)');
   // dark S0 pixels (left column, above the band) must have flipped dark → light
@@ -187,5 +190,24 @@ async function e2e(perSheet, slideIdx, label) {
 console.log('\n=== BAND-KEEP TRUE E2E (real converter bytes + real shipped functions) ===\n');
 await e2e(4, [0, 1, 2, 3], '4up');
 await e2e(2, [0, 1], '2up');
+
+/* union masking proof: white cross on dark, flipped with a combined rows+cols
+   skip through the REAL shipped invertPixels */
+{
+  const W = 120, H = 120;
+  const d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const v = ((y >= 50 && y < 70) || (x >= 50 && x < 70)) ? 255 : 25;
+    const o = (y * W + x) * 4; d[o] = d[o + 1] = d[o + 2] = v; d[o + 3] = 255;
+  }
+  const id = { data: d, width: W, height: H };
+  invertPixels(id, true, { r0: 50, r1: 70, c0: 50, c1: 70 });
+  const crossRow = regionMean(id, 0, W, 55, 65);
+  const crossCol = regionMean(id, 55, 65, 0, H);
+  const quad = regionMean(id, 10, 40, 10, 40);
+  check('union: white cross kept by combined skip', crossRow > 250 && crossCol > 250,
+    'bar means ' + crossRow.toFixed(1) + ' / ' + crossCol.toFixed(1) + ' (must stay 255)');
+  check('union: quadrants around the cross flipped', quad > 200, 'mean 25 → ' + quad.toFixed(1));
+}
 console.log('\n' + (fail ? fail + ' E2E CHECK(S) FAILED' : 'ALL E2E CHECKS PASSED') + '  (' + pass + ' passed)\n');
 process.exit(fail ? 1 : 0);

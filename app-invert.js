@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 14;
+  var BUILD = 15;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -42,35 +42,44 @@
     band2up: $('iv2up'), band4up: $('iv4up')
   };
   var OV = window.InvertOverlays || null;   // overlays.js (vector finishing touches)
-  /* packer layout band-keep: both packers leave a HORIZONTAL white strip in
-     the middle (2-up gap between slides, 4-up band between rows), so both
-     toggles detect full-width rows; null = the whole page flips (default) */
+  /* packer layout band-keep: which file layout to keep white around.
+     2-up keeps the horizontal middle gap (top/bottom slides are unambiguous);
+     4-up keeps the UNION of the horizontal and vertical middle bands, so both
+     our own 4-up output (horizontal band — vertical never fires on it) and
+     outside 2x2 tools (vertical band or a full white cross) stay white.
+     null = the whole page flips (default). */
   function bandMode() {
-    if (opt.band2up && opt.band2up.checked) return 'h';
-    if (opt.band4up && opt.band4up.checked) return 'h';
+    if (opt.band2up && opt.band2up.checked) return '2up';
+    if (opt.band4up && opt.band4up.checked) return '4up';
     return null;
   }
-  /* white-band detection on a small render of one page: the band in top-left
-     pt {axis, t0, t1}, or null (toggle off, no overlay lib, no band found) */
+  /* white-band detection on a small render of one page: {h, v} bands in
+     top-left pt ({t0, t1} each, either may be null), or null when the toggle
+     is off, the overlay lib is missing, or nothing is detected at all */
   var detCanvas = null;
   async function detectBand(pgNum) {
-    var axis = bandMode();
-    if (!axis || !OV || !OV.findBand || !state.doc) return null;
+    var mode = bandMode();
+    if (!mode || !OV || !OV.findBand || !state.doc) return null;
     if (!detCanvas) detCanvas = document.createElement('canvas');
     var ds = 0.35;
     var cx = await renderPageScaled(pgNum, ds, detCanvas);
-    var b = null;
+    var h = null, v = null;
     try {
-      b = OV.findBand(cx.getImageData(0, 0, detCanvas.width, detCanvas.height), axis, ds);
-    } catch (e) { b = null; }
-    if (!b) return null;
-    return { axis: axis, t0: b.a0 / ds, t1: b.a1 / ds };   // px → top-left pt
+      var snap = cx.getImageData(0, 0, detCanvas.width, detCanvas.height);
+      h = OV.findBand(snap, 'h', ds);
+      if (mode === '4up') v = OV.findBand(snap, 'v', ds);
+    } catch (e) { h = null; v = null; }
+    if (!h && !v) return null;
+    return {
+      h: h ? { t0: h.a0 / ds, t1: h.a1 / ds } : null,   // px → top-left pt
+      v: v ? { t0: v.a0 / ds, t1: v.a1 / ds } : null
+    };
   }
-  /* top-left pt band → pdf-lib bottom-left pt (for unflip + ruling) */
-  function bandToPdf(band, w, h) {
-    if (!band) return null;
-    return band.axis === 'h' ? { axis: 'h', y0: h - band.t1, y1: h - band.t0 }
-                             : { axis: 'v', x0: band.t0, x1: band.t1 };
+  /* top-left pt band {t0, t1} → pdf-lib bottom-left pt (for unflip + ruling) */
+  function bandToPdf(t, axis, w, h) {
+    if (!t) return null;
+    return axis === 'h' ? { axis: 'h', y0: h - t.t1, y1: h - t.t0 }
+                        : { axis: 'v', x0: t.t0, x1: t.t1 };
   }
   /* rsMeta band-kept note; empty when the toggles were off */
   function bandKeptNote(kept, n, wasOn) {
@@ -181,11 +190,13 @@
         if (flip) { d[i] = 255 - r; d[i + 1] = 255 - g; d[i + 2] = 255 - b; }
       }
       return blank;
-    }                                                // band-keep: rows (or cols) a0..a1 stay original
+    }                                                // band-keep: rows r0..r1 and/or cols c0..c1 stay original
     var w = idat.width;
+    var hasR = skip.r1 > skip.r0, hasC = skip.c1 > skip.c0;
     for (var p = 0; p < d.length; p += 4) {
       var px = p >> 2, y = (px / w) | 0;
-      if (skip.rows ? (y >= skip.a0 && y < skip.a1) : (px - y * w >= skip.a0 && px - y * w < skip.a1)) continue;
+      if (hasR && y >= skip.r0 && y < skip.r1) continue;
+      if (hasC && px - y * w >= skip.c0 && px - y * w < skip.c1) continue;
       var r2 = d[p], g2 = d[p + 1], b2 = d[p + 2];
       if (blank && (r2 < 252 || g2 < 252 || b2 < 252)) blank = false;
       if (flip) { d[p] = 255 - r2; d[p + 1] = 255 - g2; d[p + 2] = 255 - b2; }
@@ -318,12 +329,16 @@
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else {
       var id = x2.getImageData(0, 0, c2.width, c2.height);
-      var psk = null, pAxis = bandMode();            // the band toggle shows in the preview too
-      if (pAxis && OV && OV.findBand) {
+      var psk = null, pMode = bandMode();            // the band toggle shows in the preview too
+      if (pMode && OV && OV.findBand) {
         try {
-          var pb = OV.findBand(c1.getContext('2d').getImageData(0, 0, c1.width, c1.height),
-            pAxis, c1.width / Math.max(1, vp.width));
-          if (pb) psk = { rows: pAxis === 'h', a0: pb.a0, a1: pb.a1 };
+          var snap = c1.getContext('2d').getImageData(0, 0, c1.width, c1.height);
+          var pds = c1.width / Math.max(1, vp.width);
+          var ph = OV.findBand(snap, 'h', pds);
+          var pv = (pMode === '4up') ? OV.findBand(snap, 'v', pds) : null;
+          if (ph || pv) {
+            psk = { r0: ph ? ph.a0 : 0, r1: ph ? ph.a1 : 0, c0: pv ? pv.a0 : 0, c1: pv ? pv.a1 : 0 };
+          }
         } catch (e) { psk = null; }
       }
       invertPixels(id, true, psk);
@@ -444,18 +459,26 @@
     var ss = (bigW * bigH <= 34000000 && bigW <= 16000 && bigH <= 16000) ? 2 : 1;   // 2× supersample → area-averaged down
     var W = Math.max(2, Math.round(vp1.width * outSc)), H = Math.max(2, Math.round(vp1.height * outSc));
     var bw = Math.max(2, Math.round(vp1.width * outSc * ss)), bh = Math.max(2, Math.round(vp1.height * outSc * ss));
-    /* band-keep (true negative only): the white band in supersampled px */
+    /* band-keep (true negative only): the white band(s) in supersampled px */
     var bandBh = null;
-    if (band && (band.axis === 'h' || band.axis === 'v')) {
-      var bk = outSc * ss, bmax = band.axis === 'h' ? bh : bw;
-      var ba0 = Math.max(0, Math.round(band.t0 * bk)), ba1 = Math.min(bmax, Math.round(band.t1 * bk));
-      if (ba1 > ba0) bandBh = { rows: band.axis === 'h', a0: ba0, a1: ba1 };
+    if (band && (band.h || band.v)) {
+      var bk = outSc * ss;
+      bandBh = { r0: 0, r1: 0, c0: 0, c1: 0 };
+      if (band.h) {
+        bandBh.r0 = Math.max(0, Math.round(band.h.t0 * bk));
+        bandBh.r1 = Math.min(bh, Math.round(band.h.t1 * bk));
+      }
+      if (band.v) {
+        bandBh.c0 = Math.max(0, Math.round(band.v.t0 * bk));
+        bandBh.c1 = Math.min(bw, Math.round(band.v.t1 * bk));
+      }
+      if (!(bandBh.r1 > bandBh.r0 || bandBh.c1 > bandBh.c0)) bandBh = null;
     }
     var stripSkip = function (y0, rows) {            // strip-relative skip, or null off-band
       if (!bandBh) return null;
-      if (!bandBh.rows) return bandBh;               // columns run through every strip whole
-      var r0 = Math.max(bandBh.a0 - y0, 0), r1 = Math.min(bandBh.a1 - y0, rows);
-      return r1 > r0 ? { rows: true, a0: r0, a1: r1 } : null;
+      var r0 = Math.max(bandBh.r0 - y0, 0), r1 = Math.min(bandBh.r1 - y0, rows);
+      if (r1 <= r0 && !(bandBh.c1 > bandBh.c0)) return null;
+      return { r0: r0, r1: Math.max(r1, 0), c0: bandBh.c0, c1: bandBh.c1 };
     };
     /* The page is rendered in horizontal strips — one giant 32 Mpx pdf.js call was
        the longest block in the whole run (that is what froze the tab). offsetY is
@@ -681,8 +704,8 @@
         pStatus.textContent = 'applying 255 - c to the PDF itself…';
         if (sessReady()) { await NotesSession.runClear(); }
         var vres = await NotesConverter.vectorNegative(state.bytes);
-        var bOnV = bandMode(), bandVs = null, bandVN = 0;   // 2-up/4-up: detect the white band per page
-        if (bOnV && OV && OV.unflipBand) {
+        var bOnV = bandMode(), bandVs = null, bandVN = 0;   // 2-up/4-up: detect the white band(s) per page
+        if (bOnV && OV && OV.unflipBands) {
           bandVs = [];
           for (var bi = 1; bi <= n; bi++) {
             var bb = await detectBand(bi);
@@ -697,9 +720,11 @@
           var vpages = vo.getPages();
           for (var vi = 0; vi < vpages.length; vi++) {
             var vsz = vpages[vi].getSize();
-            var vband = (bandVs && bandVs[vi]) ? bandToPdf(bandVs[vi], vsz.width, vsz.height) : null;
-            if (vband) OV.unflipBand(vpages[vi], vband, vsz.width, vsz.height);
-            if (ovOnV) OV.drawPage(vpages[vi], ovoV, { i: vi, n: vpages.length, w: vsz.width, h: vsz.height, font: vfont, bandOnly: !!bOnV, band: vband });
+            var vbb = (bandVs && bandVs[vi]) || null;
+            var vhb = vbb ? bandToPdf(vbb.h, 'h', vsz.width, vsz.height) : null;
+            var vvb = vbb ? bandToPdf(vbb.v, 'v', vsz.width, vsz.height) : null;
+            if (vbb) OV.unflipBands(vpages[vi], vhb, vvb, vsz.width, vsz.height);
+            if (ovOnV) OV.drawPage(vpages[vi], ovoV, { i: vi, n: vpages.length, w: vsz.width, h: vsz.height, font: vfont, bandOnly: !!bOnV, band: vhb || vvb });
           }
           vres.bytes = await vo.save();
         }
@@ -781,8 +806,9 @@
         var size = state.sizes[i - 1];
         var outPg = outDoc.addPage([size.w, size.h]);
         outPg.drawImage(img, { x: 0, y: 0, width: size.w, height: size.h });
-        var rband = bandToPdf(band, size.w, size.h);
-        if (ovOn) OV.drawPage(outPg, ovo, { i: i - 1, n: n, w: size.w, h: size.h, font: ovFont, bandOnly: !!bOn, band: rband });
+        var rhb = bandToPdf(band && band.h, 'h', size.w, size.h);
+        var rvb = bandToPdf(band && band.v, 'v', size.w, size.h);
+        if (ovOn) OV.drawPage(outPg, ovo, { i: i - 1, n: n, w: size.w, h: size.h, font: ovFont, bandOnly: !!bOn, band: rhb || rvb });
         if (r) {                                                       // the worker path brings pixels, not a canvas
           var liveCv = r.canvas || (r.preview ? previewCanvas(r.preview) : null);
           if (liveCv) NotesFX.liveShow(liveCv, 'page ' + i + ' / ' + n + ' · ' + styleName() + (blank && skip ? ' · blank' : ''));
