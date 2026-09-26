@@ -133,10 +133,12 @@ label.rp-range span i{font-style:normal;color:var(--ink);font-weight:700;font-va
 .rp-navbtn:disabled{opacity:.35;cursor:default}
 .rp-zoom{display:flex;align-items:center;gap:4px;color:var(--faint);font-size:.78rem;font-variant-numeric:tabular-nums}
 .rp-zoom b{min-width:44px;text-align:center;color:var(--dim)}
-.rp-canvasbox{position:relative;overflow:auto;max-height:70vh;background:
+.rp-canvasbox{position:relative;overflow:auto;max-height:70vh;max-height:70dvh;background:
   repeating-conic-gradient(#1a2135 0 25%,#141b30 0 50%) 0 0/22px 22px;
-  border:1px solid var(--line);border-radius:12px;display:flex;justify-content:center;padding:18px}
-.rp-layers{position:relative;flex:none;box-shadow:0 24px 70px rgba(0,0,0,.55);border-radius:4px;line-height:0}
+  border:1px solid var(--line);border-radius:12px;display:flex;justify-content:flex-start;padding:18px}
+/* margin:auto centres a small page AND keeps a zoomed page's left edge reachable —
+   justify-content:center pushed it into unreachable negative overflow */
+.rp-layers{position:relative;flex:none;margin:auto;box-shadow:0 24px 70px rgba(0,0,0,.55);border-radius:4px;line-height:0}
 .rp-layers canvas{display:block;border-radius:4px}
 .rp-layers canvas+canvas{position:absolute;inset:0}
 .rp-base{background:#fff}
@@ -182,4 +184,10 @@ body.rp-focus #rp-focus{border-color:var(--warn);color:var(--warn)}
   .rp-toolbtn .ic{font-size:1.4rem}
   .rp-navbtn{padding:.55rem .8rem;font-size:.9rem}
   .rp-sw{width:36px;height:36px}
+}
+/* ---------- small screens: every pixel for the page ---------- */
+@media (max-width:700px){
+  .rp-canvasbox{padding:10px}
+  .rp-bar{gap:.35rem}
+  .rp-navbtn{padding:.4rem .55rem;font-size:.78rem}
 }

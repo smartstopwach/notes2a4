@@ -62,6 +62,64 @@
     return { x: +r.x || 0, y: pageH - (+r.y || 0) - h, width: w, height: h };
   }
 
+  /**
+   * /Rotate to a quarter turn (0/90/180/270). Viewers rotate the page
+   * clockwise by this angle, so the editor's display space only matches the
+   * PDF's MediaBox space when it is 0. Exotic angles (a 45° scan?) fall back
+   * to 0 — an unrotated cover is the best effort there.
+   */
+  function normRot(rot) {
+    var a = ((+rot || 0) % 360 + 360) % 360;
+    var snaps = [0, 90, 180, 270, 360];
+    for (var i = 0; i < snaps.length; i++) {
+      if (Math.abs(a - snaps[i]) <= 1) return snaps[i] % 360;
+    }
+    return 0;
+  }
+
+  /**
+   * One editor point (top-left pt, DISPLAY/rotated space) → pdf-lib point
+   * (bottom-left pt, UNROTATED MediaBox space). W/H are the unrotated size.
+   */
+  function mapPoint(x, y, W, H, rot) {
+    switch (normRot(rot)) {
+      case 90: return { x: y, y: x };
+      case 180: return { x: W - x, y: y };
+      case 270: return { x: W - y, y: H - x };
+      default: return { x: x, y: H - y };
+    }
+  }
+
+  /** Editor rect → pdf-lib rect {x, y, width, height} (w/h swap for 90/270). */
+  function mapRect(r, W, H, rot) {
+    var x0 = +r.x || 0, y0 = +r.y || 0;
+    var w = Math.max(0, +r.w || 0), h = Math.max(0, +r.h || 0);
+    var a = mapPoint(x0, y0, W, H, rot), b = mapPoint(x0 + w, y0 + h, W, H, rot);
+    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+  }
+
+  /**
+   * Same-size test for apply-to-all: two UNROTATED page sizes within tol pt.
+   * Unknown sizes never block a cover (thumbnails may still be rendering).
+   */
+  function sameSize(a, b, tol) {
+    if (!a || !b) return true;
+    var t = tol == null ? 1 : +tol;
+    return Math.abs(a.w - b.w) <= t && Math.abs(a.h - b.h) <= t;
+  }
+
+  /**
+   * Export gate: covers stamped from a different-sized template (c.pw/c.ph)
+   * never touch this page — it stays byte-identical. Direct-drawn covers
+   * (no stamp) always apply: they were drawn on this exact page.
+   */
+  function filterLiveCovers(list, sizeWH, tol) {
+    var t = tol == null ? 1.5 : +tol;
+    return (list || []).filter(function (c) {
+      return !(c && c.pw && !sameSize({ w: c.pw, h: c.ph }, sizeWH, t));
+    });
+  }
+
   /** Any cover list holding a 'pixel' region forces that page to rasterize. */
   function hasRaster(covers) {
     for (var i = 0; i < (covers || []).length; i++) {
@@ -132,9 +190,12 @@
    * Draw the VECTOR covers of one page onto a pdf-lib page object.
    * The page must already be the right size (copied original); 'pixel'
    * covers are SKIPPED here (their page is rasterized instead).
+   * pageW/pageH are the UNROTATED MediaBox size; rotation is the page's
+   * /Rotate angle — without it every cover on a rotated scan lands 90°
+   * off the stamp (or fully off the page: the "nothing is masked" bug).
    * Returns how many covers were drawn.
    */
-  function applyVectorCovers(page, covers, pageH) {
+  function applyVectorCovers(page, covers, pageW, pageH, rotation) {
     var drawn = 0;
     for (var i = 0; i < (covers || []).length; i++) {
       var c = covers[i];
@@ -142,12 +203,12 @@
       var col = hexToRgb01(c.color);
       var opt = { color: rgb(col[0], col[1], col[2]), opacity: Math.max(0, Math.min(1, c.opacity == null ? 1 : +c.opacity)) };
       if (c.type === 'rect') {
-        var r = flipRect(c, pageH);
+        var r = mapRect(c, pageW, pageH, rotation);
         if (r.width < 0.5 || r.height < 0.5) continue;
         page.drawRectangle({ x: r.x, y: r.y, width: r.width, height: r.height, color: opt.color, opacity: opt.opacity });
         drawn++;
       } else if (c.type === 'ellipse') {
-        var e = flipRect(c, pageH);
+        var e = mapRect(c, pageW, pageH, rotation);
         if (e.width < 0.5 || e.height < 0.5) continue;
         page.drawEllipse({
           x: e.x + e.width / 2, y: e.y + e.height / 2,
@@ -158,8 +219,9 @@
       } else if (c.type === 'brush') {
         var dots = brushCircles(c.points, c.radius);
         for (var k = 0; k < dots.length; k++) {
+          var mp = mapPoint(dots[k].x, dots[k].y, pageW, pageH, rotation);
           page.drawCircle({
-            x: dots[k].x, y: pageH - dots[k].y,
+            x: mp.x, y: mp.y,
             size: dots[k].r, color: opt.color, opacity: opt.opacity
           });
         }
@@ -217,6 +279,11 @@
     hexToRgb255: hexToRgb255,
     rgb255ToHex: rgb255ToHex,
     flipRect: flipRect,
+    normRot: normRot,
+    mapPoint: mapPoint,
+    mapRect: mapRect,
+    sameSize: sameSize,
+    filterLiveCovers: filterLiveCovers,
     hasRaster: hasRaster,
     brushCircles: brushCircles,
     pixelateRegion: pixelateRegion,

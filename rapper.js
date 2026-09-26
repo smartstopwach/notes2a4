@@ -49,7 +49,7 @@ var recent = [];
 var uid = 1;
 
 var SWATCHES = ['#ffffff', '#f8fafc', '#fef3c7', '#12172b', '#000000', '#b91c1c', '#1d4ed8', '#15803d'];
-var BUILD = 'rapper/2';
+var BUILD = 'rapper/3';
 
 function status(html) { statusEl.innerHTML = html; }
 function pageCovers(p) { return covers[p] || (covers[p] = []); }
@@ -184,9 +184,17 @@ async function renderPage() {
   var page = await pdf.getPage(cur);
   if (my !== renderToken) return;
   var vp0 = page.getViewport({ scale: 1 });
-  pageSizes[cur] = { w: vp0.width, h: vp0.height };
-  var avail = Math.max(220, boxEl.clientWidth - 40);
-  fitScale = avail / vp0.width;
+  /* stored UNROTATED (MediaBox space): apply-to-all compares real page sizes,
+     rotation is handled separately at export, per page */
+  var pa0 = ((page.rotate || 0) % 360 + 360) % 360;
+  var swap0 = (pa0 > 45 && pa0 < 135) || (pa0 > 225 && pa0 < 315);
+  pageSizes[cur] = swap0 ? { w: vp0.height, h: vp0.width } : { w: vp0.width, h: vp0.height };
+  var availW = Math.max(220, boxEl.clientWidth - 40);
+  /* the WHOLE page must be visible without scrolling — fitting width alone left
+     a tall page spilling far below the fold, miserable on a small screen */
+  var boxH = document.body.classList.contains('rp-focus') ? boxEl.clientHeight : (+window.innerHeight || 800) * 0.7;
+  var availH = Math.max(240, boxH - 44);
+  fitScale = Math.min(availW / vp0.width, availH / vp0.height);
   var scale = fitScale * zoom;
   /* keep canvases sane on huge sheets / deep zoom */
   var maxPx = 3600;
@@ -347,7 +355,9 @@ async function buildThumbs() {
     try {
       var page = await pdf.getPage(q);
       var vp0 = page.getViewport({ scale: 1 });
-      pageSizes[q] = { w: vp0.width, h: vp0.height };
+      var paT = ((page.rotate || 0) % 360 + 360) % 360;
+      var swapT = (paT > 45 && paT < 135) || (paT > 225 && paT < 315);
+      pageSizes[q] = swapT ? { w: vp0.height, h: vp0.width } : { w: vp0.width, h: vp0.height };
       var s = 96 / vp0.width;
       var vp = page.getViewport({ scale: s });
       var cv = figs[q].cv;
@@ -615,15 +625,26 @@ $('rp-all').addEventListener('click', function () {
   }
   pushUndo();
   var tmpl = RC.cloneCovers(found.covers);
+  var tSize = pageSizes[found.page];
+  var skipped = 0;
   for (var p = 1; p <= pageCount; p++) {
     if (p === found.page) continue;
-    covers[p] = RC.cloneCovers(tmpl).map(function (c) { c.id = 'c' + (uid++); return c; });
+    /* a page that is not the template's size keeps no covers: the same point
+       values would land somewhere meaningless on it — it stays untouched */
+    if (tSize && pageSizes[p] && !RC.sameSize(tSize, pageSizes[p], 1)) { skipped++; continue; }
+    covers[p] = RC.cloneCovers(tmpl).map(function (c) {
+      c.id = 'c' + (uid++);
+      c.pw = tSize ? tSize.w : 0; c.ph = tSize ? tSize.h : 0;   // template size stamp (export re-checks)
+      return c;
+    });
   }
   drawOverlay(); refreshBadges(); refreshSummary();
   var msg = 'Applied <b>' + tmpl.length + ' cover' + (tmpl.length > 1 ? 's' : '') + '</b> from page ' +
     found.page + ' to all <b>' + pageCount + ' pages</b>';
+  if (skipped) msg += ' · <b>' + skipped + ' skipped</b> (different page size — left untouched)';
   status(msg + '. <span class="cov">Undo:</span> Ctrl+Z');
-  toast('✓ ' + tmpl.length + ' cover' + (tmpl.length > 1 ? 's' : '') + ' → all ' + pageCount + ' pages');
+  toast('✓ ' + tmpl.length + ' cover' + (tmpl.length > 1 ? 's' : '') + ' → all ' + pageCount + ' pages' +
+    (skipped ? ' (' + skipped + ' skipped: different size)' : ''));
 });
 $('rp-clear1').addEventListener('click', function () {
   if (!pdf || !(covers[cur] || []).length) return;
@@ -709,20 +730,26 @@ async function doExport() {
   try {
     var out = await PDFLib.PDFDocument.load(origBytes.slice(0));
     var pages = out.getPages();
-    var rasterCount = 0;
+    var rasterCount = 0, baked = 0, skippedTotal = 0;
     for (var p = 1; p <= pageCount; p++) {
       var list = covers[p] || [];
       if (!list.length) continue;
+      var pg = pages[p - 1];
+      var size = pg.getSize();
+      var rot = RC.normRot(pg.getRotation().angle);
+      /* covers stamped from a different-sized template never touch this page */
+      var live = RC.filterLiveCovers(list, { w: size.width, h: size.height }, 1.5);
+      skippedTotal += list.length - live.length;
+      baked += live.length;
+      if (!live.length) continue;
       var el = (performance.now() - t0) / 1000;
       var eta = p > 1 ? (' · ~' + Math.ceil(el / (p - 1) * (pageCount - p + 1)) + 's left') : '';
       setProg(2 + 96 * (p - 1) / pageCount, 'page ' + p + ' / ' + pageCount + '…', eta);
-      var pg = pages[p - 1];
-      var size = pg.getSize();
-      if (RC.hasRaster(list)) {
+      if (RC.hasRaster(live)) {
         rasterCount++;
-        await bakeRasterPage(out, pg, p, list, dpi, size, fmt);
+        await bakeRasterPage(out, pg, p, live, dpi, size, fmt, rot);
       }
-      RC.applyVectorCovers(pg, list, size.height);
+      RC.applyVectorCovers(pg, live, size.width, size.height, rot);
       if (p % 2 === 0) await new Promise(function (r) { setTimeout(r, 0); });
     }
     setProg(98, 'saving…', '');
@@ -735,13 +762,15 @@ async function doExport() {
     setProg(100, 'done in ' + secs + 's', '');
     progEl.hidden = true;
     resEl.hidden = false;
-    rsCovEl.textContent = n;
+    rsCovEl.textContent = baked;
     rsMetaEl.textContent = pageCount + ' pages · ' +
-      (rasterCount ? rasterCount + ' re-rendered at ' + dpi + ' dpi (' + fmt.toUpperCase() + ')' : 'all covers vector — text stays selectable');
+      (rasterCount ? rasterCount + ' re-rendered at ' + dpi + ' dpi (' + fmt.toUpperCase() + ')' : 'all covers vector — text stays selectable') +
+      (skippedTotal ? ' · ' + skippedTotal + ' skipped (different-sized pages left untouched)' : '');
     dlEl.href = url; dlEl.download = name;
     openEl.href = url;
-    status('Wrapped <b>' + n + ' covers</b> into <b>' + esc(name) + '</b>.');
-    toast('✓ <b>' + n + ' covers</b> baked into ' + esc(name));
+    status('Wrapped <b>' + baked + ' covers</b> into <b>' + esc(name) + '</b>.' +
+      (skippedTotal ? ' <b>' + skippedTotal + ' skipped</b> (different page size).' : ''));
+    toast('✓ <b>' + baked + ' covers</b> baked into ' + esc(name));
     resEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (err) {
     console.error('[rapper] export', err);
@@ -757,7 +786,7 @@ function setProg(pct, msg, eta) {
   petaEl.textContent = eta || '';
 }
 /* re-render one page at export dpi, mosaic its pixel regions, embed over the original */
-async function bakeRasterPage(out, pg, p, list, dpi, size, fmt) {
+async function bakeRasterPage(out, pg, p, list, dpi, size, fmt, rot) {
   var page = await pdf.getPage(p);
   var scale = dpi / 72;
   var vp = page.getViewport({ scale: scale });
@@ -775,9 +804,24 @@ async function bakeRasterPage(out, pg, p, list, dpi, size, fmt) {
     }, c.block || 12);
   });
   cx.putImageData(img, 0, 0);
+  /* the render is display-rotated; the PDF needs it unrotated — right-angle
+     canvas turns are pixel-exact, no blur, no smoothing */
+  var src = cv;
+  if (rot === 90 || rot === 180 || rot === 270) {
+    var rc = document.createElement('canvas');
+    if (rot === 180) { rc.width = cv.width; rc.height = cv.height; }
+    else { rc.width = cv.height; rc.height = cv.width; }
+    var rx = rc.getContext('2d');
+    rx.imageSmoothingEnabled = false;
+    if (rot === 90) { rx.translate(0, rc.height); rx.rotate(-Math.PI / 2); }
+    else if (rot === 270) { rx.translate(rc.width, 0); rx.rotate(Math.PI / 2); }
+    else { rx.translate(rc.width, rc.height); rx.rotate(Math.PI); }
+    rx.drawImage(cv, 0, 0);
+    src = rc;
+  }
   var blob = await new Promise(function (res) {
-    if (fmt === 'png') cv.toBlob(res, 'image/png');
-    else cv.toBlob(res, 'image/jpeg', 0.93);
+    if (fmt === 'png') src.toBlob(res, 'image/png');
+    else src.toBlob(res, 'image/jpeg', 0.93);
   });
   var ab = await blob.arrayBuffer();
   var emb = fmt === 'png' ? await out.embedPng(ab) : await out.embedJpg(ab);

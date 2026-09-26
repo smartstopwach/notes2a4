@@ -4,7 +4,7 @@
    to bottom-left. These checks pin that contract, the brush interpolation, the
    pixelate routine and the real overlay output (ops must exist in the PDF). */
 import { createRequire } from 'node:module';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, rgb, degrees } from 'pdf-lib';
 
 const require = createRequire(import.meta.url);
 const RC = require('../rapper-core.js');
@@ -140,7 +140,7 @@ console.log('\n=== THE RAPPER core ===\n');
     { type: 'ellipse', x: 50, y: 600, w: 120, h: 60, color: '#12172b', opacity: 0.5 },
     { type: 'brush', points: [[10, 10], [60, 10]], radius: 8, color: '#000000', opacity: 1 },
     { type: 'pixel', x: 0, y: 0, w: 50, h: 50 }          // raster-only: must be skipped here
-  ], 841.89);
+  ], 595.28, 841.89, 0);
   check('applyVectorCovers: draws 3 vector covers, skips the pixel one', n === 3, 'drew=' + n);
   const bytes = await doc.save({ useObjectStreams: false });
   /* pdf-lib Flate-compresses content streams, so inflate them before looking
@@ -170,9 +170,56 @@ console.log('\n=== THE RAPPER core ===\n');
   check('overlay: page size unchanged after covers', near(back.getPage(0).getWidth(), 595.28, 0.01) &&
     near(back.getPage(0).getHeight(), 841.89, 0.01));
   check('overlay: degenerate rect (0 size) is skipped, not drawn', (() => {
-    const d2 = RC.applyVectorCovers(pg, [{ type: 'rect', x: 1, y: 1, w: 0, h: 0, color: '#fff' }], 841.89);
+    const d2 = RC.applyVectorCovers(pg, [{ type: 'rect', x: 1, y: 1, w: 0, h: 0, color: '#fff' }], 595.28, 841.89, 0);
     return d2 === 0;
   })());
+}
+
+/* ---------- 7b) rotation mapping: editor display space → MediaBox space ----------
+   Viewers rotate the page clockwise by /Rotate, so on a rotated scan the old
+   flipRect math put every cover 90° off the stamp (or fully off the page). */
+{
+  const W = 600, H = 800, r = { x: 10, y: 20, w: 100, h: 50 };
+  const m0 = RC.mapRect(r, W, H, 0);
+  check('mapRect: 0° == flipRect', m0.x === 10 && m0.y === 730 && m0.width === 100 && m0.height === 50,
+    JSON.stringify(m0));
+  const m90 = RC.mapRect(r, W, H, 90);
+  check('mapRect: 90° swaps axes (x←y, w←h)', m90.x === 20 && m90.y === 10 && m90.width === 50 && m90.height === 100,
+    JSON.stringify(m90));
+  const m180 = RC.mapRect(r, W, H, 180);
+  check('mapRect: 180° mirrors x', m180.x === 490 && m180.y === 20 && m180.width === 100 && m180.height === 50,
+    JSON.stringify(m180));
+  const m270 = RC.mapRect(r, W, H, 270);
+  check('mapRect: 270° swaps + mirrors', m270.x === 530 && m270.y === 690 && m270.width === 50 && m270.height === 100,
+    JSON.stringify(m270));
+  const f90 = RC.mapRect({ x: 0, y: 0, w: 800, h: 600 }, W, H, 90);
+  const f270 = RC.mapRect({ x: 0, y: 0, w: 800, h: 600 }, W, H, 270);
+  const f180 = RC.mapRect({ x: 0, y: 0, w: 600, h: 800 }, W, H, 180);
+  check('mapRect: full display rect → full MediaBox at every rotation',
+    f90.x === 0 && f90.y === 0 && f90.width === 600 && f90.height === 800 &&
+    f270.x === 0 && f270.y === 0 && f270.width === 600 && f270.height === 800 &&
+    f180.x === 0 && f180.y === 0 && f180.width === 600 && f180.height === 800);
+  const c90 = RC.mapPoint(0, 0, W, H, 90), c270 = RC.mapPoint(0, 0, W, H, 270);
+  check('mapPoint: display top-left → unrotated corner pins the turn direction',
+    c90.x === 0 && c90.y === 0 && c270.x === 600 && c270.y === 800,
+    '90°→(' + c90.x + ',' + c90.y + ') 270°→(' + c270.x + ',' + c270.y + ')');
+  check('normRot: quarter turns snap, exotic angles fall back to 0',
+    RC.normRot(90) === 90 && RC.normRot(-90) === 270 && RC.normRot(360) === 0 &&
+    RC.normRot(450) === 90 && RC.normRot(91) === 90 && RC.normRot(45) === 0 && RC.normRot(undefined) === 0);
+}
+
+/* ---------- 7c) mixed page sizes: different-sized pages stay untouched ---------- */
+{
+  check('sameSize: equal + near-equal match, different does not',
+    RC.sameSize({ w: 595.28, h: 841.89 }, { w: 595.28, h: 841.89 }, 1) === true &&
+    RC.sameSize({ w: 595.28, h: 841.89 }, { w: 595.6, h: 841.5 }, 1) === true &&
+    RC.sameSize({ w: 595.28, h: 841.89 }, { w: 400, h: 300 }, 1) === false);
+  check('sameSize: unknown size never blocks a cover', RC.sameSize(null, { w: 1, h: 1 }) === true);
+  const stamped = { type: 'rect', x: 1, y: 1, w: 9, h: 9, pw: 595.28, ph: 841.89 };
+  const drawn = { type: 'rect', x: 1, y: 1, w: 9, h: 9 };
+  check('filterLiveCovers: mismatched stamp skipped, matching stamp + drawn kept',
+    RC.filterLiveCovers([stamped, drawn], { w: 400, h: 300 }, 1.5).length === 1 &&
+    RC.filterLiveCovers([stamped, drawn], { w: 595.28, h: 841.89 }, 1.5).length === 2);
 }
 
 /* ---------- 8) cloneCovers: snapshots are really independent ---------- */
@@ -282,6 +329,262 @@ console.log('\n=== THE RAPPER core ===\n');
   toolBtns[1].click();   /* rect */
   check('editor boot: tool switch updates the overlay cursor state',
     byId['rp-over'] && byId['rp-over'].dataset.tool === 'rect');
+}
+
+/* ---------- 10) end-to-end: draw → apply → export lands covers in the PDF ----------
+   The real rapper.js + the real pdf-lib run in a stub DOM with a stub pdf.js.
+   This is the path that silently shipped unmasked PDFs on rotated pages. */
+{
+  const vm2 = await import('node:vm');
+  const { inflateSync } = await import('node:zlib');
+  const { readFileSync } = await import('node:fs');
+  const appSrc = readFileSync(new URL('../rapper.js', import.meta.url), 'utf8');
+  const coreSrc = readFileSync(new URL('../rapper-core.js', import.meta.url), 'utf8');
+  const ONEPX = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+  const mkCtx = () => ({
+    fillStyle: '', strokeStyle: '', lineWidth: 1, globalAlpha: 1, imageSmoothingEnabled: true,
+    setTransform() {}, fillRect() {}, clearRect() {}, beginPath() {}, rect() {}, arc() {}, ellipse() {},
+    moveTo() {}, lineTo() {}, fill() {}, stroke() {}, save() {}, restore() {}, setLineDash() {},
+    drawImage() {}, fillText() {}, strokeRect() {}, strokeText() {}, clip() {},
+    translate() {}, rotate() {}, scale() {}, transform() {}, resetTransform() {},
+    quadraticCurveTo() {}, bezierCurveTo() {}, measureText: () => ({ width: 10 }),
+    getImageData(x, y, w, h) { return { data: new Uint8ClampedArray(w * h * 4).fill(255), width: w, height: h }; },
+    putImageData() {},
+  });
+  function mkEl(tag, id, box) {
+    const listeners = {};
+    const el = {
+      tagName: String(tag || 'div').toUpperCase(), children: [], style: {}, dataset: {},
+      hidden: false, disabled: false, value: '', textContent: '', innerHTML: '', width: 300, height: 150,
+      clientWidth: id === 'rp-box' ? box.w : 100, clientHeight: id === 'rp-box' ? 600 : 100,
+      files: null,
+      classList: { _s: new Set(),
+        add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); },
+        toggle(c, f) { if (f === undefined) { if (this._s.has(c)) this._s.delete(c); else this._s.add(c); } else if (f) this._s.add(c); else this._s.delete(c); },
+        contains(c) { return this._s.has(c); } },
+      getContext: () => mkCtx(),
+      addEventListener(t, f) { (listeners[t] = listeners[t] || []).push(f); },
+      removeEventListener() {},
+      appendChild(c) {
+        if (c && c.tagName === 'FRAGMENT') this.children.push(...c.children);
+        else this.children.push(c);
+        return c;
+      },
+      setAttribute() {}, getAttribute() { return null; },
+      querySelector(sel) {
+        const need = String(sel || '').split('.').filter(Boolean);
+        const walk = (kids) => {
+          for (const k of kids) {
+            if (need.every((c) => k.classList && k.classList._s.has(c))) return k;
+            const f = walk(k.children || []);
+            if (f) return f;
+          }
+          return null;
+        };
+        return walk(el.children);
+      },
+      querySelectorAll() { return []; },
+      getBoundingClientRect: () => ({ left: 0, top: 0,
+        width: el.style.width ? parseFloat(el.style.width) : 100,
+        height: el.style.height ? parseFloat(el.style.height) : 100 }),
+      click() { (listeners.click || []).forEach((f) => f({ stopPropagation() {}, preventDefault() {} })); },
+      scrollIntoView() {}, focus() {}, remove() {},
+      setPointerCapture() {}, releasePointerCapture() {},
+      toBlob(cb, type) { cb(new Blob([ONEPX], { type: type || 'image/png' })); },
+      _listeners: listeners, _id: id,
+    };
+    let _cls = '';
+    Object.defineProperty(el, 'className', {
+      get: () => _cls,
+      set: (v) => { _cls = String(v); el.classList._s = new Set(_cls.split(/\s+/).filter(Boolean)); },
+    });
+    return el;
+  }
+
+  /* pages: [{w, h, rotate?}] in UNROTATED MediaBox pt; the stub pdf.js exposes
+     the rotated viewport exactly like the real one, rotations included */
+  async function bootRapper(pages, realBytes, opts = {}) {
+    const box = { w: opts.boxW || 800 };
+    const byId = {};
+    const toolBtns = ['select', 'rect', 'ellipse', 'brush', 'pixel', 'drop'].map((t) => {
+      const b = mkEl('button', null, box); b.dataset.t = t; return b;
+    });
+    const winL = {};
+    const canvases = [];
+    let captured = null;
+    const fakePdf = {
+      numPages: pages.length,
+      getPage: async (n) => {
+        const pg = pages[n - 1];
+        const swap = pg.rotate === 90 || pg.rotate === 270;
+        return {
+          rotate: pg.rotate || 0,
+          getViewport: ({ scale }) => ({
+            width: (swap ? pg.h : pg.w) * scale, height: (swap ? pg.w : pg.h) * scale,
+          }),
+          render: () => ({ promise: Promise.resolve() }),
+          cleanup() {},
+        };
+      },
+    };
+    const sandbox = {
+      console: { log: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+      performance, setTimeout, clearTimeout,
+      devicePixelRatio: 1, innerHeight: opts.innerH || 900,
+      PDFLib: { PDFDocument, rgb }, Blob,
+      URL: { createObjectURL: (b) => { captured = b; return 'blob:t'; }, revokeObjectURL() {} },
+      pdfjsLib: { getDocument: () => ({ promise: Promise.resolve(fakePdf) }), GlobalWorkerOptions: {} },
+      document: {
+        getElementById: (id) => byId[id] || (byId[id] = mkEl('div', id, box)),
+        createElement: (tag) => {
+          const e = mkEl(tag, null, box);
+          if (String(tag).toLowerCase() === 'canvas') canvases.push(e);
+          return e;
+        },
+        createDocumentFragment: () => mkEl('fragment', null, box),
+        querySelector: (sel) => (sel.includes('rpfmt') ? { value: 'png' } : (sel.includes('rpdpi') ? { value: '200' } : null)),
+        querySelectorAll: (sel) => (sel === '.rp-toolbtn' ? toolBtns : []),
+        addEventListener() {},
+        body: mkEl('body', null, box),
+      },
+      addEventListener(t, f) { (winL[t] = winL[t] || []).push(f); },
+    };
+    sandbox.window = sandbox;
+    vm2.createContext(sandbox);
+    vm2.runInContext(coreSrc, sandbox, { filename: 'rapper-core.js' });
+    vm2.runInContext(appSrc, sandbox, { filename: 'rapper.js' });
+    const tick = (ms = 5) => new Promise((r) => setTimeout(r, ms));
+    const waitFor = async (fn, label) => {
+      for (let i = 0; i < 400; i++) { if (fn()) return; await tick(5); }
+      throw new Error('e2e timeout: ' + label);
+    };
+    const u8 = realBytes instanceof Uint8Array ? realBytes : new Uint8Array(realBytes);
+    const ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+    byId['rp-file'].files = [{ name: 't.pdf', type: 'application/pdf', arrayBuffer: async () => ab.slice(0) }];
+    byId['rp-file']._listeners.change.forEach((f) => f());
+    await waitFor(() => String(byId['rp-pc'].textContent) === String(pages.length), 'load');
+    await tick(250);   // thumbnails (page sizes for apply-to-all) settle
+    return {
+      byId, toolBtns, canvases,
+      draw(toolIdx, x1, y1, x2, y2) {
+        toolBtns[toolIdx].click();
+        const over = byId['rp-over'];
+        over._listeners.pointerdown.forEach((f) => f({ clientX: x1, clientY: y1, pointerId: 1, preventDefault() {} }));
+        over._listeners.pointermove.forEach((f) => f({ clientX: x2, clientY: y2, pointerId: 1, preventDefault() {} }));
+        (winL.pointerup || []).forEach((f) => f({}));
+      },
+      click: (id) => byId[id].click(),
+      export: async () => {
+        byId['rp-go'].click();
+        await waitFor(() => byId['rp-result'].hidden === false, 'export');
+        return Buffer.from(await captured.arrayBuffer());
+      },
+    };
+  }
+
+  async function realDoc(pages) {
+    const d = await PDFDocument.create();
+    pages.forEach((p) => {
+      const pg = d.addPage([p.w, p.h]);
+      if (p.rotate) pg.setRotation(degrees(p.rotate));
+    });
+    return d.save();
+  }
+  function contentOf(outBytes) {
+    const buf = Buffer.from(outBytes);
+    const lat = buf.toString('latin1');
+    let content = '', i = 0;
+    while ((i = lat.indexOf('stream', i)) >= 0) {
+      let st = i + 6;
+      if (lat[st] === '\r') st++;
+      if (lat[st] === '\n') st++;
+      const en = lat.indexOf('endstream', st);
+      if (en < 0) break;
+      try { content += inflateSync(buf.subarray(st, en)).toString('latin1') + '\n'; } catch (e) {}
+      i = en + 9;
+    }
+    return { content, lat };
+  }
+  function cmOps(content) {
+    const out = [];
+    const re = /1 0 0 1 ([\d.]+) ([\d.]+) cm/g;
+    let m;
+    while ((m = re.exec(content))) out.push([+m[1], +m[2]]);
+    return out;
+  }
+  const hasNear = (ops, x, y, tol) => ops.some(([ox, oy]) => Math.abs(ox - x) <= tol && Math.abs(oy - y) <= tol);
+
+  /* A: plain 2-pager — draw on page 1, apply to all, both pages masked */
+  {
+    const pages = [{ w: 595.28, h: 841.89 }, { w: 595.28, h: 841.89 }];
+    const r = await bootRapper(pages, await realDoc(pages));
+    r.draw(1, 100, 100, 200, 150);
+    r.click('rp-all');
+    check('e2e: draw + apply-to-all covers both pages', r.byId['rp-covchip'].textContent === '2 covers',
+      r.byId['rp-covchip'].textContent);
+    const out = await r.export();
+    const sc = parseFloat(r.byId['rp-over'].style.width) / 595.28;
+    const ex = 100 / sc, ey = 841.89 - 100 / sc - 50 / sc;
+    const ops = cmOps(contentOf(out).content);
+    const hits = ops.filter(([ox, oy]) => Math.abs(ox - ex) <= 0.6 && Math.abs(oy - ey) <= 0.6).length;
+    check('e2e: exported PDF masks BOTH pages at the drawn spot', hits === 2,
+      'expect (' + ex.toFixed(1) + ',' + ey.toFixed(1) + ') ×2 · ops ' + JSON.stringify(ops));
+  }
+  /* B: rotated scan — the 90° cover must land on the stamp, not off-page */
+  {
+    const pages = [{ w: 595.28, h: 841.89, rotate: 90 }];
+    const r = await bootRapper(pages, await realDoc(pages));
+    r.draw(1, 600, 100, 700, 140);
+    const out = await r.export();
+    const sc = parseFloat(r.byId['rp-over'].style.width) / 841.89;   // display width = H
+    const ex = 100 / sc, ey = 600 / sc;   // 90°: X←y, Y←x
+    const ops = cmOps(contentOf(out).content);
+    check('e2e: rotated page masks the stamp (90°-mapped, not off-page)',
+      hasNear(ops, ex, ey, 0.6), 'expect (' + ex.toFixed(1) + ',' + ey.toFixed(1) + ') · ops ' + JSON.stringify(ops));
+  }
+  /* C: mixed sizes — the small page stays untouched */
+  {
+    const pages = [{ w: 595.28, h: 841.89 }, { w: 400, h: 300 }];
+    const r = await bootRapper(pages, await realDoc(pages));
+    r.draw(1, 100, 100, 200, 150);
+    r.click('rp-all');
+    check('e2e: apply-to-all skips the different-sized page (and says so)',
+      r.byId['rp-covchip'].textContent === '1 cover' && r.byId['rp-status'].innerHTML.includes('skipped'),
+      r.byId['rp-covchip'].textContent);
+    const out = await r.export();
+    /* pdf-lib brackets every rect with two 0,0 transforms — count real placements */
+    const ops = cmOps(contentOf(out).content).filter(([x, y]) => x !== 0 || y !== 0);
+    check('e2e: only the matching page is masked (small page byte-clean)', ops.length === 1,
+      'ops ' + JSON.stringify(ops));
+  }
+  /* D: blur on a rotated page — the embedded bitmap is counter-rotated */
+  {
+    const pages = [{ w: 595.28, h: 841.89, rotate: 90 }];
+    const r = await bootRapper(pages, await realDoc(pages));
+    r.draw(4, 100, 100, 200, 150);
+    const out = await r.export();
+    const dims = r.canvases.map((c) => c.width + 'x' + c.height);
+    const expW = Math.round(595.28 * 200 / 72), expH = Math.round(841.89 * 200 / 72);
+    check('e2e: blur page embeds counter-rotated (unrotated dims, not display dims)',
+      dims.includes(expW + 'x' + expH), dims.join(','));
+    const { lat } = contentOf(out);
+    check('e2e: blur page really embeds a raster image', /\/XObject/.test(lat) && /\/Image/.test(lat));
+  }
+  /* E: small screens — the whole page fits the box, no scroll-spill */
+  {
+    const pages = [{ w: 595.28, h: 841.89 }];
+    const r = await bootRapper(pages, await realDoc(pages), { boxW: 800, innerH: 900 });
+    const ow = parseFloat(r.byId['rp-over'].style.width), oh = parseFloat(r.byId['rp-over'].style.height);
+    check('e2e: tall page fits the box height (whole page visible, no scroll)',
+      oh <= 590 && oh > 400, Math.round(ow) + 'x' + Math.round(oh));
+  }
+  {
+    const pages = [{ w: 841.89, h: 595.28 }];
+    const r = await bootRapper(pages, await realDoc(pages), { boxW: 800, innerH: 900 });
+    const ow = parseFloat(r.byId['rp-over'].style.width);
+    check('e2e: wide page still fits the box width', Math.abs(ow - 760) < 2, Math.round(ow) + 'px');
+  }
 }
 
 console.log('\n' + (fail === 0 ? 'ALL RAPPER CHECKS PASSED' : fail + ' RAPPER CHECK(S) FAILED') + '  (' + pass + ' passed)\n');
