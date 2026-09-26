@@ -138,6 +138,7 @@
               <label><input type="radio" name="ivstyle" id="stylePure"><span>Pure B&amp;W · no greys</span></label>
             <label><input type="radio" name="ivstyle" id="styleWhite"><span>White paper</span></label>
               <label><input type="radio" name="ivstyle" id="styleVec"><span>True negative · exact vector &#10003;</span></label>
+              <label><input type="radio" name="ivstyle" id="stylePureVec"><span>Pure B&amp;W · exact vector &#10003;</span></label>
             </div>
             <ul class="note-list">
               <li><b>True negative</b> — every colour flips to its opposite (blue → orange), like a photo negative.</li>
@@ -147,6 +148,7 @@
               <li><b>White paper</b> — paper is left exactly as it is; every colour and every dark mark becomes solid black ink. A <i>dark area</i> on the page (a blackboard panel, a dark slide) is flipped inside itself, so that board prints as white paper with black ink on it — the same as what a photo-negative tool does to it. This is the style for a page that is already white: Black ink and Pure B&amp;W leave such a page untouched.</li>
               <li><b>Light pages</b> — pages that are already white pass through untouched; they are never flipped.</li>
               <li><b>True negative · exact vector</b> — the same 255 − c flip, but applied to the PDF itself: every pixel matches a dedicated inversion tool exactly, text stays text (sharp + selectable), the file stays small, and it finishes instantly (no rasterising, so Sharpness / Encoding do not apply).</li>
+              <li><b>Pure B&amp;W · exact vector</b> — every paint becomes solid black or paper white inside the PDF itself: text stays text, hairlines stay razor-sharp at 500% zoom, light pages pass through untouched (no rasterising, so Sharpness / Encoding do not apply; photos inside pass through).</li>
             </ul>
           </div>
           <label class="sw psRow" id="keepColourRow" hidden><input type="checkbox" id="optKeepColour"><span class="track"><span class="thumb"></span></span><span class="sw-t"><b>Keep colours</b><em>blue / green / yellow highlights stay their own colour — flipped to a dark printable ink instead of solid black</em></span></label>
@@ -307,13 +309,13 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=51"></script>
+<script src="session.js?v=52"></script>
 <script src="converter.js?v=42"></script>
 <script src="raster-client.js?v=42"></script>
 <script src="enhance.js?v=44"></script>
 <script src="review.js?v=45"></script>
 <script src="overlays.js?v=6"></script>
-<script src="app-invert.js?v=51"></script>
+<script src="app-invert.js?v=52"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

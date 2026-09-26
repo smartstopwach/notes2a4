@@ -1025,6 +1025,16 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
     r.document.getElementById('dpiFld').hidden === true && r.document.getElementById('fmtFld').hidden === true);
 }
 
+/* ---------- Invert Lab: pure B&W exact vector ---------- */
+{
+  const r = await runApp('invert purevec', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('stylePureVec').checked = true; }
+  });
+  check('invert · pure b&w vector: no runtime error', !/^failed/.test(r.status), r.status);
+  check('invert · pure b&w vector: raster-only rows hidden', r.document.getElementById('dpiFld').hidden === true && r.document.getElementById('fmtFld').hidden === true);
+  check('invert · pure b&w vector: result names the mode', /pure b&w \(exact vector/.test(r.printed), r.printed.slice(0, 120));
+}
+
 /* ---------- Invert Lab: raster negative (SSAA path) ---------- */
 {
   const r = await runApp('invert raster', 'app-invert.js', 'invert.html', {

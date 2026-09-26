@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 20;
+  var BUILD = 21;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -33,7 +33,7 @@
   var opt = {
     dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'),
     fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
-    styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'), styleWhite: $('styleWhite'),
+    styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'), styleWhite: $('styleWhite'), stylePureVec: $('stylePureVec'),
     dpiFld: $('dpiFld'), fmtFld: $('fmtFld'), skipRow: $('skipRow'),
     keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow'),
     ovLines: $('ivLines'), ovLineOpts: $('ivLineOpts'),
@@ -99,6 +99,7 @@
      itself (blend mode Difference), so the output matches a dedicated inversion
      tool pixel for pixel while text stays vector */
   function vectorMode() { return !!(opt.styleVec && opt.styleVec.checked); }
+  function pureVecMode() { return !!(opt.stylePureVec && opt.stylePureVec.checked); }
   function keepColour() { return !!(opt.keepColour && opt.keepColour.checked); }
   function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !(opt.styleInk.checked || (opt.styleWhite && opt.styleWhite.checked)); }  // pure/white mode: no colour row (nothing grey or coloured is left to keep)
   /* ---------- overlays: ruled lines + dotted separator + sheet numbers ---------- */
@@ -152,6 +153,7 @@
   }
   function styleName() {
     if (vectorMode()) return 'true negative (exact vector)';
+    if (pureVecMode()) return 'pure b&w (exact vector)';
     return whiteMode() ? 'white paper (colour → black)' : pureMode() ? 'pure b&w' : (inkMode() ? 'black ink' : 'true negative');
   }
   function invSig() {
@@ -159,7 +161,7 @@
   }
   function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); syncVectorRows(); syncOverlayRows(); if (opt.band2up && opt.band4up && opt.band2up.checked && opt.band4up.checked) opt.band4up.checked = false; }
   function syncVectorRows() {
-    var v = vectorMode();
+    var v = vectorMode() || pureVecMode();
     if (opt.dpiFld) opt.dpiFld.hidden = v;          // Sharpness / Encoding / Skip blank are raster-only
     if (opt.fmtFld) opt.fmtFld.hidden = v;
     if (opt.skipRow) opt.skipRow.hidden = v;
@@ -203,6 +205,27 @@
       if (flip) { d[p] = 255 - r2; d[p + 1] = 255 - g2; d[p + 2] = 255 - b2; }
     }
     return blank;
+  }
+  function pvDarkEnough(idat) {              // same >= 0.5 dark rule as the raster engine (every 4th pixel)
+    var d = idat.data, dk = 0, tt = 0;
+    for (var i = 0; i < d.length; i += 16) {
+      if ((d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114) / 1000 <= 90) dk++;
+      tt++;
+    }
+    return tt > 0 && dk / tt >= 0.5;
+  }
+  function thresholdPureBW(idat, skip) {     // hard 0/255 like vector + raster pure (alpha kept, band kept)
+    var d = idat.data, w = idat.width;
+    var hasR = !!(skip && skip.r1 > skip.r0), hasC = !!(skip && skip.c1 > skip.c0);
+    for (var p = 0; p < d.length; p += 4) {
+      if (hasR || hasC) {
+        var px = p >> 2, y = (px / w) | 0;
+        if (hasR && y >= skip.r0 && y < skip.r1) continue;
+        if (hasC && px - y * w >= skip.c0 && px - y * w < skip.c1) continue;
+      }
+      var v = (d[p] * 299 + d[p + 1] * 587 + d[p + 2] * 114) / 1000 <= 90 ? 255 : 0;
+      d[p] = d[p + 1] = d[p + 2] = v;
+    }
   }
 
   /* ---------- file input ---------- */
@@ -341,6 +364,10 @@
         { band: 192, progress: function () { return NotesFX.uiPaint(); } }, whiteMode());   // banded: previews stay snappy too
       if (psk && OV.whitenBand) OV.whitenBand(hm.imageData.data, c2.width, c2.height, psk);
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
+    } else if (pureVecMode()) {              // pure b&w vector: threshold like the output (dark → paper,
+      var idv = x2.getImageData(0, 0, c2.width, c2.height);   // bright → ink); light pages pass through untouched
+      if (pvDarkEnough(idv)) thresholdPureBW(idv, psk);
+      x2.putImageData(idv, 0, 0);
     } else {
       var id = x2.getImageData(0, 0, c2.width, c2.height);
       invertPixels(id, true, psk);
@@ -669,6 +696,26 @@
   /* ---------- convert ---------- */
   goBtn.addEventListener('click', convert);
 
+  async function detectDarkPages() {         // per-page light passthrough for vector pure-b&w (>= 0.5 dark)
+    var flags = [], cv = document.createElement('canvas');
+    for (var i = 1; i <= state.pages; i++) {
+      var pgd = await state.doc.getPage(i);
+      var w1 = pgd.getViewport({ scale: 1 }).width;
+      await renderPageScaled(i, 48 / Math.max(1, w1), cv);
+      var cxd = cv.getContext('2d'), dk = 0, tt = 0;
+      for (var ry = 0; ry < cv.height; ry += 16) {
+        var dd = cxd.getImageData(0, ry, cv.width, Math.min(16, cv.height - ry)).data;
+        for (var b = 0; b < dd.length; b += 4) {
+          if ((dd[b] * 299 + dd[b + 1] * 587 + dd[b + 2] * 114) / 1000 <= 90) dk++;
+          tt++;
+        }
+      }
+      flags.push(tt > 0 && dk / tt >= 0.5);
+      pgd.cleanup();
+    }
+    return flags;
+  }
+
   async function convert() {
     if (!state.bytes || goBtn.disabled) return;
     goBtn.disabled = true; result.hidden = true; state.running = true;
@@ -726,11 +773,13 @@
     }, 1000);
     var skip = opt.skip.checked, n = state.pages;
     setStep(0.02, 'measuring pages…', '');
-    if (vectorMode()) {                              // exact vector 255 - c: instant, no raster, no checkpoints
+    var pureVec = pureVecMode();
+    if (vectorMode() || pureVec) {                   // exact vector: instant, no raster, no checkpoints
       try {
-        pStatus.textContent = 'applying 255 - c to the PDF itself…';
+        pStatus.textContent = pureVec ? 'applying pure b&w to the PDF itself…' : 'applying 255 - c to the PDF itself…';
         if (sessReady()) { await NotesSession.runClear(); }
-        var vres = await NotesConverter.vectorNegative(state.bytes);
+        var vres = pureVec ? await NotesConverter.vectorPureBW(state.bytes, await detectDarkPages())
+                           : await NotesConverter.vectorNegative(state.bytes);
         var bOnV = bandMode(), bandVs = null, bandVN = 0;   // 2-up/4-up: detect the white band(s) per page
         if (bOnV && OV && OV.unflipBands) {
           bandVs = [];
@@ -765,18 +814,19 @@
         $('rsIn').textContent = n;
         $('rsOut').textContent = n;
         $('rsMeta').textContent = n + (n === 1 ? ' page' : ' pages') +
-          ' inverted 1:1 · true negative (exact vector, 255 − c per channel) · text stays sharp and selectable · sizes unchanged · ' +
+          ' inverted 1:1 · ' + (pureVec ? 'pure b&w (exact vector, black-or-white per paint) · text stays sharp and selectable · sizes unchanged · '
+                                        : 'true negative (exact vector, 255 − c per channel) · text stays sharp and selectable · sizes unchanged · ') +
           fmtMB(state.bytes.length) + ' → ' + fmtMB(vres.bytes.length) + ' · ' + bandKeptNote(bandVN, n, bOnV && bandVs) +
           ((performance.now() - t0) / 1000).toFixed(2) + 's · 100% on-device' + ovNote(ovoV);
         renderThumbsSoon(vres.bytes, n);               // previews are background work
         result.hidden = false;                          // …so the Download button shows NOW
         if (prevCard) prevCard.classList.remove('busy');
-        if (window.NotesFX) NotesFX.toast(n + ' pages flipped · exact 255 − c · vector kept');
+        if (window.NotesFX) NotesFX.toast(n + (pureVec ? ' pages remapped · pure b&w · vector kept' : ' pages flipped · exact 255 − c · vector kept'));
         result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         setTimeout(function () { pBox.hidden = true; }, 900);
         if (sessReady()) {
           var metaV = $('rsMeta').textContent;
-          NotesSession.saveResult({ bytes: vres.bytes, name: dlV.download, kind: 'vector-negative', info: { in: n, out: n, meta: metaV } }).then(function () {
+          NotesSession.saveResult({ bytes: vres.bytes, name: dlV.download, kind: pureVec ? 'vector-purebw' : 'vector-negative', info: { in: n, out: n, meta: metaV } }).then(function () {
             sessNote('Saved · ' + n + ' page' + (n === 1 ? '' : 's') + ' flipped (exact vector) — reloading keeps this result.');
           });
         }
@@ -944,10 +994,10 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.keepColour].forEach(function (el) {
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec, opt.keepColour].forEach(function (el) {
     if (el) el.addEventListener('change', schedulePreview);
   });
-  [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite].forEach(function (el) {
+  [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec].forEach(function (el) {
     if (el) el.addEventListener('change', function () { syncKeepColourRow(); syncVectorRows(); });
   });
   [opt.ovLines, opt.ovSep, opt.ovNums].forEach(function (el) {

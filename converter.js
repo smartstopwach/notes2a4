@@ -18,6 +18,9 @@
 
   var PDFDocument = PDFLib.PDFDocument;
   var StandardFonts = PDFLib.StandardFonts;
+  var PDFName = PDFLib.PDFName;
+  var PDFArray = PDFLib.PDFArray;
+  var PDFRef = PDFLib.PDFRef;
   var rgb = PDFLib.rgb;
   var LineCapStyle = PDFLib.LineCapStyle;
 
@@ -892,6 +895,247 @@
   }
 
   /**
+   * Vector Pure B&W — threshold every painted colour to solid black or paper
+   * white WITHOUT rasterising: text stays text (selectable), thin strokes stay
+   * razor-sharp at any zoom (500% included). Same luma rule as raster Pure B&W
+   * (PS_DARK_LUM): dark paint → white paper, everything else → black ink.
+   *
+   * Only colour operators are rewritten (DeviceGray/RGB/CMYK + SC/SCN while one
+   * of those spaces is current, q/Q tracked); paths, text, line widths,
+   * transforms, images, shadings and patterns pass through untouched.
+   * remap[i] === false (a light page — the caller applies the same >= 0.5 dark
+   * rule as the raster engine) leaves page i byte-identical, as do pages whose
+   * streams cannot be parsed (valid output first). Multi-stream pages are
+   * concatenated per the spec; Flate-decoded via the platform inflater.
+   * Returns { bytes, pages, size, remapped, passed }.
+   */
+  var VP_CS_ARITY = { DeviceGray: 1, DeviceRGB: 3, DeviceCMYK: 4 };
+  function vpLuma255(vals, arity) {
+    var r, g, b;
+    if (arity === 1) { r = g = b = vals[0]; }
+    else if (arity === 3) { r = vals[0]; g = vals[1]; b = vals[2]; }
+    else {
+      r = 1 - Math.min(1, vals[0] + vals[3]); g = 1 - Math.min(1, vals[1] + vals[3]); b = 1 - Math.min(1, vals[2] + vals[3]);
+    }
+    return (0.299 * r + 0.587 * g + 0.114 * b) * 255;
+  }
+  /* Tokenise a decoded content stream. Strings, hex strings, arrays and dicts
+     stay verbatim (no re-escaping can corrupt them); each inline image's bytes
+     (ID…EI) travel as one opaque blob so binary can never be misread as ops. */
+  function vpTokenize(src) {
+    var toks = [], i = 0, n = src.length, inImg = false;
+    function isWs(c) { return c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\0'; }
+    function pushWord() {
+      var w = i, c = src[i];
+      if (c === '/') { i++; while (i < n && /[A-Za-z0-9._#-]/.test(src[i])) i++; }
+      else if (/[0-9.+\-]/.test(c)) { while (i < n && /[0-9.eE+\-]/.test(src[i])) i++; }
+      else { while (i < n && /[A-Za-z0-9*_'"]/.test(src[i])) i++; }
+      var t = src.slice(w, i);
+      toks.push(t);
+      if (t === 'BI') inImg = true;
+      else if (t === 'ID' && inImg) {                       // raw image bytes until EI
+        if (i < n && isWs(src[i])) i++;                     // the single space after ID
+        var s = i;
+        while (i < n) {
+          if (isWs(src[i]) && src[i + 1] === 'E' && src[i + 2] === 'I' && (i + 3 >= n || isWs(src[i + 3]))) break;
+          i++;
+        }
+        toks.push({ blob: src.slice(s, i) });
+        inImg = false;
+      }
+    }
+    while (i < n) {
+      var c = src[i];
+      if (isWs(c)) { i++; continue; }
+      if (c === '%') { while (i < n && src[i] !== '\n') i++; continue; }
+      if (c === '(') {
+        var s = i, depth = 0;
+        do {
+          if (src[i] === '\\') { i += 2; continue; }
+          if (src[i] === '(') depth++;
+          else if (src[i] === ')') { depth--; if (!depth) { i++; break; } }
+          i++;
+        } while (i < n);
+        toks.push(src.slice(s, i)); continue;
+      }
+      if (c === '<' && src[i + 1] === '<') {
+        var d = i, dd = 0;
+        while (i < n) {
+          if (src[i] === '<' && src[i + 1] === '<') { dd++; i += 2; continue; }
+          if (src[i] === '>' && src[i + 1] === '>') { dd -= 1; i += 2; if (!dd) break; continue; }
+          i++;
+        }
+        toks.push(src.slice(d, i)); continue;
+      }
+      if (c === '<') {
+        var h = i;
+        while (i < n && src[i] !== '>') i++;
+        i++;
+        toks.push(src.slice(h, i)); continue;
+      }
+      if (c === '[') {
+        var a = i, ad = 0;
+        while (i < n) {
+          var ch = src[i];
+          if (ch === '[') ad++;
+          else if (ch === ']') { ad--; if (!ad) { i++; break; } }
+          else if (ch === '(') {
+            var q = i, qd = 0;
+            do {
+              if (src[q] === '\\') { q += 2; continue; }
+              if (src[q] === '(') qd++;
+              else if (src[q] === ')') { qd--; if (!qd) { q++; break; } }
+              q++;
+            } while (q < n);
+            i = q; continue;
+          }
+          i++;
+        }
+        toks.push(src.slice(a, i)); continue;
+      }
+      if (c === '/' || /[A-Za-z0-9.+\-*_'"]/.test(c)) { pushWord(); continue; }
+      i++;
+    }
+    return toks;
+  }
+  /* Rewrite only the paint colours of a decoded content stream.
+     Returns { text, changed }. Exported (as vectorPureBWContent) for tests. */
+  function vpRemapContent(src) {
+    var toks = vpTokenize(src);
+    var out = [], stack = [];
+    var csS = 'DeviceGray', csN = 'DeviceGray', saved = [];
+    var changed = false;
+    function isNum(t) { return typeof t === 'string' && /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t); }
+    function numVal(t) { var v = parseFloat(t); return v < 0 ? 0 : v > 1 ? 1 : v; }
+    function flush() { while (stack.length) out.push(stack.shift()); }
+    function allNums(list) { for (var k = 0; k < list.length; k++) if (!isNum(list[k])) return false; return true; }
+    function paintVals(list, arity) {                    // thresholded values, or null to pass through
+      if (list.length !== arity || !allNums(list)) return null;
+      var vals = list.map(numVal);
+      var w = vpLuma255(vals, arity) <= PS_DARK_LUM ? 1 : 0;   // dark → white paper, bright → black ink
+      var want = arity === 4 ? [0, 0, 0, w ? 0 : 1] : [w, w, w].slice(0, arity);
+      var same = true;
+      for (var k = 0; k < arity; k++) if (vals[k] !== want[k]) { same = false; break; }
+      return { vals: vals, want: want, same: same };
+    }
+    for (var ti = 0; ti < toks.length; ti++) {
+      var t = toks[ti];
+      if (typeof t !== 'string' || t[0] === '/' || t[0] === '(' || t[0] === '<' || t[0] === '[' || isNum(t)) {
+        stack.push(t); continue;                         // operand (or opaque blob) — emitted at the next op
+      }
+      if (t === 'q') { saved.push([csS, csN]); flush(); out.push(t); continue; }
+      if (t === 'Q') { var back = saved.pop(); if (back) { csS = back[0]; csN = back[1]; } flush(); out.push(t); continue; }
+      if (t === 'G' || t === 'g' || t === 'RG' || t === 'rg' || t === 'K' || t === 'k') {
+        var ar = (t === 'G' || t === 'g') ? 1 : (t === 'RG' || t === 'rg') ? 3 : 4;
+        var r = paintVals(stack, ar);
+        if (r && !r.same) { for (var k = 0; k < ar; k++) out.push(String(r.want[k])); stack = []; changed = true; }
+        else flush();
+        if (t === t.toUpperCase()) csS = ar === 1 ? 'DeviceGray' : ar === 3 ? 'DeviceRGB' : 'DeviceCMYK';
+        else csN = ar === 1 ? 'DeviceGray' : ar === 3 ? 'DeviceRGB' : 'DeviceCMYK';
+        out.push(t); continue;
+      }
+      if (t === 'CS' || t === 'cs') {                    // colourspace set — track, pass through
+        var sp = null;
+        if (stack.length === 1 && typeof stack[0] === 'string') {
+          if (stack[0][0] === '/') sp = stack[0].slice(1);
+          else if (stack[0][0] === '[') { var m = /^\[\s*\/([A-Za-z0-9._-]+)/.exec(stack[0]); if (m) sp = m[1]; }
+        }
+        if (sp) { if (t === 'CS') csS = sp; else csN = sp; }
+        flush(); out.push(t); continue;
+      }
+      if (t === 'SC' || t === 'SCN' || t === 'sc' || t === 'scn') {
+        var cur = (t === 'SC' || t === 'SCN') ? csS : csN;
+        var arity = VP_CS_ARITY[cur] || 0;
+        var hasName = false;
+        for (var ni = 0; ni < stack.length; ni++) if (typeof stack[ni] === 'string' && stack[ni][0] === '/') hasName = true;
+        var rr = (!hasName && arity) ? paintVals(stack, arity) : null;
+        if (rr && !rr.same) { for (var k2 = 0; k2 < arity; k2++) out.push(String(rr.want[k2])); stack = []; changed = true; }
+        else flush();
+        out.push(t); continue;
+      }
+      flush(); out.push(t);                              // every other op passes through verbatim
+    }
+    flush();
+    var parts = [];
+    for (var pi = 0; pi < out.length; pi++) parts.push(typeof out[pi] === 'string' ? out[pi] : out[pi].blob);
+    return { text: parts.join('\n'), changed: changed };
+  }
+  /* latin1 keeps every byte intact (inline images are binary — UTF-8 would mangle
+     them); the encoder is manual for the same reason, no TextEncoder anywhere. */
+  function vpLatin1Decode(u8) {
+    if (typeof TextDecoder !== 'undefined') {
+      try { return new TextDecoder('latin1').decode(u8); } catch (e) {}
+    }
+    var s = '';
+    for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+    return s;
+  }
+  function vpLatin1Encode(s) {
+    var b = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 255;
+    return b;
+  }
+  async function vpInflate(u8) {                          // FlateDecode via the platform
+    var ds = new DecompressionStream('deflate');
+    var w = ds.writable.getWriter();
+    w.write(u8); w.close();
+    var chunks = [], total = 0, r = ds.readable.getReader();
+    for (;;) {
+      var step = await r.read();
+      if (step.done) break;
+      chunks.push(step.value); total += step.value.length;
+    }
+    var out = new Uint8Array(total), o = 0;
+    for (var ci = 0; ci < chunks.length; ci++) { out.set(chunks[ci], o); o += chunks[ci].length; }
+    return out;
+  }
+  /* Read a page's content (single stream or array — concatenated per the spec),
+     decoding Flate. Anything exotic throws and the page passes through. */
+  async function vpReadPageContents(doc, pg) {
+    var rawC = pg.node.get(PDFName.of('Contents'));
+    if (!rawC) return '';
+    var refs = [];
+    if (rawC instanceof PDFArray) { for (var ai = 0; ai < rawC.size(); ai++) refs.push(rawC.get(ai)); }
+    else refs.push(rawC);
+    var parts = [];
+    for (var ri = 0; ri < refs.length; ri++) {
+      var st = (refs[ri] instanceof PDFRef) ? doc.context.lookup(refs[ri]) : refs[ri];
+      if (!st || !st.dict || typeof st.getContents !== 'function') throw new Error('unreadable content stream');
+      var filter = st.dict.get(PDFName.of('Filter'));
+      var fname = filter ? String(filter) : null;
+      var bytes = st.getContents();
+      if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
+      if (fname === '/FlateDecode') {
+        if (typeof DecompressionStream === 'undefined') throw new Error('no inflate available');
+        bytes = await vpInflate(bytes);
+      } else if (fname) throw new Error('unsupported content filter ' + fname);
+      parts.push(vpLatin1Decode(bytes));
+    }
+    return parts.join('\n');
+  }
+  async function vectorPureBW(bytes, remap) {
+    var doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    var pages = doc.getPages();
+    if (!pages.length) throw new Error('This PDF has no pages');
+    var remapped = 0, passed = 0;
+    for (var i = 0; i < pages.length; i++) {
+      if (remap && remap[i] === false) { passed++; continue; }
+      try {
+        var pg = pages[i];
+        var r = vpRemapContent(await vpReadPageContents(doc, pg));
+        if (!r.changed) { passed++; continue; }
+        var ref = doc.context.nextRef();
+        doc.context.assign(ref, doc.context.stream(vpLatin1Encode(r.text), doc.context.obj({})));
+        pg.node.set(PDFName.of('Contents'), ref);
+        remapped++;
+      } catch (e) { passed++; }                          // unparseable pages stay valid, untouched
+    }
+    var saved = await doc.save({ useObjectStreams: true });
+    var first = pages[0].getMediaBox ? pages[0].getMediaBox() : { width: pages[0].getWidth(), height: pages[0].getHeight() };
+    return { bytes: saved, pages: pages.length, size: { w: first.width, h: first.height }, remapped: remapped, passed: passed };
+  }
+
+  /**
    * Pack pre-rendered page images (Print-Saver output) using the SAME layout engine.
    * items: array in page order — { bytes: Uint8Array (PNG), w, h } or null (blank).
    */
@@ -952,6 +1196,8 @@
     numText: numText,
     numPlace: numPlace,
     vectorNegative: vectorNegative,
+    vectorPureBW: vectorPureBW,
+    vectorPureBWContent: vpRemapContent,
     sepLines: sepLines,
     /* `pieces` is the raw map machinery, so worker-raster.js can run the
        identically-mathed map off-thread (and the tests can prove the two agree) */

@@ -643,5 +643,72 @@ console.log('5e) hq-map:');
   check('negMap: area-average then flip (mixed block -> mid grey)', Math.abs(r.imageData.data[0] - 128) <= 2, `v=${r.imageData.data[0]}`);
 }
 
+/* ---------- vector Pure B&W: threshold without rasterising (sharp at 500%) ---------- */
+{
+  const { inflateSync } = await import('node:zlib');
+  const { PDFName, PDFArray, PDFRef } = await import('pdf-lib');
+  async function buildVecPDF() {
+    const { rgb, grayscale, cmyk, StandardFonts } = await import('pdf-lib');
+    const d = await PDFDocument.create();
+    const p1 = d.addPage([300, 300]);
+    p1.drawRectangle({ x: 0, y: 150, width: 300, height: 150, color: rgb(0.05, 0.08, 0.2) });
+    const f = await d.embedFont(StandardFonts.Helvetica);
+    p1.drawText('Thin 0.5pt', { x: 20, y: 200, size: 12, font: f, color: rgb(1, 1, 1) });
+    p1.drawLine({ start: { x: 10, y: 100 }, end: { x: 290, y: 100 }, thickness: 0.5, color: grayscale(0.5) });
+    p1.drawLine({ start: { x: 10, y: 50 }, end: { x: 290, y: 50 }, thickness: 1.5, color: cmyk(0, 0, 0, 1) });
+    const p2 = d.addPage([300, 300]);
+    p2.drawText('Light page', { x: 20, y: 200, size: 12, font: f, color: grayscale(0) });
+    return d.save({ useObjectStreams: true });
+  }
+  function readPageText(doc, i) {          // decoded content of page i (test-only inflate)
+    const pg = doc.getPages()[i];
+    let raw = pg.node.get(PDFName.of('Contents'));
+    const refs = (raw instanceof PDFArray) ? [...Array(raw.size()).keys()].map((k) => raw.get(k)) : [raw];
+    return refs.map((r) => {
+      const st = (r instanceof PDFRef) ? doc.context.lookup(r) : r;
+      let b = st.getContents();
+      if (String(st.dict.get(PDFName.of('Filter'))) === '/FlateDecode') b = inflateSync(Buffer.from(b));
+      return Buffer.from(b).toString('latin1');
+    }).join('\n');
+  }
+  const srcBytes = await buildVecPDF();
+  const srcDoc = await PDFDocument.load(srcBytes);
+
+  /* pure-string mapping rules first (no PDF IO) */
+  {
+    const r = NC.vectorPureBWContent('0.05 0.08 0.2 rg 0 0 300 150 re f 1 1 1 RG 0 G 0.5 g 0 0 0 1 k 0 0 0 0 k');
+    check('vectorPureBW: navy->white, white->black, black->white, grey->black, cmyk black->white, cmyk white->black',
+      r.changed && /1\n1\n1\nrg/.test(r.text) && /0\n0\n0\nRG/.test(r.text) && /1\nG/.test(r.text) && /0\ng/.test(r.text) &&
+      /0\n0\n0\n0\nk\n0\n0\n0\n1\nk/.test(r.text), r.text.slice(0, 60));
+  }
+  {
+    const r = NC.vectorPureBWContent('q /DeviceRGB CS 0.1 0.1 0.1 SC Q /P1 SCN 5 w BI /W 1 /H 1 /BPC 1 ID \x00\xff EI 0.9 g');
+    check('vectorPureBW: SC in DeviceRGB remaps, Pattern SCN + inline image pass through, q/Q restores space',
+      r.changed && /1\n1\n1\nSC/.test(r.text) && /\/P1 SCN/.test(r.text.replace(/\n/g, ' ')) &&
+      /BI/.test(r.text) && /EI/.test(r.text) && /0\ng/.test(r.text));
+  }
+
+  /* end to end: dark page remapped, light page byte-identical */
+  {
+    const v = await NC.vectorPureBW(srcBytes, [true, false]);
+    const out = await PDFDocument.load(v.bytes);
+    const t1 = readPageText(out, 0), t2 = readPageText(out, 1);
+    const s1 = readPageText(srcDoc, 0), s2 = readPageText(srcDoc, 1);
+    const colorOps = [...t1.matchAll(/([0-9.eE+-]+)\s+([0-9.eE+-]+\s+){0,3}(G|RG|K|g|rg|k|SC|SCN|sc|scn)(?![A-Za-z])/g)];
+    const vals = [];
+    colorOps.forEach((m) => m[0].trim().split(/\s+/).slice(0, -1).forEach((x) => vals.push(parseFloat(x))));
+    check('vectorPureBW: remapped count + sizes/pages unchanged',
+      v.remapped === 1 && v.passed === 1 && v.pages === 2 && out.getPageCount() === 2 &&
+      Math.abs(v.size.w - 300) < 0.01 && Math.abs(v.size.h - 300) < 0.01, `remapped ${v.remapped} passed ${v.passed}`);
+    check('vectorPureBW: every paint value is exactly 0 or 1 (no greys left)',
+      vals.length > 4 && vals.every((x) => x === 0 || x === 1), vals.length + ' values');
+    check('vectorPureBW: text + thin widths survive (selectable, sharp at 500%)',
+      /<5468696E20302E357074>\s*Tj/.test(t1.replace(/\n/g, ' ')) && /0\.5\s+w/.test(t1) && /1\.5\s+w/.test(t1));
+    check('vectorPureBW: light page byte-identical (same rule as raster pure)', t2 === s2 && s1 !== t1);
+    check('vectorPureBW: stays pure vector (no embedded raster images)',
+      !/\/Subtype\s*\/Image/.test(Buffer.from(v.bytes).toString('latin1')));
+  }
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);
