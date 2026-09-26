@@ -366,6 +366,109 @@
     return counts;
   }
 
+  /**
+   * Canvas-2D twin of drawPage for the live preview (big page-1 flip, strip
+   * tiles and HD zoom all route through paintInvertPreview). Uses the SAME
+   * geometry helpers (ruleRowsBand, sepLines, numText, numPlace) so the
+   * preview can never drift from the exported PDF; only the stroking is
+   * canvas. info: {i, n, w, h (pt), s (px per pt), bandOnly, band (pt)}.
+   * Hairlines get a 0.75px floor so they stay visible on small tiles.
+   * Returns {lines, seps, nums} with the same counting as drawPage.
+   */
+  function drawPreview(ctx, opts, info) {
+    var o = normOpts(opts);
+    var counts = { lines: 0, seps: 0, nums: 0 };
+    var w = info.w, h = info.h, s = info.s || 1;
+    if (!(w > 0 && h > 0) || !ctx) return counts;
+    function X(x) { return x * s; }
+    function Y(y) { return (h - y) * s; }   // bottom-left pt → top-left px
+    function css(r, g, b) { return 'rgb(' + Math.round(r * 255) + ',' + Math.round(g * 255) + ',' + Math.round(b * 255) + ')'; }
+    function stroke(x1, y1, x2, y2, thPt, color, dashPt, phasePt, round) {
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(0.75, thPt * s);
+      if (dashPt) ctx.setLineDash(dashPt.map(function (v) { return v * s; }));
+      if (phasePt) ctx.lineDashOffset = phasePt * s;
+      ctx.lineCap = round ? 'round' : 'butt';
+      ctx.beginPath();
+      ctx.moveTo(X(x1), Y(y1));
+      ctx.lineTo(X(x2), Y(y2));
+      ctx.stroke();
+      ctx.restore();
+    }
+    if (o.lines) {
+      var sty = o.lines;
+      var band = info.bandOnly ? (info.band || 'skip') : null;
+      var R = band === 'skip' ? { x0: 0, x1: 0, ys: [], gy0: 0, gy1: 0 }
+        : band ? ruleRowsBand(w, h, o.lineStep, o.lineMargin, band)
+               : ruleRows(w, h, o.lineStep, o.lineMargin);
+      var col = (sty === 'grid' || sty === 'dots' || sty === 'graph') ? css(0.74, 0.78, 0.84) : css(0.66, 0.7, 0.76);
+      var vcol = css(0.74, 0.78, 0.84), vheavy = css(0.58, 0.63, 0.71);
+      if (sty !== 'columns' && sty !== 'staff') {
+        for (var li = 0; li < R.ys.length; li++) {
+          var th = 0.6, lc = col, da = null, dp = 0, rd = false;
+          if (sty === 'dashed') { th = 0.7; da = [6, 4]; }
+          else if (sty === 'dotted') { th = 1.5; rd = true; da = [0.1, 4.5]; }
+          else if (sty === 'grid' || sty === 'graph') { th = 0.45; }
+          else if (sty === 'dots') { th = 1.5; rd = true; da = [0.1, o.lineStep]; dp = o.lineStep / 2; }
+          if (sty === 'graph' && li % 5 === 0) { th = 0.9; lc = vheavy; }
+          stroke(R.x0, R.ys[li], R.x1, R.ys[li], th, lc, da, dp, rd);
+          counts.lines++;
+        }
+      }
+      if ((sty === 'grid' || sty === 'graph' || sty === 'columns') && R.ys.length) {
+        var vj = 1;
+        for (var vx = R.x0 + o.lineStep; vx < R.x1 - o.lineStep / 2; vx += o.lineStep, vj++) {
+          var heavy = (sty === 'graph' && vj % 5 === 0);
+          stroke(vx, R.gy0, vx, R.gy1,
+            (sty === 'columns') ? 0.6 : (heavy ? 0.9 : 0.45),
+            (sty === 'columns') ? css(0.66, 0.7, 0.76) : (heavy ? vheavy : vcol), null, 0, false);
+          counts.lines++;
+        }
+      }
+      if (sty === 'margin' && R.ys.length) {
+        var mx = R.x0 + 0.16 * (R.x1 - R.x0);
+        stroke(mx, R.gy0, mx, R.gy1, 0.9, css(0.78, 0.42, 0.46), null, 0, false);
+        counts.lines++;
+      }
+      if (sty === 'cornell' && R.ys.length) {
+        var cxx = R.x0 + 0.3 * (R.x1 - R.x0), sy = R.gy0 + 0.24 * (R.gy1 - R.gy0);
+        stroke(cxx, sy, cxx, R.gy1, 0.85, vheavy, null, 0, false);
+        stroke(R.x0, sy, R.x1, sy, 0.85, vheavy, null, 0, false);
+        counts.lines += 2;
+      }
+      if (sty === 'staff') {
+        var p = o.lineStep / 4.5;
+        for (var si = 0; si < R.ys.length; si++) {
+          for (var k = 0; k < 5; k++) {
+            stroke(R.x0, R.ys[si] - k * p, R.x1, R.ys[si] - k * p, 0.5, css(0.62, 0.66, 0.73), null, 0, false);
+            counts.lines++;
+          }
+        }
+      }
+    }
+    var segs = sepLines(w, h, o.sep);
+    for (var gi = 0; gi < segs.length; gi++) {
+      stroke(segs[gi].x1, segs[gi].y1, segs[gi].x2, segs[gi].y2, 1.1, css(0, 0, 0), [0.9, 3.2], 0, true);
+      counts.seps++;
+    }
+    if (o.nums) {
+      var txt = numText(info.i || 0, info.n || 1, o);
+      var size = o.numSize;
+      ctx.save();
+      ctx.font = (size * s) + 'px Helvetica, Arial, sans-serif';
+      ctx.fillStyle = css(0.45, 0.48, 0.53);
+      ctx.textBaseline = 'alphabetic';
+      var tw = size * s * 0.55 * txt.length;
+      try { if (ctx.measureText) tw = ctx.measureText(txt).width; } catch (e) {}
+      var pl = numPlace(o.numPos, w, h, tw / s, size, 24);
+      ctx.fillText(txt, X(pl.x), Y(pl.y));
+      ctx.restore();
+      counts.nums++;
+    }
+    return counts;
+  }
+
   return {
     LINE_STYLES: LINE_STYLES,
     NUM_POS: NUM_POS,
@@ -381,6 +484,7 @@
     unflipBands: unflipBands,
     whitenBand: whitenBand,
     sepLines: sepLines,
-    drawPage: drawPage
+    drawPage: drawPage,
+    drawPreview: drawPreview
   };
 });

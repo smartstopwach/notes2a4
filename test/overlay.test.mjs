@@ -425,5 +425,58 @@ function atW(d, w, x, y) { return d[(y * w + x) * 4]; }
   check('whitenBand: null/empty skip is a no-op', n === 0 && n2 === 0 && atW(d, 6, 3, 3) === 20);
 }
 
+/* ---------- 15) drawPreview: canvas twin matches the exported PDF ---------- */
+function fakeCtx2d() {
+  return {
+    strokes: [], texts: [],
+    save() {}, restore() {}, beginPath() {},
+    moveTo(x, y) { this._m = [x, y]; },
+    lineTo(x, y) { this.strokes.push({ m: this._m, l: [x, y], w: this.lineWidth, dash: this._dash || null }); },
+    stroke() {},
+    setLineDash(d) { this._dash = d; },
+    measureText(t) { return { width: t.length * 5 }; },
+    fillText(t, x, y) { this.texts.push({ t, x, y }); }
+  };
+}
+{
+  const fakePg = { drawLine() {}, drawText() {} };
+  const o = { lines: 'solid', lineStep: 25.5, lineMargin: 36, sep: 'both', nums: true, numPos: 'bc', numFmt: 'frac', numStart: 1, numSize: 8 };
+  const c1 = OV.drawPage(fakePg, o, { i: 2, n: 20, w: 595, h: 842, font: { widthOfTextAtSize: () => 30 } });
+  const c2 = OV.drawPreview(fakeCtx2d(), o, { i: 2, n: 20, w: 595, h: 842, s: 0.5 });
+  check('drawPreview: counts match drawPage exactly',
+    c1.lines === c2.lines && c1.seps === c2.seps && c1.nums === c2.nums, JSON.stringify(c2));
+}
+{
+  const bad = OV.LINE_STYLES.filter((sty) => {
+    const o = { lines: sty, lineStep: 25.5, lineMargin: 36, sep: 'off', nums: false };
+    const a = OV.drawPage({ drawLine() {} }, o, { i: 0, n: 1, w: 595, h: 842, font: null });
+    const b = OV.drawPreview(fakeCtx2d(), o, { i: 0, n: 1, w: 595, h: 842, s: 1 });
+    return a.lines !== b.lines;
+  });
+  check('drawPreview: all 10 line styles match drawPage counts', bad.length === 0, bad.join(',') || '10/10');
+}
+{
+  const fx = fakeCtx2d();
+  const c = OV.drawPreview(fx, { lines: 'solid', lineStep: 25.5, lineMargin: 36 },
+    { i: 0, n: 1, w: 595, h: 842, s: 1, bandOnly: true, band: { axis: 'h', y0: 335, y1: 507 } });
+  const inside = fx.strokes.every((st) => st.m[1] >= 842 - 507 - 0.01 && st.m[1] <= 842 - 335 + 0.01 &&
+    st.l[1] >= 842 - 507 - 0.01 && st.l[1] <= 842 - 335 + 0.01);
+  check('drawPreview: bandOnly confines strokes to the band px rows', c.lines === 7 && inside, c.lines + ' lines');
+}
+{
+  const fx = fakeCtx2d();
+  const c = OV.drawPreview(fx, { lines: 'solid', sep: 'both', nums: true, numPos: 'bc', numFmt: 'frac', numStart: 1, numSize: 8 },
+    { i: 2, n: 20, w: 595, h: 842, s: 0.5, bandOnly: true, band: null });
+  check('drawPreview: bandOnly without band skips lines, keeps seps + label',
+    c.lines === 0 && c.seps === 2 && c.nums === 1 && fx.texts.length === 1 && fx.texts[0].t === '3 / 20',
+    JSON.stringify(c) + ' ' + (fx.texts[0] && fx.texts[0].t));
+}
+{
+  const z = OV.drawPreview(fakeCtx2d(), { lines: 'grid', sep: 'both', nums: true }, { i: 0, n: 1, w: 0, h: 0, s: 1 });
+  const zn = OV.drawPreview(null, { lines: 'solid' }, { i: 0, n: 1, w: 595, h: 842, s: 1 });
+  check('drawPreview: zero-size page and null ctx draw nothing, throw nothing',
+    z.lines === 0 && z.seps === 0 && z.nums === 0 && zn.lines === 0);
+}
+
 console.log('\n' + (fail === 0 ? 'ALL OVERLAY CHECKS PASSED' : fail + ' OVERLAY CHECK(S) FAILED') + '  (' + pass + ' passed)\n');
 process.exit(fail ? 1 : 0);

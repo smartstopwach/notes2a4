@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 17;
+  var BUILD = 18;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -344,6 +344,21 @@
       var id = x2.getImageData(0, 0, c2.width, c2.height);
       invertPixels(id, true, psk);
       x2.putImageData(id, 0, 0);
+    }
+    if (OV && OV.drawPreview) {                        // overlays show live in the preview too
+      try {
+        var ovoP = ovOpts();
+        if (ovAny(ovoP)) {
+          var sP = c2.width / Math.max(1, vp.width);
+          var bandP = null;
+          if (psk && (psk.r1 > psk.r0 || psk.c1 > psk.c0)) {
+            bandP = (psk.r1 > psk.r0)
+              ? { axis: 'h', y0: vp.height - psk.r1 / sP, y1: vp.height - psk.r0 / sP }
+              : { axis: 'v', x0: psk.c0 / sP, x1: psk.c1 / sP };
+          }
+          OV.drawPreview(x2, ovoP, { i: pageNum - 1, n: state.pages || 1, w: vp.width, h: vp.height, s: sP, bandOnly: !!pMode, band: bandP });
+        }
+      } catch (e) {}
     }
     (await state.doc.getPage(pageNum)).cleanup();
   }
@@ -934,8 +949,10 @@
     if (el) el.addEventListener('change', function () { syncKeepColourRow(); syncVectorRows(); });
   });
   [opt.ovLines, opt.ovSep, opt.ovNums].forEach(function (el) {
-    if (el) el.addEventListener('change', syncOverlayRows);
+    if (el) el.addEventListener('change', function () { syncOverlayRows(); schedulePreview(); });
   });
+  var ovlFld = $('ovlFld');                            // any overlay tweak re-renders the live preview
+  if (ovlFld) ovlFld.addEventListener('change', schedulePreview);
   /* 2-up / 4-up band-keep: mutually exclusive, and the preview re-renders */
   if (opt.band2up) opt.band2up.addEventListener('change', function () {
     if (opt.band2up.checked && opt.band4up) opt.band4up.checked = false;
