@@ -621,7 +621,56 @@
   function hqResult(acc, st) {
     return { imageData: { data: acc.out, width: acc.outW, height: acc.outH }, darkFrac: st.dark / acc.n, inverted: st.invert };
   }
-  function hqMap(big, outW, outH, auto, keepColour, pure, white) {
+  /* Bold strokes — the thin-pen fix: morphological ink dilation as a separable
+     min-filter over each channel, so dark ink grows `r` px into the paper in
+     every direction (+1 turns a 1 px hairline into a 3 px stroke). Paper —
+     bright everywhere in the window — is untouched, clamp-to-edge windows
+     never invent borders, and alpha is left alone. In-place with O(width)
+     scratch (one row plus a 2r+1 row ring), so an Ultra-HD page pays no extra
+     page-sized buffer. `r` clamps to 1..2: past that, neighbouring
+     handwriting strokes start to merge into each other. */
+  function hqBold(out, W, H, r) {
+    r = r | 0; if (r < 1) return out; if (r > 2) r = 2;
+    var W3 = W * 3, row = new Uint8Array(W3), ring = [], i, x, y, c;
+    for (i = 0; i < 2 * r + 1; i++) ring.push(new Uint8Array(W3));
+    for (y = 0; y < H; y++) {                            // horizontal pass, one scratch row
+      var o = y * W * 4;
+      for (x = 0; x < W; x++) { var q = o + x * 4; row[x * 3] = out[q]; row[x * 3 + 1] = out[q + 1]; row[x * 3 + 2] = out[q + 2]; }
+      for (x = 0; x < W; x++) {
+        var x0 = x - r < 0 ? 0 : x - r, x1 = x + r >= W ? W - 1 : x + r, q2 = o + x * 4;
+        for (c = 0; c < 3; c++) {
+          var m = 255;
+          for (var xx = x0; xx <= x1; xx++) { var v = row[xx * 3 + c]; if (v < m) m = v; }
+          out[q2 + c] = m;
+        }
+      }
+    }
+    for (i = 0; i < 2 * r + 1; i++) {                    // vertical pass: the ring holds the
+      var ry = i - r < 0 ? 0 : i - r;                    // post-pass-1 rows y-r..y+r (clamped)
+      if (ry >= H) ry = H - 1;
+      var ro = ry * W * 4, rb = ring[i];
+      for (x = 0; x < W; x++) { var qq = ro + x * 4; rb[x * 3] = out[qq]; rb[x * 3 + 1] = out[qq + 1]; rb[x * 3 + 2] = out[qq + 2]; }
+    }
+    for (y = 0; y < H; y++) {
+      var wo = y * W * 4;
+      for (x = 0; x < W; x++) {
+        var xb = x * 3, q3 = wo + x * 4;
+        for (c = 0; c < 3; c++) {
+          var m2 = 255;
+          for (i = 0; i < 2 * r + 1; i++) { var v2 = ring[i][xb + c]; if (v2 < m2) m2 = v2; }
+          out[q3 + c] = m2;
+        }
+      }
+      if (y + 1 < H) {                                  // advance: drop row y-r, read row y+r+1
+        var nr = y + r + 1; if (nr >= H) nr = H - 1;     // (still pass-1: rows past y are untouched)
+        var nb = ring.shift(), no = nr * W * 4;
+        for (x = 0; x < W; x++) { var nq = no + x * 4; nb[x * 3] = out[nq]; nb[x * 3 + 1] = out[nq + 1]; nb[x * 3 + 2] = out[nq + 2]; }
+        ring.push(nb);
+      }
+    }
+    return out;
+  }
+  function hqMap(big, outW, outH, auto, keepColour, pure, white, bold) {
     var bd = big.data, bw = big.width, bh = big.height;
     var acc = hqAcc(outW, outH);
     hqFeed(acc, bd, bw, 0, bh, bh);
@@ -630,6 +679,7 @@
     st.invert = auto ? st.dark / acc.n >= 0.5 : true;
     if (white && !st.invert) hqBoardMask(acc, st);       // dark areas of a light page
     hqFinishB(acc, 0, acc.outH, st, acc.out = new Uint8ClampedArray(acc.n * 4), keepColour, pure, white);
+    if (bold) hqBold(acc.out, acc.outW, acc.outH, bold);
     return hqResult(acc, st);
   }
   /**
@@ -638,7 +688,7 @@
    * and `hooks.progress(fraction, phase)` is awaited between bands — that await
    * is what keeps the tab interactive during a 33-page print-saver run.
    */
-  async function hqMapAsync(provider, bw, bh, outW, outH, auto, keepColour, pure, hooks, white) {
+  async function hqMapAsync(provider, bw, bh, outW, outH, auto, keepColour, pure, hooks, white, bold) {
     var acc = hqAcc(outW, outH);
     var band = (hooks && hooks.band) || 256;
     var step = hooks && hooks.progress ? hooks.progress : null;
@@ -663,6 +713,7 @@
       hqFinishB(acc, r2, r3, st, acc.out, keepColour, pure, white);
       if (step) await step(0.7 + (r3 / outH) * 0.3, 'render');
     }
+    if (bold) hqBold(acc.out, acc.outW, acc.outH, bold);
     return hqResult(acc, st);
   }
 
@@ -675,7 +726,7 @@
    * agree byte for byte). Pixels are re-read only when the rule needs the raw
    * channels (keep-colour, or a light page passing through untouched).
    */
-  async function hqMapDirectAsync(provider, W, H, auto, keepColour, pure, hooks, white) {
+  async function hqMapDirectAsync(provider, W, H, auto, keepColour, pure, hooks, white, bold) {
     var n = W * H;
     var band = (hooks && hooks.band) || 256;
     var step = hooks && hooks.progress ? hooks.progress : null;
@@ -760,6 +811,7 @@
       }
       if (step) await step(0.7 + (r3 / H) * 0.3, 'render');
     }
+    if (bold) hqBold(out, W, H, bold);
     return { imageData: { data: out, width: W, height: H }, darkFrac: dark / n, inverted: invert };
   }
 
@@ -1299,7 +1351,7 @@
     /* `pieces` is the raw map machinery, so worker-raster.js can run the
        identically-mathed map off-thread (and the tests can prove the two agree) */
     printSaver: {
-      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, hqMapDirectAsync: hqMapDirectAsync, negMap: negMap, negMapAsync: negMapAsync,
+      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, hqMapDirectAsync: hqMapDirectAsync, negMap: negMap, negMapAsync: negMapAsync, hqBold: hqBold,
       keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA,
       WHITE_HI: PS_WHITE_HI, WHITE_LO: PS_WHITE_LO,
       BOARD_FINE: PS_BOARD_FINE, BOARD_COARSE: PS_BOARD_COARSE, BOARD_SEED: PS_BOARD_SEED, BOARD_GROW: PS_BOARD_GROW,

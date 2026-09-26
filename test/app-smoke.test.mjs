@@ -1023,6 +1023,7 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   check('invert · exact vector: reports the exact-vector rule', /exact vector/.test(r.printed) && /255/.test(r.printed), r.printed.slice(0, 120));
   check('invert · exact vector: raster-only rows hidden',
     r.document.getElementById('dpiFld').hidden === true && r.document.getElementById('fmtFld').hidden === true);
+  check('invert · exact vector: bold row hidden too', r.document.getElementById('boldRow').hidden === true);
 }
 
 /* ---------- Invert Lab: pure B&W exact vector ---------- */
@@ -1071,6 +1072,18 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   const maxW = Math.max(0, ...r.calls.map((c) => c.w));
   check('invert · crisp: 600 dpi ultra-HD renders at 4961 px wide (direct, no supersample)',
     r.status === 'done' && maxW >= 4960 && maxW <= 4962, 'status ' + r.status + ' · max render ' + maxW + ' px');
+}
+
+
+/* ---------- Invert Lab: bold strokes (thin-pen fix) ---------- */
+{
+  const r = await runApp('invert bold', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('styleInk').checked = true; el('boldTgl').checked = true; }
+  });
+  check('invert \u00b7 bold strokes: toggle + slider + row exist',
+    !!r.document.getElementById('boldTgl') && !!r.document.getElementById('boldAmt') && !!r.document.getElementById('boldRow'));
+  check('invert \u00b7 bold strokes: no runtime error', !/^failed/.test(r.status), r.status);
+  check('invert \u00b7 bold strokes: result names the weight', /bold \+1/.test(r.printed), r.printed.slice(0, 120));
 }
 
 console.log('\n' + (fail === 0 ? 'ALL APP SMOKE CHECKS PASSED' : fail + ' APP SMOKE CHECK(S) FAILED') + '  (' + pass + ' passed)\n');

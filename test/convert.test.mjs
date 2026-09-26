@@ -552,6 +552,48 @@ console.log('5e) hq-map:');
       }
       check('ultra-hd: the streaming twin accepts an ASYNC provider too', ok3, '4 variants');
     }
+
+    /* bold strokes (thin-pen fix): ink dilation as a separable min-filter */
+    {
+      const PSB = NC.printSaver;
+      const sameB = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+      const provB = (big) => (y0, rows) => ({ data: big.data.subarray(y0 * big.width * 4, (y0 + rows) * big.width * 4), width: big.width, height: rows });
+      function hairline(W, H, x0, fg, bg) {
+        const d = new Uint8ClampedArray(W * H * 4);
+        for (let p = 0; p < W * H; p++) { d[p * 4] = bg; d[p * 4 + 1] = bg; d[p * 4 + 2] = bg; d[p * 4 + 3] = 255; }
+        for (let y = 0; y < H; y++) { const o = (y * W + x0) * 4; d[o] = fg; d[o + 1] = fg; d[o + 2] = fg; }
+        return { data: d, width: W, height: H };
+      }
+      const inkW = (d, W, y) => { let n = 0; for (let x = 0; x < W; x++) if (d[(y * W + x) * 4] < 128) n++; return n; };
+      const hl = hairline(9, 9, 4, 0, 255);
+      check('bold: off (0) leaves pixels untouched', sameB(PSB.hqBold(hl.data.slice(), 9, 9, 0), hl.data));
+      const bb1 = PSB.hqBold(hl.data.slice(), 9, 9, 1);
+      check('bold +1: a 1 px hairline becomes 3 px', inkW(bb1, 9, 4) === 3 && bb1[(4 * 9 + 3) * 4] === 0 && bb1[(4 * 9 + 2) * 4] === 255);
+      const bb2 = PSB.hqBold(hl.data.slice(), 9, 9, 2);
+      check('bold +2: the hairline becomes 5 px', inkW(bb2, 9, 4) === 5);
+      check('bold: clamps past +2 (9 behaves as 2)', sameB(PSB.hqBold(hl.data.slice(), 9, 9, 9), bb2));
+      check('bold: alpha channel untouched', bb1[(4 * 9 + 4) * 4 + 3] === 255);
+      const blankB = hairline(9, 9, 0, 255, 255);
+      check('bold: a blank page stays blank', sameB(PSB.hqBold(blankB.data.slice(), 9, 9, 2), blankB.data));
+      const board = hairline(32, 32, 15, 255, 8);      // thin chalk line on a dark board
+      const plainB = PSB.hqMap(board, 32, 32, true);
+      const fat1 = PSB.hqMap(board, 32, 32, true, false, false, false, 1);
+      const fat2 = PSB.hqMap(board, 32, 32, true, false, false, false, 2);
+      check('bold: hqMap(bold=1) widens the inverted stroke 1 px \u2192 3 px',
+        plainB.inverted && inkW(plainB.imageData.data, 32, 16) === 1 && inkW(fat1.imageData.data, 32, 16) === 3);
+      check('bold: hqMap(bold=2) \u2192 5 px', inkW(fat2.imageData.data, 32, 16) === 5);
+      check('bold: pure b&w fattens too',
+        inkW(PSB.hqMap(board, 32, 32, true, false, true, false, 1).imageData.data, 32, 16) === 3);
+      let vok = true, vn = 0;
+      for (const [keep, pure] of [[false, false], [true, false], [false, true]]) {
+        const o1 = PSB.hqMap(board, 32, 32, true, keep, pure, false, 1);
+        const o2 = await PSB.hqMapAsync(provB(board), 32, 32, 32, 32, true, keep, pure, { band: 7 }, false, 1);
+        const o3 = await PSB.hqMapDirectAsync(provB(board), 32, 32, true, keep, pure, { band: 7 }, false, 1);
+        vn++;
+        if (!sameB(o1.imageData.data, o2.imageData.data) || !sameB(o1.imageData.data, o3.imageData.data)) vok = false;
+      }
+      check('bold: one-shot, banded + ultra-hd twin agree byte for byte', vok && vn === 3, vn + ' variants');
+    }
   }
 
   /* --- 4-up dotted separators --- */

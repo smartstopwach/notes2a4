@@ -36,6 +36,7 @@
     styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'), styleWhite: $('styleWhite'), stylePureVec: $('stylePureVec'),
     dpiFld: $('dpiFld'), fmtFld: $('fmtFld'), skipRow: $('skipRow'),
     keepColour: $('optKeepColour'), keepColourRow: $('keepColourRow'),
+    boldTgl: $('boldTgl'), boldAmt: $('boldAmt'), boldRow: $('boldRow'), boldVal: $('boldVal'),
     ovLines: $('ivLines'), ovLineOpts: $('ivLineOpts'),
     ovSep: $('ivSep'), ovSepOpts: $('ivSepOpts'),
     ovNums: $('ivNums'), ovNumOpts: $('ivNumOpts'), ovNumStart: $('ivNumStart'),
@@ -100,6 +101,18 @@
      tool pixel for pixel while text stays vector */
   function vectorMode() { return !!(opt.styleVec && opt.styleVec.checked); }
   function pureVecMode() { return !!(opt.stylePureVec && opt.stylePureVec.checked); }
+  /* Bold strokes (thin-pen fix): toggle + weight slider. Vector styles remap the
+     PDF itself, so there are no pixels to fatten — the row hides and this is 0. */
+  function boldOn() { return !vectorMode() && !pureVecMode() && !!(opt.boldTgl && opt.boldTgl.checked); }
+  function boldAmt() {
+    if (!boldOn()) return 0;
+    var v = opt.boldAmt ? (+opt.boldAmt.value || 0) : 0;
+    return v < 1 ? 1 : v > 2 ? 2 : v;
+  }
+  function syncBoldVal() {
+    if (opt.boldAmt) opt.boldAmt.disabled = !(opt.boldTgl && opt.boldTgl.checked);
+    if (opt.boldVal) opt.boldVal.textContent = '+' + (opt.boldAmt ? (+opt.boldAmt.value || 1) : 1) + ' px';
+  }
   function keepColour() { return !!(opt.keepColour && opt.keepColour.checked); }
   function syncKeepColourRow() { if (opt.keepColourRow) opt.keepColourRow.hidden = !(opt.styleInk.checked || (opt.styleWhite && opt.styleWhite.checked)); }  // pure/white mode: no colour row (nothing grey or coloured is left to keep)
   /* ---------- overlays: ruled lines + dotted separator + sheet numbers ---------- */
@@ -157,14 +170,15 @@
     return whiteMode() ? 'white paper (colour → black)' : pureMode() ? 'pure b&w' : (inkMode() ? 'black ink' : 'true negative');
   }
   function invSig() {
-    return [Math.round(dpi()), fmt(), styleName(), keepColour() ? 1 : 0, opt.skip.checked ? 1 : 0, bandMode() || 'off'].join('|');
+    return [Math.round(dpi()), fmt(), styleName(), keepColour() ? 1 : 0, opt.skip.checked ? 1 : 0, bandMode() || 'off', 'b' + boldAmt()].join('|');
   }
-  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); syncVectorRows(); syncOverlayRows(); if (opt.band2up && opt.band4up && opt.band2up.checked && opt.band4up.checked) opt.band4up.checked = false; }
+  function syncAfterRestore() { if (opt.keepColourRow) syncKeepColourRow(); syncVectorRows(); syncBoldVal(); syncOverlayRows(); if (opt.band2up && opt.band4up && opt.band2up.checked && opt.band4up.checked) opt.band4up.checked = false; }
   function syncVectorRows() {
     var v = vectorMode() || pureVecMode();
-    if (opt.dpiFld) opt.dpiFld.hidden = v;          // Sharpness / Encoding / Skip blank are raster-only
+    if (opt.dpiFld) opt.dpiFld.hidden = v;          // Sharpness / Encoding / Skip blank / Bold are raster-only
     if (opt.fmtFld) opt.fmtFld.hidden = v;
     if (opt.skipRow) opt.skipRow.hidden = v;
+    if (opt.boldRow) opt.boldRow.hidden = v;
   }
   async function restoreResult(meta) {
     var url = await NotesSession.resultUrl();
@@ -361,7 +375,7 @@
       var hm = await NotesConverter.printSaver.hqMapAsync(
         function (y0, rows) { return x2.getImageData(0, y0, c2.width, rows); },
         c2.width, c2.height, c2.width, c2.height, true, keepColour(), pureMode(),
-        { band: 192, progress: function () { return NotesFX.uiPaint(); } }, whiteMode());   // banded: previews stay snappy too
+        { band: 192, progress: function () { return NotesFX.uiPaint(); } }, whiteMode(), boldAmt());   // banded: previews stay snappy too
       if (psk && OV.whitenBand) OV.whitenBand(hm.imageData.data, c2.width, c2.height, psk);
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else if (pureVecMode()) {              // pure b&w vector: threshold like the output (dark → paper,
@@ -371,6 +385,7 @@
     } else {
       var id = x2.getImageData(0, 0, c2.width, c2.height);
       invertPixels(id, true, psk);
+      if (boldOn() && NotesConverter.printSaver.hqBold) NotesConverter.printSaver.hqBold(id.data, c2.width, c2.height, boldAmt());
       x2.putImageData(id, 0, 0);
     }
     if (OV && OV.drawPreview) {                        // overlays show live in the preview too
@@ -572,7 +587,9 @@
        over; if it cannot, the main-thread path below does exactly the same maths. */
     /* the worker returns encoded bytes (no pixels to restore the band on), so an
        ink page with a band runs on the main thread instead — same pixel maths */
-    if (window.NotesRaster && NotesRaster.supported() && !(band && inkMode()) && !(ultra && inkMode())) {
+    /* bold ink pages stay on the main thread: the worker build of the map has no
+       bold step, and the export must match the preview pixel for pixel */
+    if (window.NotesRaster && NotesRaster.supported() && !(band && inkMode()) && !(ultra && inkMode()) && !(inkMode() && boldOn())) {
       var wmime = fmt() === 'png' ? 'image/png' : 'image/jpeg';
       try {
         if (inkMode()) {
@@ -602,6 +619,7 @@
           await NotesFX.uiPaint();
         }
         var rgba = ox2.getImageData(0, 0, W, H).data;
+        if (boldOn()) NotesConverter.printSaver.hqBold(rgba, W, H, boldAmt());
         var enc = await NotesRaster.encode({ rgba: rgba, W: W, H: H, encode: { mime: wmime, quality: 0.94, previewMax: 720 } });
         pg.cleanup();
         return { bytes: new Uint8Array(enc.bytes), blank: blank2, blankTracked: true, preview: previewOf(enc.preview) };
@@ -620,8 +638,8 @@
       /* Ultra HD maps through the 1:1 streaming twin — byte-identical maths, but
          the page never sits in memory as accumulator buffers. */
       var mapInk = ultra
-        ? function (feed) { return NotesConverter.printSaver.hqMapDirectAsync(feed, W, H, true, keepColour(), pureMode(), hook, whiteMode()); }
-        : function (feed) { return NotesConverter.printSaver.hqMapAsync(feed, bw, bh, W, H, true, keepColour(), pureMode(), hook, whiteMode()); };
+        ? function (feed) { return NotesConverter.printSaver.hqMapDirectAsync(feed, W, H, true, keepColour(), pureMode(), hook, whiteMode(), boldAmt()); }
+        : function (feed) { return NotesConverter.printSaver.hqMapAsync(feed, bw, bh, W, H, true, keepColour(), pureMode(), hook, whiteMode(), boldAmt()); };
       try {
         hm = await mapInk(stripFeed);
       } catch (err) {
@@ -668,6 +686,11 @@
           await NotesFX.uiPaint();
         }
         fat2.canvas.width = 0; fat2.canvas.height = 0;
+      }
+      if (boldOn()) {                                     // true negative: fatten the flipped page itself
+        var negId = ox.getImageData(0, 0, W, H);
+        NotesConverter.printSaver.hqBold(negId.data, W, H, boldAmt());
+        ox.putImageData(negId, 0, 0);
       }
     }
     pg.cleanup();
@@ -911,7 +934,7 @@
       $('rsIn').textContent = n;
       $('rsOut').textContent = n;
       $('rsMeta').textContent =
-        n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + styleName() + ' · sizes unchanged · ' +
+        n + (n === 1 ? ' page' : ' pages') + ' inverted 1:1 · ' + styleName() + (boldOn() ? ' · bold +' + boldAmt() : '') + ' · sizes unchanged · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(saved.length) + ' · ' + dpi() + ' dpi ' + (fmt() === 'png' ? 'PNG' : 'JPEG') +
         (skipped ? ' · ' + skipped + ' blank page' + (skipped === 1 ? '' : 's') + ' kept white' : '') +
         ((bandN + bandMiss) ? ' · white band kept on ' + bandN + '/' + n + ' pages' + (bandMiss ? ' (' + bandMiss + ' had no band)' : '') : '') + ' · ' +
@@ -993,12 +1016,17 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.dpi600, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec, opt.keepColour].forEach(function (el) {
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.dpi600, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec, opt.keepColour, opt.boldTgl, opt.boldAmt].forEach(function (el) {
     if (el) el.addEventListener('change', schedulePreview);
   });
   [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec].forEach(function (el) {
     if (el) el.addEventListener('change', function () { syncKeepColourRow(); syncVectorRows(); });
   });
+  if (opt.boldTgl) opt.boldTgl.addEventListener('change', syncBoldVal);
+  if (opt.boldAmt) {
+    opt.boldAmt.addEventListener('change', syncBoldVal);
+    opt.boldAmt.addEventListener('input', function () { syncBoldVal(); schedulePreview(); });
+  }
   [opt.ovLines, opt.ovSep, opt.ovNums].forEach(function (el) {
     if (el) el.addEventListener('change', function () { syncOverlayRows(); schedulePreview(); });
   });
@@ -1038,6 +1066,7 @@
     if (sessGo) sessGo.addEventListener('click', function () { sessGo.hidden = true; convert(); });
     var forget = $('sessForget');
     if (forget) forget.addEventListener('click', function () { sessKill(); if (window.NotesFX) NotesFX.toast('This browser no longer keeps anything'); });
+    syncBoldVal();
     NotesSession.autoSaveOpts($('workbench'), SESS_SEL);
     var savedOpts = await NotesSession.loadOpts();
     if (savedOpts && NotesSession.apply(savedOpts, NotesSession.collect(SESS_SEL))) syncAfterRestore();
