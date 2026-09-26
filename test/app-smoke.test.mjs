@@ -1028,10 +1028,31 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
 /* ---------- Invert Lab: raster negative (SSAA path) ---------- */
 {
   const r = await runApp('invert raster', 'app-invert.js', 'invert.html', {
-    setOptions: (el) => { el('styleNeg').checked = true; el('dpi150').checked = true; }
+    setOptions: (el) => { el('styleNeg').checked = true; el('dpi150').checked = true; el('dpi220').checked = false; el('dpi96').checked = false; }
   });
   check('invert · true negative (raster): no runtime error', !/^failed/.test(r.status), r.status);
   check('invert · raster: rows visible again', r.document.getElementById('dpiFld').hidden === false);
+}
+
+/* ---------- Invert Lab: crisp HD output (no supersample, no smooth-downscale) ----------
+   Thin strokes (0.5 pt) melted into grey blur when pages rendered at 2x and were
+   smoothly downscaled. Output now renders direct at the target dpi, so the widest
+   canvas pdf.js is ever asked for is exactly the output width. */
+{
+  const r = await runApp('invert crisp neg', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('styleNeg').checked = true; el('dpi150').checked = true; el('dpi220').checked = false; el('dpi96').checked = false; }
+  });
+  const maxW = Math.max(0, ...r.calls.map((c) => c.w));
+  check('invert · crisp: 150 dpi renders at most 1240 px wide (no 2x supersample)',
+    r.status === 'done' && maxW <= 1241, 'status ' + r.status + ' · max render ' + maxW + ' px');
+}
+{
+  const r = await runApp('invert crisp pure', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('stylePure').checked = true; el('dpi220').checked = true; el('dpi150').checked = false; el('dpi96').checked = false; el('fmtPng').checked = true; }
+  });
+  const maxW = Math.max(0, ...r.calls.map((c) => c.w));
+  check('invert · crisp: 220 dpi pure b&w renders at most 1819 px wide (no 2x supersample)',
+    r.status === 'done' && maxW <= 1820, 'status ' + r.status + ' · max render ' + maxW + ' px');
 }
 
 console.log('\n' + (fail === 0 ? 'ALL APP SMOKE CHECKS PASSED' : fail + ' APP SMOKE CHECK(S) FAILED') + '  (' + pass + ' passed)\n');

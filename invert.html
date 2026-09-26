@@ -154,23 +154,23 @@
             <span class="lbl">Sharpness</span>
             <div class="seg" role="radiogroup" aria-label="Output DPI">
               <label><input type="radio" name="ivdpi" id="dpi96"><span>96 · fast</span></label>
-              <label><input type="radio" name="ivdpi" id="dpi150" checked><span>150 · balanced</span></label>
-              <label><input type="radio" name="ivdpi" id="dpi220"><span>220 · max</span></label>
+              <label><input type="radio" name="ivdpi" id="dpi150"><span>150 · balanced</span></label>
+              <label><input type="radio" name="ivdpi" id="dpi220" checked><span>220 · max</span></label>
             </div>
             <ul class="note-list">
               <li><b>96 · fast</b> — quickest, smallest file; fine for reading on screen.</li>
-              <li><b>150 · balanced</b> — the default; sharp print without a heavy file.</li>
-              <li><b>220 · max</b> — crispest lines and handwriting, biggest file and slowest run.</li>
+              <li><b>150 · balanced</b> — sharp print without a heavy file.</li>
+              <li><b>220 · max</b> — the default; crispest lines and handwriting, biggest file and slowest run.</li>
             </ul>
           </div>
           <div class="fld" id="fmtFld">
             <span class="lbl">Encoding</span>
             <div class="seg" role="radiogroup" aria-label="Image encoding">
-              <label><input type="radio" name="ivfmt" id="fmtJpg" checked><span>JPEG · smaller</span></label>
-              <label><input type="radio" name="ivfmt" id="fmtPng"><span>PNG · lossless</span></label>
+              <label><input type="radio" name="ivfmt" id="fmtJpg"><span>JPEG · smaller</span></label>
+              <label><input type="radio" name="ivfmt" id="fmtPng" checked><span>PNG · lossless</span></label>
             </div>
             <ul class="note-list">
-              <li><b>PNG · lossless</b> — flat ink and text stay razor-crisp; the file is bigger.</li>
+              <li><b>PNG · lossless</b> — the default; flat ink and text stay razor-crisp — best results, biggest file.</li>
               <li><b>JPEG · smaller</b> — much lighter file with a little softness around sharp edges.</li>
               <li><b>Both</b> — pages become full-page images, so text in the result is no longer selectable.</li>
               <li><b>Never changes</b> — page sizes and page count stay exactly as in your original PDF.</li>
@@ -307,13 +307,13 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=50"></script>
+<script src="session.js?v=51"></script>
 <script src="converter.js?v=42"></script>
 <script src="raster-client.js?v=42"></script>
 <script src="enhance.js?v=44"></script>
 <script src="review.js?v=45"></script>
 <script src="overlays.js?v=6"></script>
-<script src="app-invert.js?v=50"></script>
+<script src="app-invert.js?v=51"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>

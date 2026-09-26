@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 19;
+  var BUILD = 20;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -467,18 +467,19 @@
     });
   }
 
-  /* ---------- per-page raster + invert (same SSAA guard as the print engine) ---------- */
+  /* ---------- per-page raster + invert (crisp direct render, no supersample) ---------- */
   async function rasterInverted(pgNum, sub, band) {
     var pg = await state.doc.getPage(pgNum);
     var vp1 = pg.getViewport({ scale: 1 });
     var outSc = dpi() / 72;
-    var bigW = Math.round(vp1.width * outSc * 2), bigH = Math.round(vp1.height * outSc * 2);
-    var ss = (bigW * bigH <= 34000000 && bigW <= 16000 && bigH <= 16000) ? 2 : 1;   // 2× supersample → area-averaged down
+    var ss = 1;   // crisp HD: render direct at output dpi — the old 2x supersample +
+                  // smooth downscale melted thin strokes into grey blur (best results
+                  // win over small files, always)
     var W = Math.max(2, Math.round(vp1.width * outSc)), H = Math.max(2, Math.round(vp1.height * outSc));
     var bw = Math.max(2, Math.round(vp1.width * outSc * ss)), bh = Math.max(2, Math.round(vp1.height * outSc * ss));
-    /* band-keep: the white band(s) in supersampled px for the negative paths,
-       and in output px for the ink paths (the ink engine maps white to ink on
-       dark pages, so the band is painted back to paper white afterwards) */
+    /* band-keep: the white band(s) in output px for every path (ss = 1, so the
+       negative and ink coordinates are identical; the ink engine maps white to
+       ink on dark pages, so the band is painted back to paper white afterwards) */
     var bandBh = null, bandWH = null;
     if (band && (band.h || band.v)) {
       var bk = outSc * ss;
@@ -552,9 +553,9 @@
           pg.cleanup();
           return { bytes: new Uint8Array(wi.bytes), blank: !!wi.blank, blankTracked: true, preview: previewOf(wi.preview) };
         }
-        /* plain 255 − c: the flipped page is assembled on the main thread (the
-           browser's smooth downscale is part of the look), the encode — the long
-           part for JPEG — goes to the worker */
+        /* plain 255 − c: the flipped page is assembled on the main thread at
+           output size (1:1, no downscale step), the encode — the long part for
+           JPEG — goes to the worker */
         var bigW2 = document.createElement('canvas');
         bigW2.width = bw; bigW2.height = bh;
         var bx2 = bigW2.getContext('2d', { willReadFrequently: true });
@@ -605,8 +606,8 @@
       if (bandWH && OV && OV.whitenBand) OV.whitenBand(hm.imageData.data, W, H, bandWH);
       out.getContext('2d').putImageData(new ImageData(hm.imageData.data, W, H), 0, 0);
     } else {
-      /* true negative — colours included. The flipped page is assembled at full
-         supersampled size and scaled down once at the end, exactly as before. */
+      /* true negative — colours included. The flipped page is assembled at
+         output size (ss = 1): every pixel is exactly what pdf.js rasterised. */
       var big = document.createElement('canvas');
       big.width = bw; big.height = bh;
       var bx = big.getContext('2d', { willReadFrequently: true });
