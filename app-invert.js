@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 18;
+  var BUILD = 19;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -42,6 +42,7 @@
     band2up: $('iv2up'), band4up: $('iv4up')
   };
   var OV = window.InvertOverlays || null;   // overlays.js (vector finishing touches)
+  var ovWarned = false;                     // overlay-preview errors warn once, never spam
   /* packer layout band-keep: which file layout to keep white around.
      2-up keeps the horizontal middle gap (top/bottom slides are unambiguous);
      4-up keeps the UNION of the horizontal and vertical middle bands, so both
@@ -358,7 +359,7 @@
           }
           OV.drawPreview(x2, ovoP, { i: pageNum - 1, n: state.pages || 1, w: vp.width, h: vp.height, s: sP, bandOnly: !!pMode, band: bandP });
         }
-      } catch (e) {}
+      } catch (e) { if (!ovWarned) { ovWarned = true; if (window.console && console.warn) console.warn('overlay preview skipped:', e); } }
     }
     (await state.doc.getPage(pageNum)).cleanup();
   }
