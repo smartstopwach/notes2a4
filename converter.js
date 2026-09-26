@@ -667,6 +667,103 @@
   }
 
   /**
+   * 1:1 streaming twin of hqMapAsync for Ultra-HD pages (600 dpi): identical
+   * maths and identical bytes, but O(strip) memory instead of O(page) — the
+   * accumulator buffers of hqAcc would cost ~600 MB on a 34 Mpx page. Pass 1
+   * streams the strips once (dark count + per-pixel luma/chroma); pass 2 maps
+   * with the same rules as hqFinishB (mirrored below — the tests prove the two
+   * agree byte for byte). Pixels are re-read only when the rule needs the raw
+   * channels (keep-colour, or a light page passing through untouched).
+   */
+  async function hqMapDirectAsync(provider, W, H, auto, keepColour, pure, hooks, white) {
+    var n = W * H;
+    var band = (hooks && hooks.band) || 256;
+    var step = hooks && hooks.progress ? hooks.progress : null;
+    var Ls = new Float32Array(n), maxC = new Uint8Array(n), dark = 0;
+    for (var y = 0; y < H; y += band) {
+      var y1 = Math.min(H, y + band), rows = y1 - y;
+      var px = provider(y, rows);
+      if (px && typeof px.then === 'function') px = await px;
+      var bd = px.data;
+      for (var yy = 0; yy < rows; yy++) {
+        var brow = yy * W, grow = (y + yy) * W;
+        for (var x = 0; x < W; x++) {
+          var i = (brow + x) * 4, q = grow + x;
+          var r = bd[i], g = bd[i + 1], b = bd[i + 2];
+          var L = (r * 299 + g * 587 + b * 114) / 1000 | 0;
+          Ls[q] = L;
+          maxC[q] = Math.max(r, g, b) - Math.min(r, g, b);
+          if (L <= PS_DARK_LUM) dark++;
+        }
+      }
+      if (step) await step((y1 / H) * 0.55, 'downsample');
+    }
+    var st = { Ls: Ls, dark: dark, invert: auto ? dark / n >= 0.5 : true };
+    if (white && !st.invert) hqBoardMask({ outW: W, outH: H }, st);   // needs the whole luma image
+    if (step) await step(0.7, 'measure');
+    var out = new Uint8ClampedArray(n * 4);
+    var T = PS_DARK_LUM, B = PS_BAND, lo = T - B, hi = T + B, invert = st.invert;
+    var needPx = keepColour || (!invert && !white);
+    for (var r2 = 0; r2 < H; r2 += band) {
+      var r3 = Math.min(H, r2 + band), rows2 = r3 - r2;
+      var px2 = null;
+      if (needPx) {
+        px2 = provider(r2, rows2);
+        if (px2 && typeof px2.then === 'function') px2 = await px2;
+        px2 = px2.data;
+      }
+      for (var yy2 = 0; yy2 < rows2; yy2++) {
+        var q0 = (r2 + yy2) * W, b0 = yy2 * W;
+        for (var x2 = 0; x2 < W; x2++) {
+          var q = q0 + x2, o = q * 4;
+          var L2 = Ls[q], mc = maxC[q], v;
+          if (!invert) {
+            if (white && hqBoardAt(st, q, W)) {
+              if (L2 <= lo) v = 255;
+              else if (mc > PS_CHROMA) v = 0;
+              else if (L2 >= hi) v = 0;
+              else { var tb = (L2 - lo) / (hi - lo); v = (Math.pow(1 - tb, PS_GAMMA) * 255) | 0; }
+              out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+              continue;
+            }
+            if (white) {
+              if (mc > PS_CHROMA) v = 0;
+              else if (L2 >= PS_WHITE_HI) v = 255;
+              else if (L2 <= PS_WHITE_LO) v = 0;
+              else { var aw = (L2 - PS_WHITE_LO) / (PS_WHITE_HI - PS_WHITE_LO); v = (Math.pow(aw, PS_GAMMA) * 255) | 0; }
+              out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+              continue;
+            }
+            var bi = (b0 + x2) * 4;
+            out[o] = px2[bi]; out[o + 1] = px2[bi + 1]; out[o + 2] = px2[bi + 2]; out[o + 3] = 255;
+            continue;
+          }
+          if (pure) {
+            v = L2 <= T ? 255 : 0;
+            out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+            continue;
+          }
+          if (L2 <= lo) v = 255;
+          else if (mc > PS_CHROMA) {
+            if (keepColour) {
+              var ki = (b0 + x2) * 4;
+              var kc = psKeepColour(px2[ki], px2[ki + 1], px2[ki + 2], L2);
+              out[o] = kc[0]; out[o + 1] = kc[1]; out[o + 2] = kc[2]; out[o + 3] = 255;
+              continue;
+            }
+            v = psColourInk(L2);
+          }
+          else if (L2 >= hi) v = 0;
+          else { var tt = (L2 - lo) / (hi - lo); v = (Math.pow(1 - tt, PS_GAMMA) * 255) | 0; }
+          out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+        }
+      }
+      if (step) await step(0.7 + (r3 / H) * 0.3, 'render');
+    }
+    return { imageData: { data: out, width: W, height: H }, darkFrac: dark / n, inverted: invert };
+  }
+
+  /**
    * Negative map — true colour negative (255−c) with the same SSAA area-average
    * downsample as hqMap. Colours flip to their complements (blue↔orange…),
    * dark board → light paper, nothing is forced to black.
@@ -1202,7 +1299,7 @@
     /* `pieces` is the raw map machinery, so worker-raster.js can run the
        identically-mathed map off-thread (and the tests can prove the two agree) */
     printSaver: {
-      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, negMap: negMap, negMapAsync: negMapAsync,
+      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, hqMapDirectAsync: hqMapDirectAsync, negMap: negMap, negMapAsync: negMapAsync,
       keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA,
       WHITE_HI: PS_WHITE_HI, WHITE_LO: PS_WHITE_LO,
       BOARD_FINE: PS_BOARD_FINE, BOARD_COARSE: PS_BOARD_COARSE, BOARD_SEED: PS_BOARD_SEED, BOARD_GROW: PS_BOARD_GROW,

@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 21;
+  var BUILD = 22;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -31,7 +31,7 @@
   var goBtn = $('goBtn'), pBox = $('progressBox'), pFill = $('pfill'), pStatus = $('pstatus'),
       pEta = $('pEta');
   var opt = {
-    dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'),
+    dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'), dpi600: $('dpi600'),
     fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
     styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'), styleWhite: $('styleWhite'), stylePureVec: $('stylePureVec'),
     dpiFld: $('dpiFld'), fmtFld: $('fmtFld'), skipRow: $('skipRow'),
@@ -89,7 +89,7 @@
     return 'white band kept on ' + kept + '/' + n + ' pages' + (miss ? ' (' + miss + ' had no band)' : '') + ' · ';
   }
 
-  function dpi() { return opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96); }
+  function dpi() { return (opt.dpi600 && opt.dpi600.checked) ? 600 : (opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96)); }
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
   function inkMode() { return (opt.styleInk.checked || (opt.stylePure && opt.stylePure.checked) || (opt.styleWhite && opt.styleWhite.checked)) && window.NotesConverter && NotesConverter.printSaver; }
   function pureMode() { return !!(opt.stylePure && opt.stylePure.checked); }
@@ -504,6 +504,12 @@
                   // win over small files, always)
     var W = Math.max(2, Math.round(vp1.width * outSc)), H = Math.max(2, Math.round(vp1.height * outSc));
     var bw = Math.max(2, Math.round(vp1.width * outSc * ss)), bh = Math.max(2, Math.round(vp1.height * outSc * ss));
+    /* Ultra HD (600 dpi): the ink engine switches to its 1:1 streaming twin, whose
+       memory is O(strip) instead of O(page). Absurd page sizes are refused with a
+       plain sentence instead of a frozen tab. */
+    var ultra = dpi() >= 600;
+    if (ultra && (W * H > 80000000 || W > 16000 || H > 16000))
+      throw new Error('This page is too large for 600 dpi (' + W + '×' + H + ' px) — 220 dpi handles any size.');
     /* band-keep: the white band(s) in output px for every path (ss = 1, so the
        negative and ink coordinates are identical; the ink engine maps white to
        ink on dark pages, so the band is painted back to paper white afterwards) */
@@ -566,7 +572,7 @@
        over; if it cannot, the main-thread path below does exactly the same maths. */
     /* the worker returns encoded bytes (no pixels to restore the band on), so an
        ink page with a band runs on the main thread instead — same pixel maths */
-    if (window.NotesRaster && NotesRaster.supported() && !(band && inkMode())) {
+    if (window.NotesRaster && NotesRaster.supported() && !(band && inkMode()) && !(ultra && inkMode())) {
       var wmime = fmt() === 'png' ? 'image/png' : 'image/jpeg';
       try {
         if (inkMode()) {
@@ -583,9 +589,7 @@
         /* plain 255 − c: the flipped page is assembled on the main thread at
            output size (1:1, no downscale step), the encode — the long part for
            JPEG — goes to the worker */
-        var bigW2 = document.createElement('canvas');
-        bigW2.width = bw; bigW2.height = bh;
-        var bx2 = bigW2.getContext('2d', { willReadFrequently: true });
+        var ox2 = out.getContext('2d', { willReadFrequently: true });
         var blank2 = true;
         for (var wy = 0; wy < bh; wy += stripRows) {
           var wrows = Math.min(stripRows, bh - wy);
@@ -593,15 +597,11 @@
           var wsk = stripSkip(wy, wrows);
           if (blank2) blank2 = invertPixels(wid, false, wsk);
           invertPixels(wid, true, wsk);
-          bx2.putImageData(wid, 0, wy);
+          ox2.putImageData(wid, 0, wy);
           if (sub) sub((wy + wrows) / bh, 'flip');
           await NotesFX.uiPaint();
         }
-        var ox2 = out.getContext('2d', { willReadFrequently: true });
-        ox2.imageSmoothingEnabled = true; ox2.imageSmoothingQuality = 'high';
-        ox2.drawImage(bigW2, 0, 0, W, H);
-        bigW2.width = bigW2.height = 0;
-        var rgba = out.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+        var rgba = ox2.getImageData(0, 0, W, H).data;
         var enc = await NotesRaster.encode({ rgba: rgba, W: W, H: H, encode: { mime: wmime, quality: 0.94, previewMax: 720 } });
         pg.cleanup();
         return { bytes: new Uint8Array(enc.bytes), blank: blank2, blankTracked: true, preview: previewOf(enc.preview) };
@@ -617,17 +617,22 @@
         });
       };
       var hm;
+      /* Ultra HD maps through the 1:1 streaming twin — byte-identical maths, but
+         the page never sits in memory as accumulator buffers. */
+      var mapInk = ultra
+        ? function (feed) { return NotesConverter.printSaver.hqMapDirectAsync(feed, W, H, true, keepColour(), pureMode(), hook, whiteMode()); }
+        : function (feed) { return NotesConverter.printSaver.hqMapAsync(feed, bw, bh, W, H, true, keepColour(), pureMode(), hook, whiteMode()); };
       try {
-        hm = await NotesConverter.printSaver.hqMapAsync(stripFeed, bw, bh, W, H, true, keepColour(), pureMode(), hook, whiteMode());
+        hm = await mapInk(stripFeed);
       } catch (err) {
         console.warn('strip rendering unavailable, falling back to a full-page render:', err);
         blank = true;
         var fat = await fullCanvas();
-        hm = await NotesConverter.printSaver.hqMapAsync(function (y0, rows) {
+        hm = await mapInk(function (y0, rows) {
           var id = fat.ctx.getImageData(0, y0, bw, rows);
           if (blank) blank = invertPixels(id, false, stripSkip(y0, rows));
           return id;
-        }, bw, bh, W, H, true, keepColour(), pureMode(), hook, whiteMode());
+        });
         fat.canvas.width = 0; fat.canvas.height = 0;
       }
       if (bandWH && OV && OV.whitenBand) OV.whitenBand(hm.imageData.data, W, H, bandWH);
@@ -635,9 +640,7 @@
     } else {
       /* true negative — colours included. The flipped page is assembled at
          output size (ss = 1): every pixel is exactly what pdf.js rasterised. */
-      var big = document.createElement('canvas');
-      big.width = bw; big.height = bh;
-      var bx = big.getContext('2d', { willReadFrequently: true });
+      var ox = out.getContext('2d', { willReadFrequently: true });
       try {
         for (var y0 = 0; y0 < bh; y0 += stripRows) {
           var rows = Math.min(stripRows, bh - y0);
@@ -645,7 +648,7 @@
           var sk2 = stripSkip(y0, rows);
           if (blank) blank = invertPixels(id2, false, sk2);
           invertPixels(id2, true, sk2);
-          bx.putImageData(id2, 0, y0);
+          ox.putImageData(id2, 0, y0);
           if (sub) sub((y0 + rows) / bh, 'flip');
           await NotesFX.uiPaint();
         }
@@ -653,23 +656,19 @@
         console.warn('strip rendering unavailable, falling back to a full-page render:', err);
         blank = true;
         var fat2 = await fullCanvas();
-        bx.fillStyle = '#fff'; bx.fillRect(0, 0, bw, bh);
+        ox.fillStyle = '#fff'; ox.fillRect(0, 0, bw, bh);
         for (var y1 = 0; y1 < bh; y1 += stripRows) {
           var rows2 = Math.min(stripRows, bh - y1);
           var id3 = fat2.ctx.getImageData(0, y1, bw, rows2);
           var sk3 = stripSkip(y1, rows2);
           if (blank) blank = invertPixels(id3, false, sk3);
           invertPixels(id3, true, sk3);
-          bx.putImageData(id3, 0, y1);
+          ox.putImageData(id3, 0, y1);
           if (sub) sub((y1 + rows2) / bh, 'flip');
           await NotesFX.uiPaint();
         }
         fat2.canvas.width = 0; fat2.canvas.height = 0;
       }
-      var ox = out.getContext('2d');
-      ox.imageSmoothingEnabled = true; ox.imageSmoothingQuality = 'high';
-      ox.drawImage(big, 0, 0, W, H);
-      big.width = big.height = 0;                                  // release big buffer early
     }
     pg.cleanup();
     return { canvas: out, blank: blank };
@@ -994,7 +993,7 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec, opt.keepColour].forEach(function (el) {
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.dpi600, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec, opt.keepColour].forEach(function (el) {
     if (el) el.addEventListener('change', schedulePreview);
   });
   [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec].forEach(function (el) {

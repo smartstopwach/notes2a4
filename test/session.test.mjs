@@ -284,7 +284,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     const expect = {
       'index.html': { lists: 6, bullets: 18 },   // + White paper
       '4up.html': { lists: 6, bullets: 18 },
-      'invert.html': { lists: 5, bullets: 20 }   // + Overlays (ruled lines · separator · numbers) + band-keep + pure-b&w vector
+      'invert.html': { lists: 5, bullets: 21 }   // + Overlays (ruled lines · separator · numbers) + band-keep + pure-b&w vector + 600dpi ultra
     };
     for (const h of htmls) {
       const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');

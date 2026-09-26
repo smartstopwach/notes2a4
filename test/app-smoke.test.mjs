@@ -402,7 +402,7 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub, opts
   /* set the option elements before the file arrives, then fire the same change
      events a user's click would fire (the apps reveal panels on those) */
   setOptions((id) => document.getElementById(id));
-  for (const id of ['optSep', 'styleVec', 'styleNeg', 'styleInk', 'stylePure', 'optPrint', 'psPure', 'psKeep', 'psInk', 'psNeg', 'dpi150', 'dpi96', 'dpi220', 'optNums', 'optLines', 'optKeepColour', 'optSkip', 'fmtJpg', 'fmtPng', 'gapAuto', 'gapFixed', 'psWhite', 'styleWhite']) {
+  for (const id of ['optSep', 'styleVec', 'styleNeg', 'styleInk', 'stylePure', 'optPrint', 'psPure', 'psKeep', 'psInk', 'psNeg', 'dpi150', 'dpi96', 'dpi220', 'dpi600', 'optNums', 'optLines', 'optKeepColour', 'optSkip', 'fmtJpg', 'fmtPng', 'gapAuto', 'gapFixed', 'psWhite', 'styleWhite']) {
     document.getElementById(id).fire('change');
   }
   document.getElementById('optMargin').fire('input');
@@ -1063,6 +1063,14 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   const maxW = Math.max(0, ...r.calls.map((c) => c.w));
   check('invert · crisp: 220 dpi pure b&w renders at most 1819 px wide (no 2x supersample)',
     r.status === 'done' && maxW <= 1820, 'status ' + r.status + ' · max render ' + maxW + ' px');
+}
+{
+  const r = await runApp('invert crisp 600', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('styleNeg').checked = true; el('dpi600').checked = true; el('dpi220').checked = false; el('dpi150').checked = false; el('dpi96').checked = false; }
+  });
+  const maxW = Math.max(0, ...r.calls.map((c) => c.w));
+  check('invert · crisp: 600 dpi ultra-HD renders at 4961 px wide (direct, no supersample)',
+    r.status === 'done' && maxW >= 4960 && maxW <= 4962, 'status ' + r.status + ' · max render ' + maxW + ' px');
 }
 
 console.log('\n' + (fail === 0 ? 'ALL APP SMOKE CHECKS PASSED' : fail + ' APP SMOKE CHECK(S) FAILED') + '  (' + pass + ' passed)\n');

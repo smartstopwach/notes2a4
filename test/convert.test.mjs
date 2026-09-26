@@ -521,6 +521,37 @@ console.log('5e) hq-map:');
       { band: 25, progress: async (f, phase) => { yields++; phases.add(phase); } });
     check('banded maps: yield between bands (progress hook fires for every band)',
       yields >= 8 && phases.has('downsample') && phases.has('render'), yields + ' yields · ' + [...phases].join(','));
+
+    /* the 1:1 streaming twin (600 dpi) must agree byte for byte with the one-shot map */
+    {
+      let v2 = 0, e2 = 0;
+      for (const [W, H] of [[64, 9], [300, 200]]) {
+        const b2 = mk(W, H);
+        for (const auto of [false, true]) for (const keep of [false, true]) for (const pure of [false, true]) for (const white of [false, true]) {
+          const t1 = PS.hqMap(b2, W, H, auto, keep, pure, white);
+          const t2 = await PS.hqMapDirectAsync(prov(b2), W, H, auto, keep, pure, { band: 7 }, white);
+          v2++;
+          if (same(t1.imageData.data, t2.imageData.data) && t1.darkFrac === t2.darkFrac && t1.inverted === t2.inverted) e2++;
+        }
+      }
+      check('ultra-hd: hqMapDirectAsync is byte-identical to the one-shot hqMap at 1:1',
+        e2 === v2 && v2 === 32, e2 + '/' + v2 + ' variants (ink/pure × keep × auto × white)');
+    }
+    /* strips arrive from pdf.js asynchronously, so the twin must take promises too */
+    {
+      const b3 = mk(600, 400);
+      const strips3 = async (y0, rows) => {
+        await new Promise((r) => setTimeout(r, 0));
+        return { data: b3.data.subarray(y0 * b3.width * 4, (y0 + rows) * b3.width * 4), width: b3.width, height: rows };
+      };
+      let ok3 = true;
+      for (const [keep, pure, white] of [[false, false, false], [true, false, true], [false, true, false], [true, true, true]]) {
+        const u1 = PS.hqMap(b3, 600, 400, true, keep, pure, white);
+        const u2 = await PS.hqMapDirectAsync(strips3, 600, 400, true, keep, pure, { band: 192 }, white);
+        if (!same(u1.imageData.data, u2.imageData.data) || u1.darkFrac !== u2.darkFrac || u1.inverted !== u2.inverted) ok3 = false;
+      }
+      check('ultra-hd: the streaming twin accepts an ASYNC provider too', ok3, '4 variants');
+    }
   }
 
   /* --- 4-up dotted separators --- */
