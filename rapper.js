@@ -38,7 +38,9 @@ function showErr(msg) {
 
 /* ---------- state ---------- */
 var pdf = null, pdfName = '', origBytes = null, pageCount = 0, cur = 1;
-var pageSizes = {};             // page -> {w, h} in pt
+var pageSizes = {};             // page -> {w, h} in pt (UNROTATED crop space)
+var pageRot = {};               // page -> /Rotate degrees
+var pageStamps = {};            // page -> stamp-like annotation count
 var covers = {};                // page -> [cover…]  (top-left pt space)
 var tool = 'select', color = '#ffffff', opacity = 1, brushR = 12, blockPx = 12;
 var zoom = 1, fitScale = 1, view = { scale: 1, w: 0, h: 0 };
@@ -49,7 +51,8 @@ var recent = [];
 var uid = 1;
 
 var SWATCHES = ['#ffffff', '#f8fafc', '#fef3c7', '#12172b', '#000000', '#b91c1c', '#1d4ed8', '#15803d'];
-var BUILD = 'rapper/3';
+var BUILD = 'rapper/4';
+$('rp-build').textContent = BUILD;   // visible build tag: stale-cache reports die here
 
 function status(html) { statusEl.innerHTML = html; }
 function pageCovers(p) { return covers[p] || (covers[p] = []); }
@@ -135,7 +138,7 @@ async function loadFile(f) {
     pdf = await task.promise;
     pageCount = pdf.numPages;
     covers = {}; undoStack = []; redoStack = []; sel = null; cur = 1; zoom = 1;
-    pageSizes = {};
+    pageSizes = {}; pageRot = {}; pageStamps = {};
     setTool('select');
     dropEl.hidden = true;
     workEl.hidden = false;
@@ -276,17 +279,7 @@ function drawCover(ctx, c, selected) {
   }
   ctx.restore();
 }
-function coverBounds(c) {
-  if (c.type === 'brush') {
-    var xs = (c.points || []).map(function (p) { return p[0]; });
-    var ys = (c.points || []).map(function (p) { return p[1]; });
-    if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 };
-    var r = c.radius || 8;
-    var x0 = Math.min.apply(0, xs) - r, y0 = Math.min.apply(0, ys) - r;
-    return { x: x0, y: y0, w: Math.max.apply(0, xs) - x0 + r, h: Math.max.apply(0, ys) - y0 + r };
-  }
-  return { x: Math.min(c.x, c.x + c.w), y: Math.min(c.y, c.y + c.h), w: Math.abs(c.w), h: Math.abs(c.h) };
-}
+function coverBounds(c) { return RC.coverBBox(c); }   // single source of truth lives in the core
 /* mosaic preview: re-pixelate the base page under the region */
 var pixTmp = null;
 function drawPixelPreview(ctx, c) {
@@ -358,6 +351,19 @@ async function buildThumbs() {
       var paT = ((page.rotate || 0) % 360 + 360) % 360;
       var swapT = (paT > 45 && paT < 135) || (paT > 225 && paT < 315);
       pageSizes[q] = swapT ? { w: vp0.height, h: vp0.width } : { w: vp0.width, h: vp0.height };
+      pageRot[q] = page.rotate || 0;
+      /* stamp survey for the file chip (and the export already strips these
+         from under covers — annotations paint above page content) */
+      try {
+        var annots = await page.getAnnotations();
+        var nSt = 0;
+        for (var ai = 0; ai < (annots || []).length; ai++) {
+          var st = (annots[ai].subtype || annots[ai].annotationType || '').toString().toLowerCase();
+          if (st === 'stamp' || st === 'freetext' || st === 'watermark' || st === 'text' ||
+              st === 'redact' || st === 'ink' || st === 'widget') nSt++;
+        }
+        pageStamps[q] = nSt;
+      } catch (e) { pageStamps[q] = 0; }
       var s = 96 / vp0.width;
       var vp = page.getViewport({ scale: s });
       var cv = figs[q].cv;
@@ -369,6 +375,29 @@ async function buildThumbs() {
     if (my !== thumbToken) return;
   }
   refreshBadges();
+  refreshFileInfo();
+}
+/* file chip: sizes · rotation · stamps — what the export must cope with */
+function refreshFileInfo() {
+  var seen = [], sizes = 0, p;
+  for (p = 1; p <= pageCount; p++) {
+    var s = pageSizes[p];
+    if (!s) continue;
+    var known = false;
+    for (var i = 0; i < seen.length; i++) {
+      if (RC.sameSize(seen[i], s, 1)) { known = true; break; }
+    }
+    if (!known) { seen.push(s); sizes++; }
+  }
+  var anyRot = false, stamps = 0;
+  for (p = 1; p <= pageCount; p++) {
+    if (RC.normRot(pageRot[p] || 0) !== 0) anyRot = true;
+    stamps += pageStamps[p] || 0;
+  }
+  pagesEl.textContent = pageCount + (pageCount === 1 ? ' page' : ' pages') +
+    (sizes > 1 ? ' · ' + sizes + ' sizes' : '') +
+    (anyRot ? ' · rotated' : '') +
+    (stamps ? ' · ' + stamps + ' stamp' + (stamps > 1 ? 's' : '') : '');
 }
 function markThumb() {
   Array.prototype.forEach.call(stripEl.children, function (fig) {
@@ -730,26 +759,37 @@ async function doExport() {
   try {
     var out = await PDFLib.PDFDocument.load(origBytes.slice(0));
     var pages = out.getPages();
-    var rasterCount = 0, baked = 0, skippedTotal = 0;
+    var rasterCount = 0, baked = 0, skippedTotal = 0, strippedTotal = 0;
     for (var p = 1; p <= pageCount; p++) {
       var list = covers[p] || [];
       if (!list.length) continue;
       var pg = pages[p - 1];
       var size = pg.getSize();
       var rot = RC.normRot(pg.getRotation().angle);
+      /* the editor shows the CropBox, not the MediaBox — map in crop space */
+      var crop = { x: 0, y: 0, w: size.width, h: size.height };
+      try {
+        if (typeof pg.getCropBox === 'function') {
+          var cb = pg.getCropBox();
+          crop = { x: cb.x, y: cb.y, w: cb.width, h: cb.height };
+        }
+      } catch (e) {}
       /* covers stamped from a different-sized template never touch this page */
-      var live = RC.filterLiveCovers(list, { w: size.width, h: size.height }, 1.5);
+      var live = RC.filterLiveCovers(list, { w: crop.w, h: crop.h }, 1.5);
       skippedTotal += list.length - live.length;
       baked += live.length;
       if (!live.length) continue;
+      /* annotations paint ABOVE page content: a stamp under a cover must be
+         deleted itself, or the download looks unmasked while preview wraps */
+      strippedTotal += RC.stripCoveredAnnots(out, pg, live, size.width, size.height, rot, crop);
       var el = (performance.now() - t0) / 1000;
       var eta = p > 1 ? (' · ~' + Math.ceil(el / (p - 1) * (pageCount - p + 1)) + 's left') : '';
       setProg(2 + 96 * (p - 1) / pageCount, 'page ' + p + ' / ' + pageCount + '…', eta);
       if (RC.hasRaster(live)) {
         rasterCount++;
-        await bakeRasterPage(out, pg, p, live, dpi, size, fmt, rot);
+        await bakeRasterPage(out, pg, p, live, dpi, size, fmt, rot, crop);
       }
-      RC.applyVectorCovers(pg, live, size.width, size.height, rot);
+      RC.applyVectorCovers(pg, live, size.width, size.height, rot, crop);
       if (p % 2 === 0) await new Promise(function (r) { setTimeout(r, 0); });
     }
     setProg(98, 'saving…', '');
@@ -765,11 +805,13 @@ async function doExport() {
     rsCovEl.textContent = baked;
     rsMetaEl.textContent = pageCount + ' pages · ' +
       (rasterCount ? rasterCount + ' re-rendered at ' + dpi + ' dpi (' + fmt.toUpperCase() + ')' : 'all covers vector — text stays selectable') +
-      (skippedTotal ? ' · ' + skippedTotal + ' skipped (different-sized pages left untouched)' : '');
+      (skippedTotal ? ' · ' + skippedTotal + ' skipped (different-sized pages left untouched)' : '') +
+      (strippedTotal ? ' · ' + strippedTotal + ' stamp' + (strippedTotal > 1 ? 's' : '') + ' cleared from under covers' : '');
     dlEl.href = url; dlEl.download = name;
     openEl.href = url;
     status('Wrapped <b>' + baked + ' covers</b> into <b>' + esc(name) + '</b>.' +
-      (skippedTotal ? ' <b>' + skippedTotal + ' skipped</b> (different page size).' : ''));
+      (skippedTotal ? ' <b>' + skippedTotal + ' skipped</b> (different page size).' : '') +
+      (strippedTotal ? ' <b>' + strippedTotal + ' stamps</b> cleared from under covers.' : ''));
     toast('✓ <b>' + baked + ' covers</b> baked into ' + esc(name));
     resEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch (err) {
@@ -786,7 +828,7 @@ function setProg(pct, msg, eta) {
   petaEl.textContent = eta || '';
 }
 /* re-render one page at export dpi, mosaic its pixel regions, embed over the original */
-async function bakeRasterPage(out, pg, p, list, dpi, size, fmt, rot) {
+async function bakeRasterPage(out, pg, p, list, dpi, size, fmt, rot, crop) {
   var page = await pdf.getPage(p);
   var scale = dpi / 72;
   var vp = page.getViewport({ scale: scale });
@@ -825,7 +867,9 @@ async function bakeRasterPage(out, pg, p, list, dpi, size, fmt, rot) {
   });
   var ab = await blob.arrayBuffer();
   var emb = fmt === 'png' ? await out.embedPng(ab) : await out.embedJpg(ab);
-  pg.drawImage(emb, { x: 0, y: 0, width: size.width, height: size.height });
+  /* the render shows the CropBox — land the bitmap exactly on it, not the MediaBox */
+  var cr = crop || { x: 0, y: 0, w: size.width, h: size.height };
+  pg.drawImage(emb, { x: cr.x, y: cr.y, width: cr.w, height: cr.h });
 }
 
 /* ---------- scroll reveal (same pattern as the other apps — without this,

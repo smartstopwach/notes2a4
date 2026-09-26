@@ -4,7 +4,7 @@
    to bottom-left. These checks pin that contract, the brush interpolation, the
    pixelate routine and the real overlay output (ops must exist in the PDF). */
 import { createRequire } from 'node:module';
-import { PDFDocument, rgb, degrees } from 'pdf-lib';
+import { PDFDocument, PDFName, rgb, degrees } from 'pdf-lib';
 
 const require = createRequire(import.meta.url);
 const RC = require('../rapper-core.js');
@@ -222,6 +222,51 @@ console.log('\n=== THE RAPPER core ===\n');
     RC.filterLiveCovers([stamped, drawn], { w: 595.28, h: 841.89 }, 1.5).length === 2);
 }
 
+/* ---------- 7d) crop-aware mapping + annotation stripping ----------
+   pdf.js renders the CropBox, not the MediaBox; and annotations paint ABOVE
+   page content. Both made downloads look unmasked while preview wrapped. */
+{
+  /* MediaBox 600x800, CropBox (100,200)-(500,600) */
+  const crop = { x: 100, y: 200, w: 400, h: 400 };
+  const c0 = RC.mapRect({ x: 10, y: 20, w: 100, h: 50 }, 600, 800, 0, crop);
+  check('mapRect: crop offsets the flip (R0)', c0.x === 110 && c0.y === 530 && c0.width === 100 && c0.height === 50,
+    JSON.stringify(c0));
+  const c90 = RC.mapRect({ x: 10, y: 20, w: 100, h: 50 }, 600, 800, 90, crop);
+  check('mapRect: crop + 90° (swap inside crop, then offset)',
+    c90.x === 120 && c90.y === 210 && c90.width === 50 && c90.height === 100, JSON.stringify(c90));
+  const full = RC.mapRect({ x: 0, y: 0, w: 400, h: 400 }, 600, 800, 0, crop);
+  check('mapRect: full crop rect → the CropBox itself',
+    full.x === 100 && full.y === 200 && full.width === 400 && full.height === 400);
+  const plain = RC.mapRect({ x: 10, y: 20, w: 100, h: 50 }, 600, 800, 0);
+  check('mapRect: no crop → MediaBox flip as before',
+    plain.x === 10 && plain.y === 730 && plain.width === 100 && plain.height === 50);
+
+  const mkStamp = (d, rect) => d.context.obj({
+    Type: PDFName.of('Annot'), Subtype: PDFName.of('Stamp'),
+    Rect: d.context.obj(rect.map((n) => d.context.obj(n))),
+  });
+  const covers = [{ type: 'rect', x: 40, y: 150, w: 220, h: 120 }];   // → mediabox x40..260 y530..650
+  const d = await PDFDocument.create();
+  const pg = d.addPage([600, 800]);
+  pg.node.set(PDFName.of('Annots'), d.context.obj([
+    mkStamp(d, [50, 500, 250, 600]),     // under the cover → gone
+    mkStamp(d, [400, 100, 500, 150]),    // far away → kept
+  ]));
+  const gone = RC.stripCoveredAnnots(d, pg, covers, 600, 800, 0);
+  const left = d.context.lookup(pg.node.get(PDFName.of('Annots'))).asArray();
+  check('stripCoveredAnnots: overlapping stamp removed, far one kept', gone === 1 && left.length === 1,
+    'removed=' + gone + ' left=' + left.length);
+  const d2 = await PDFDocument.create();
+  check('stripCoveredAnnots: no annots → 0, never throws',
+    RC.stripCoveredAnnots(d2, d2.addPage([600, 800]), covers, 600, 800, 0) === 0);
+  const d3 = await PDFDocument.create();
+  const p3 = d3.addPage([600, 800]);
+  p3.node.set(PDFName.of('Annots'), d3.context.obj([d3.context.obj({ Type: PDFName.of('Annot') })]));
+  check('stripCoveredAnnots: Rect-less annot kept safely (no crash)',
+    RC.stripCoveredAnnots(d3, p3, covers, 600, 800, 0) === 0 &&
+    d3.context.lookup(p3.node.get(PDFName.of('Annots'))).asArray().length === 1);
+}
+
 /* ---------- 8) cloneCovers: snapshots are really independent ---------- */
 {
   const a = [{ type: 'brush', points: [[1, 2]], radius: 5 }];
@@ -329,6 +374,9 @@ console.log('\n=== THE RAPPER core ===\n');
   toolBtns[1].click();   /* rect */
   check('editor boot: tool switch updates the overlay cursor state',
     byId['rp-over'] && byId['rp-over'].dataset.tool === 'rect');
+  check('editor boot: visible build tag shows the running build',
+    byId['rp-build'] && byId['rp-build'].textContent === 'rapper/4',
+    byId['rp-build'] ? byId['rp-build'].textContent : '(missing)');
 }
 
 /* ---------- 10) end-to-end: draw → apply → export lands covers in the PDF ----------
@@ -418,11 +466,14 @@ console.log('\n=== THE RAPPER core ===\n');
       getPage: async (n) => {
         const pg = pages[n - 1];
         const swap = pg.rotate === 90 || pg.rotate === 270;
+        const dw = pg.crop ? pg.crop[2] - pg.crop[0] : pg.w;
+        const dh = pg.crop ? pg.crop[3] - pg.crop[1] : pg.h;
         return {
           rotate: pg.rotate || 0,
           getViewport: ({ scale }) => ({
-            width: (swap ? pg.h : pg.w) * scale, height: (swap ? pg.w : pg.h) * scale,
+            width: (swap ? dh : dw) * scale, height: (swap ? dw : dh) * scale,
           }),
+          getAnnotations: async () => Array(pg.stamps || 0).fill({ subtype: 'Stamp' }),
           render: () => ({ promise: Promise.resolve() }),
           cleanup() {},
         };
@@ -432,7 +483,7 @@ console.log('\n=== THE RAPPER core ===\n');
       console: { log: () => {}, info: () => {}, warn: () => {}, error: () => {} },
       performance, setTimeout, clearTimeout,
       devicePixelRatio: 1, innerHeight: opts.innerH || 900,
-      PDFLib: { PDFDocument, rgb }, Blob,
+      PDFLib: { PDFDocument, PDFName, rgb }, Blob,
       URL: { createObjectURL: (b) => { captured = b; return 'blob:t'; }, revokeObjectURL() {} },
       pdfjsLib: { getDocument: () => ({ promise: Promise.resolve(fakePdf) }), GlobalWorkerOptions: {} },
       document: {
@@ -488,6 +539,17 @@ console.log('\n=== THE RAPPER core ===\n');
     pages.forEach((p) => {
       const pg = d.addPage([p.w, p.h]);
       if (p.rotate) pg.setRotation(degrees(p.rotate));
+      if (p.crop) pg.node.set(PDFName.of('CropBox'), d.context.obj(p.crop.map((n) => d.context.obj(n))));
+      (p.annots || []).forEach((a) => {
+        const dict = d.context.obj({
+          Type: PDFName.of('Annot'), Subtype: PDFName.of(a.subtype || 'Stamp'),
+          Rect: d.context.obj(a.rect.map((n) => d.context.obj(n))),
+        });
+        const cur = d.context.lookup(pg.node.get(PDFName.of('Annots')));
+        const items = cur && cur.asArray ? cur.asArray().slice() : [];
+        items.push(dict);
+        pg.node.set(PDFName.of('Annots'), d.context.obj(items));
+      });
     });
     return d.save();
   }
@@ -584,6 +646,45 @@ console.log('\n=== THE RAPPER core ===\n');
     const r = await bootRapper(pages, await realDoc(pages), { boxW: 800, innerH: 900 });
     const ow = parseFloat(r.byId['rp-over'].style.width);
     check('e2e: wide page still fits the box width', Math.abs(ow - 760) < 2, Math.round(ow) + 'px');
+  }
+  /* F: cropped page — the mask lands on the CropBox, MediaBox-offset */
+  {
+    const pages = [{ w: 595.28, h: 841.89, crop: [100, 200, 495, 742] }];
+    const r = await bootRapper(pages, await realDoc(pages));
+    r.draw(1, 100, 100, 200, 150);
+    const out = await r.export();
+    const sc = parseFloat(r.byId['rp-over'].style.width) / 395;   // display width = crop w
+    const ex = 100 + 100 / sc, ey = 200 + (542 - 100 / sc - 50 / sc);
+    const ops = cmOps(contentOf(out).content);
+    check('e2e: cropped page masks at the crop-offset spot',
+      hasNear(ops, ex, ey, 0.6), 'expect (' + ex.toFixed(1) + ',' + ey.toFixed(1) + ') · ops ' + JSON.stringify(ops));
+  }
+  /* G: stamp annotations under a cover are deleted, the rest survive */
+  {
+    const pages = [{ w: 595.28, h: 841.89, annots: [
+      { rect: [50, 500, 250, 600] },    // under the cover → gone
+      { rect: [400, 100, 500, 150] },   // far away → kept
+    ] }];
+    const r = await bootRapper(pages, await realDoc(pages));
+    r.draw(1, 40, 100, 260, 220);
+    const out = await r.export();
+    const back = await PDFDocument.load(out);
+    const arr = back.context.lookup(back.getPage(0).node.get(PDFName.of('Annots')));
+    const left = arr && arr.asArray ? arr.asArray().length : 0;
+    check('e2e: covered stamp stripped, far stamp kept', left === 1, left + ' annots left');
+    const rsMeta = r.byId['rp-rsMeta'].textContent;
+    check('e2e: result reports the cleared stamp', rsMeta.includes('1 stamp'), rsMeta);
+  }
+  /* H: the file chip reports sizes + rotation + stamps at a glance */
+  {
+    const pages = [
+      { w: 595.28, h: 841.89, stamps: 2 },
+      { w: 400, h: 300, rotate: 90, stamps: 1 },
+    ];
+    const r = await bootRapper(pages, await realDoc(pages));
+    const chip = r.byId['rp-pages'].textContent;
+    check('e2e: file chip reports sizes + rotation + stamps',
+      chip.includes('2 sizes') && chip.includes('rotated') && chip.includes('3 stamps'), chip);
   }
 }
 

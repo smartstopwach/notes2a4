@@ -90,12 +90,17 @@
     }
   }
 
-  /** Editor rect → pdf-lib rect {x, y, width, height} (w/h swap for 90/270). */
-  function mapRect(r, W, H, rot) {
+  /** Editor rect → pdf-lib rect {x, y, width, height} (w/h swap for 90/270).
+   * crop = the page's unrotated CropBox {x, y, w, h} (what pdf.js renders);
+   * omitted → the full MediaBox. Without this offset every cover on a
+   * cropped page lands shifted by the crop origin — visibly "not masked". */
+  function mapRect(r, W, H, rot, crop) {
     var x0 = +r.x || 0, y0 = +r.y || 0;
     var w = Math.max(0, +r.w || 0), h = Math.max(0, +r.h || 0);
-    var a = mapPoint(x0, y0, W, H, rot), b = mapPoint(x0 + w, y0 + h, W, H, rot);
-    return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+    var bw = crop ? crop.w : W, bh = crop ? crop.h : H;
+    var a = mapPoint(x0, y0, bw, bh, rot), b = mapPoint(x0 + w, y0 + h, bw, bh, rot);
+    var ox = crop ? crop.x : 0, oy = crop ? crop.y : 0;
+    return { x: Math.min(a.x, b.x) + ox, y: Math.min(a.y, b.y) + oy, width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
   }
 
   /**
@@ -118,6 +123,68 @@
     return (list || []).filter(function (c) {
       return !(c && c.pw && !sameSize({ w: c.pw, h: c.ph }, sizeWH, t));
     });
+  }
+
+  /** Normalised top-left bbox {x, y, w, h} of any cover (brush → points bbox). */
+  function coverBBox(c) {
+    if (!c) return { x: 0, y: 0, w: 0, h: 0 };
+    if (c.type === 'brush') {
+      var xs = (c.points || []).map(function (p) { return p[0]; });
+      var ys = (c.points || []).map(function (p) { return p[1]; });
+      if (!xs.length) return { x: 0, y: 0, w: 0, h: 0 };
+      var r = c.radius || 8;
+      var x0 = Math.min.apply(0, xs) - r, y0 = Math.min.apply(0, ys) - r;
+      return { x: x0, y: y0, w: Math.max.apply(0, xs) - x0 + r, h: Math.max.apply(0, ys) - y0 + r };
+    }
+    return { x: Math.min(c.x, c.x + c.w), y: Math.min(c.y, c.y + c.h), w: Math.abs(c.w), h: Math.abs(c.h) };
+  }
+
+  function rectsOverlap(a, b) {
+    var aw = a.w != null ? a.w : a.width, ah = a.h != null ? a.h : a.height;
+    var bw = b.w != null ? b.w : b.width, bh = b.h != null ? b.h : b.height;
+    return a.x < b.x + bw && b.x < a.x + aw && a.y < b.y + bh && b.y < a.y + ah;
+  }
+
+  /**
+   * Remove annotations hiding UNDER the covers. Viewers paint annotations
+   * (stamps, free-text, widgets…) ABOVE page content, so a vector rect can
+   * never cover one — the export must delete the annot itself. Only annots
+   * overlapping a live cover are removed (compared in unrotated MediaBox
+   * space); everything else — links on other pages, form fields outside
+   * any cover — survives. Never throws: annotation trouble must not break
+   * an export. Returns how many were removed.
+   */
+  function stripCoveredAnnots(pdfDoc, page, covers, W, H, rot, crop) {
+    var removed = 0;
+    try {
+      if (!pdfDoc || !page || !PDFLib.PDFName) return 0;
+      var raw = page.node.get(PDFLib.PDFName.of('Annots'));
+      if (!raw) return 0;
+      var arr = pdfDoc.context.lookup(raw);
+      if (!arr || !arr.asArray) return 0;
+      var items = arr.asArray().slice();
+      if (!items.length) return 0;
+      var boxes = (covers || []).map(function (c) { return mapRect(coverBBox(c), W, H, rot, crop); });
+      var keep = [];
+      for (var i = 0; i < items.length; i++) {
+        var a = items[i], drop = false;
+        try {
+          var dict = pdfDoc.context.lookup(a);
+          var rct = dict && pdfDoc.context.lookup(dict.get(PDFLib.PDFName.of('Rect')));
+          var nums = rct && rct.asArray ? rct.asArray() : null;
+          if (nums && nums.length >= 4) {
+            var nx = nums.map(function (n) { return (n && typeof n.asNumber === 'function') ? n.asNumber() : +n; });
+            var ab = { x: Math.min(nx[0], nx[2]), y: Math.min(nx[1], nx[3]), w: Math.abs(nx[2] - nx[0]), h: Math.abs(nx[3] - nx[1]) };
+            for (var k = 0; k < boxes.length; k++) {
+              if (rectsOverlap(ab, boxes[k])) { drop = true; break; }
+            }
+          }
+        } catch (e) { /* junk annot — keep it */ }
+        if (drop) removed++; else keep.push(a);
+      }
+      if (removed) page.node.set(PDFLib.PDFName.of('Annots'), pdfDoc.context.obj(keep));
+    } catch (e) { /* never break export over annotations */ }
+    return removed;
   }
 
   /** Any cover list holding a 'pixel' region forces that page to rasterize. */
@@ -193,22 +260,26 @@
    * pageW/pageH are the UNROTATED MediaBox size; rotation is the page's
    * /Rotate angle — without it every cover on a rotated scan lands 90°
    * off the stamp (or fully off the page: the "nothing is masked" bug).
+   * crop is the unrotated CropBox {x, y, w, h} (what the editor shows);
+   * omitted → full page.
    * Returns how many covers were drawn.
    */
-  function applyVectorCovers(page, covers, pageW, pageH, rotation) {
+  function applyVectorCovers(page, covers, pageW, pageH, rotation, crop) {
     var drawn = 0;
+    var bw = crop ? crop.w : pageW, bh = crop ? crop.h : pageH;
+    var ox = crop ? crop.x : 0, oy = crop ? crop.y : 0;
     for (var i = 0; i < (covers || []).length; i++) {
       var c = covers[i];
       if (!c) continue;
       var col = hexToRgb01(c.color);
       var opt = { color: rgb(col[0], col[1], col[2]), opacity: Math.max(0, Math.min(1, c.opacity == null ? 1 : +c.opacity)) };
       if (c.type === 'rect') {
-        var r = mapRect(c, pageW, pageH, rotation);
+        var r = mapRect(c, pageW, pageH, rotation, crop);
         if (r.width < 0.5 || r.height < 0.5) continue;
         page.drawRectangle({ x: r.x, y: r.y, width: r.width, height: r.height, color: opt.color, opacity: opt.opacity });
         drawn++;
       } else if (c.type === 'ellipse') {
-        var e = mapRect(c, pageW, pageH, rotation);
+        var e = mapRect(c, pageW, pageH, rotation, crop);
         if (e.width < 0.5 || e.height < 0.5) continue;
         page.drawEllipse({
           x: e.x + e.width / 2, y: e.y + e.height / 2,
@@ -219,9 +290,9 @@
       } else if (c.type === 'brush') {
         var dots = brushCircles(c.points, c.radius);
         for (var k = 0; k < dots.length; k++) {
-          var mp = mapPoint(dots[k].x, dots[k].y, pageW, pageH, rotation);
+          var mp = mapPoint(dots[k].x, dots[k].y, bw, bh, rotation);
           page.drawCircle({
-            x: mp.x, y: mp.y,
+            x: mp.x + ox, y: mp.y + oy,
             size: dots[k].r, color: opt.color, opacity: opt.opacity
           });
         }
@@ -284,6 +355,8 @@
     mapRect: mapRect,
     sameSize: sameSize,
     filterLiveCovers: filterLiveCovers,
+    coverBBox: coverBBox,
+    stripCoveredAnnots: stripCoveredAnnots,
     hasRaster: hasRaster,
     brushCircles: brushCircles,
     pixelateRegion: pixelateRegion,

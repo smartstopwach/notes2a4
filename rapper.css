@@ -122,6 +122,7 @@ label.rp-range span i{font-style:normal;color:var(--ink);font-weight:700;font-va
 
 /* canvas stage */
 .rp-stagecard h3 em{font-style:normal;color:var(--faint);font-weight:600;font-size:.78rem}
+.rp-build{font-size:.68rem;color:var(--faint);font-weight:700;margin-left:.4rem;font-variant-numeric:tabular-nums;white-space:nowrap}
 .rp-bar{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.7rem}
 .rp-bar .pg{font-weight:800;font-variant-numeric:tabular-nums;font-size:.86rem;color:var(--dim)}
 .rp-bar .pg b{color:var(--ink)}
