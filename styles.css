@@ -78,6 +78,8 @@ h2{font-size:clamp(1.8rem,3.1vw,2.35rem);margin:0 0 var(--s3)}
 .hinglish b{color:var(--dim)}
 .hin{color:var(--faint);font-size:.9rem;font-style:italic}
 .sub{color:var(--dim);margin-top:0}
+.build-tag{font-size:11px;color:var(--dim);opacity:.75;margin:10px 2px 0}
+.build-tag b{font-weight:700}
 .num,.rs-big,.hero-stats b,.fb-pages b,.fb-out,#pstatus,.seg,.fld>span i{font-variant-numeric:tabular-nums}
 
 /* ---------- 3 · reveal ---------- */

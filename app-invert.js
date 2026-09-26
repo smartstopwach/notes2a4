@@ -5,7 +5,7 @@
 (function () {
   'use strict';
 
-  var BUILD = 16;
+  var BUILD = 17;
   console.info('[Notes2A4] app-invert.js build', BUILD, '· 1:1 colour flip + overlays');
   if (typeof window.PDFLib === 'undefined' || typeof window.pdfjsLib === 'undefined') {
     document.addEventListener('DOMContentLoaded', function () {
@@ -948,6 +948,7 @@
   syncKeepColourRow();
   syncVectorRows();
   syncOverlayRows();
+  { var bEl = $('buildNum'); if (bEl) bEl.textContent = BUILD; }   // visible build tag (kills stale-cache confusion)
 
   function resetAll() {
     state.bytes = null; state.doc = null; state.pages = 0; state.sizes = [];
