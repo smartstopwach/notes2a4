@@ -402,7 +402,7 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub, opts
   /* set the option elements before the file arrives, then fire the same change
      events a user's click would fire (the apps reveal panels on those) */
   setOptions((id) => document.getElementById(id));
-  for (const id of ['optSep', 'styleVec', 'styleNeg', 'styleInk', 'stylePure', 'optPrint', 'psPure', 'psKeep', 'psInk', 'psNeg', 'dpi150', 'dpi96', 'dpi220', 'optNums', 'optLines', 'optKeepColour', 'optSkip', 'fmtJpg', 'fmtPng', 'gapAuto', 'gapFixed', 'psWhite', 'styleWhite']) {
+  for (const id of ['optSep', 'styleVec', 'styleNeg', 'styleInk', 'stylePure', 'optPrint', 'psPure', 'psKeep', 'psInk', 'psNeg', 'dpi150', 'dpi96', 'dpi220', 'dpi660', 'optNums', 'optLines', 'optKeepColour', 'optSkip', 'fmtJpg', 'fmtPng', 'gapAuto', 'gapFixed', 'psWhite', 'styleWhite']) {
     document.getElementById(id).fire('change');
   }
   document.getElementById('optMargin').fire('input');
@@ -1023,15 +1023,88 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   check('invert · exact vector: reports the exact-vector rule', /exact vector/.test(r.printed) && /255/.test(r.printed), r.printed.slice(0, 120));
   check('invert · exact vector: raster-only rows hidden',
     r.document.getElementById('dpiFld').hidden === true && r.document.getElementById('fmtFld').hidden === true);
+  check('invert · exact vector: bold row hidden too', r.document.getElementById('boldRow').hidden === true);
+}
+
+/* ---------- Invert Lab: pure B&W exact vector ---------- */
+{
+  const r = await runApp('invert purevec', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('stylePureVec').checked = true; }
+  });
+  check('invert · pure b&w vector: no runtime error', !/^failed/.test(r.status), r.status);
+  check('invert · pure b&w vector: raster-only rows hidden', r.document.getElementById('dpiFld').hidden === true && r.document.getElementById('fmtFld').hidden === true);
+  check('invert · pure b&w vector: result names the mode', /pure b&w \(exact vector/.test(r.printed), r.printed.slice(0, 120));
 }
 
 /* ---------- Invert Lab: raster negative (SSAA path) ---------- */
 {
   const r = await runApp('invert raster', 'app-invert.js', 'invert.html', {
-    setOptions: (el) => { el('styleNeg').checked = true; el('dpi150').checked = true; }
+    setOptions: (el) => { el('styleNeg').checked = true; el('dpi150').checked = true; el('dpi220').checked = false; el('dpi96').checked = false; }
   });
   check('invert · true negative (raster): no runtime error', !/^failed/.test(r.status), r.status);
   check('invert · raster: rows visible again', r.document.getElementById('dpiFld').hidden === false);
+}
+
+/* ---------- Invert Lab: crisp HD output (no supersample, no smooth-downscale) ----------
+   Thin strokes (0.5 pt) melted into grey blur when pages rendered at 2x and were
+   smoothly downscaled. Output now renders direct at the target dpi, so the widest
+   canvas pdf.js is ever asked for is exactly the output width. */
+{
+  const r = await runApp('invert crisp neg', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('styleNeg').checked = true; el('dpi150').checked = true; el('dpi220').checked = false; el('dpi96').checked = false; }
+  });
+  const maxW = Math.max(0, ...r.calls.map((c) => c.w));
+  check('invert · crisp: 150 dpi renders at most 1240 px wide (no 2x supersample)',
+    r.status === 'done' && maxW <= 1241, 'status ' + r.status + ' · max render ' + maxW + ' px');
+}
+{
+  const r = await runApp('invert crisp pure', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('stylePure').checked = true; el('dpi220').checked = true; el('dpi150').checked = false; el('dpi96').checked = false; el('fmtPng').checked = true; }
+  });
+  const maxW = Math.max(0, ...r.calls.map((c) => c.w));
+  check('invert · crisp: 220 dpi pure b&w renders at most 1819 px wide (no 2x supersample)',
+    r.status === 'done' && maxW <= 1820, 'status ' + r.status + ' · max render ' + maxW + ' px');
+}
+{
+  const r = await runApp('invert crisp 600', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('styleNeg').checked = true; el('dpi660').checked = true; el('dpi220').checked = false; el('dpi150').checked = false; el('dpi96').checked = false; }
+  });
+  const maxW = Math.max(0, ...r.calls.map((c) => c.w));
+  check('invert · crisp: 660 dpi ultra-HD renders at 5457 px wide (direct, no supersample)',
+    r.status === 'done' && maxW >= 5456 && maxW <= 5458, 'status ' + r.status + ' · max render ' + maxW + ' px');
+}
+
+
+/* ---------- Invert Lab: bold strokes (thin-pen fix) ---------- */
+{
+  const r = await runApp('invert bold', 'app-invert.js', 'invert.html', {
+    setOptions: (el) => { el('styleInk').checked = true; el('boldTgl').checked = true; }
+  });
+  check('invert \u00b7 bold strokes: toggle + slider + row exist',
+    !!r.document.getElementById('boldTgl') && !!r.document.getElementById('boldAmt') && !!r.document.getElementById('boldRow'));
+  check('invert \u00b7 bold strokes: no runtime error', !/^failed/.test(r.status), r.status);
+  check('invert \u00b7 bold strokes: result names the weight', /bold \+1/.test(r.printed), r.printed.slice(0, 120));
+}
+
+
+/* ---------- 2-up: 660 dpi ultra print-saver ---------- */
+{
+  const r = await runApp('2up 660', 'app.js', 'index.html', {
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi660').checked = true; el('psInk').checked = true; }
+  });
+  check('2-up \u00b7 660 ultra: the radio exists', !!r.document.getElementById('dpi660'));
+  check('2-up \u00b7 660 ultra: no runtime error', !/^failed/.test(r.status), r.status);
+  check('2-up \u00b7 660 ultra: reports 660 dpi', /660 dpi/.test(r.printed), r.printed.slice(0, 100));
+}
+
+/* ---------- 4-up: 660 dpi ultra print-saver ---------- */
+{
+  const r = await runApp('4up 660', 'app4up.js', '4up.html', {
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi660').checked = true; el('psInk').checked = true; }
+  });
+  check('4-up \u00b7 660 ultra: the radio exists', !!r.document.getElementById('dpi660'));
+  check('4-up \u00b7 660 ultra: no runtime error', !/^failed/.test(r.status), r.status);
+  check('4-up \u00b7 660 ultra: reports 660 dpi', /660 dpi/.test(r.printed), r.printed.slice(0, 100));
 }
 
 console.log('\n' + (fail === 0 ? 'ALL APP SMOKE CHECKS PASSED' : fail + ' APP SMOKE CHECK(S) FAILED') + '  (' + pass + ' passed)\n');

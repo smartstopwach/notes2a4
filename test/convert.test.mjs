@@ -1,6 +1,6 @@
 /* Node test for the shipped converter module (same code the browser runs).
  * Run:  node test/convert.test.mjs       (needs pdf-lib in node_modules)   */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { PDFDocument } from 'pdf-lib';
 
@@ -446,7 +446,8 @@ console.log('5e) hq-map:');
       }
       check('EXACT MATCH vs the reference tool: identical on every sampled point',
         diff === 0 && n > 20000, `${n} points · differing ${diff} · worst ${worst}`);
-      writeFileSync('/home/user/notes2a4/tmp-colortest/mine-negative.pdf', Buffer.from(vres.bytes));
+      mkdirSync(new URL('../tmp-colortest', import.meta.url), { recursive: true });
+      writeFileSync(new URL('../tmp-colortest/mine-negative.pdf', import.meta.url), Buffer.from(vres.bytes));
     } else {
       console.log('  SKIP  reference comparison (colour-probe-invert.pdf not present)');
     }
@@ -520,8 +521,116 @@ console.log('5e) hq-map:');
       { band: 25, progress: async (f, phase) => { yields++; phases.add(phase); } });
     check('banded maps: yield between bands (progress hook fires for every band)',
       yields >= 8 && phases.has('downsample') && phases.has('render'), yields + ' yields · ' + [...phases].join(','));
+
+    /* the 1:1 streaming twin (660 dpi) must agree byte for byte with the one-shot map */
+    {
+      let v2 = 0, e2 = 0;
+      for (const [W, H] of [[64, 9], [300, 200]]) {
+        const b2 = mk(W, H);
+        for (const auto of [false, true]) for (const keep of [false, true]) for (const pure of [false, true]) for (const white of [false, true]) {
+          const t1 = PS.hqMap(b2, W, H, auto, keep, pure, white);
+          const t2 = await PS.hqMapDirectAsync(prov(b2), W, H, auto, keep, pure, { band: 7 }, white);
+          v2++;
+          if (same(t1.imageData.data, t2.imageData.data) && t1.darkFrac === t2.darkFrac && t1.inverted === t2.inverted) e2++;
+        }
+      }
+      check('ultra-hd: hqMapDirectAsync is byte-identical to the one-shot hqMap at 1:1',
+        e2 === v2 && v2 === 32, e2 + '/' + v2 + ' variants (ink/pure × keep × auto × white)');
+    }
+    /* strips arrive from pdf.js asynchronously, so the twin must take promises too */
+    {
+      const b3 = mk(600, 400);
+      const strips3 = async (y0, rows) => {
+        await new Promise((r) => setTimeout(r, 0));
+        return { data: b3.data.subarray(y0 * b3.width * 4, (y0 + rows) * b3.width * 4), width: b3.width, height: rows };
+      };
+      let ok3 = true;
+      for (const [keep, pure, white] of [[false, false, false], [true, false, true], [false, true, false], [true, true, true]]) {
+        const u1 = PS.hqMap(b3, 600, 400, true, keep, pure, white);
+        const u2 = await PS.hqMapDirectAsync(strips3, 600, 400, true, keep, pure, { band: 192 }, white);
+        if (!same(u1.imageData.data, u2.imageData.data) || u1.darkFrac !== u2.darkFrac || u1.inverted !== u2.inverted) ok3 = false;
+      }
+      check('ultra-hd: the streaming twin accepts an ASYNC provider too', ok3, '4 variants');
+    }
+
+    /* bold strokes (thin-pen fix): ink dilation as a separable min-filter */
+    {
+      const PSB = NC.printSaver;
+      const sameB = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+      const provB = (big) => (y0, rows) => ({ data: big.data.subarray(y0 * big.width * 4, (y0 + rows) * big.width * 4), width: big.width, height: rows });
+      function hairline(W, H, x0, fg, bg) {
+        const d = new Uint8ClampedArray(W * H * 4);
+        for (let p = 0; p < W * H; p++) { d[p * 4] = bg; d[p * 4 + 1] = bg; d[p * 4 + 2] = bg; d[p * 4 + 3] = 255; }
+        for (let y = 0; y < H; y++) { const o = (y * W + x0) * 4; d[o] = fg; d[o + 1] = fg; d[o + 2] = fg; }
+        return { data: d, width: W, height: H };
+      }
+      const inkW = (d, W, y) => { let n = 0; for (let x = 0; x < W; x++) if (d[(y * W + x) * 4] < 128) n++; return n; };
+      const hl = hairline(9, 9, 4, 0, 255);
+      check('bold: off (0) leaves pixels untouched', sameB(PSB.hqBold(hl.data.slice(), 9, 9, 0), hl.data));
+      const bb1 = PSB.hqBold(hl.data.slice(), 9, 9, 1);
+      check('bold +1: a 1 px hairline becomes 3 px', inkW(bb1, 9, 4) === 3 && bb1[(4 * 9 + 3) * 4] === 0 && bb1[(4 * 9 + 2) * 4] === 255);
+      const bb2 = PSB.hqBold(hl.data.slice(), 9, 9, 2);
+      check('bold +2: the hairline becomes 5 px', inkW(bb2, 9, 4) === 5);
+      check('bold: clamps past +2 (9 behaves as 2)', sameB(PSB.hqBold(hl.data.slice(), 9, 9, 9), bb2));
+      check('bold: alpha channel untouched', bb1[(4 * 9 + 4) * 4 + 3] === 255);
+      const blankB = hairline(9, 9, 0, 255, 255);
+      check('bold: a blank page stays blank', sameB(PSB.hqBold(blankB.data.slice(), 9, 9, 2), blankB.data));
+      const board = hairline(32, 32, 15, 255, 8);      // thin chalk line on a dark board
+      const plainB = PSB.hqMap(board, 32, 32, true);
+      const fat1 = PSB.hqMap(board, 32, 32, true, false, false, false, 1);
+      const fat2 = PSB.hqMap(board, 32, 32, true, false, false, false, 2);
+      check('bold: hqMap(bold=1) widens the inverted stroke 1 px \u2192 3 px',
+        plainB.inverted && inkW(plainB.imageData.data, 32, 16) === 1 && inkW(fat1.imageData.data, 32, 16) === 3);
+      check('bold: hqMap(bold=2) \u2192 5 px', inkW(fat2.imageData.data, 32, 16) === 5);
+      check('bold: pure b&w fattens too',
+        inkW(PSB.hqMap(board, 32, 32, true, false, true, false, 1).imageData.data, 32, 16) === 3);
+      let vok = true, vn = 0;
+      for (const [keep, pure] of [[false, false], [true, false], [false, true]]) {
+        const o1 = PSB.hqMap(board, 32, 32, true, keep, pure, false, 1);
+        const o2 = await PSB.hqMapAsync(provB(board), 32, 32, 32, 32, true, keep, pure, { band: 7 }, false, 1);
+        const o3 = await PSB.hqMapDirectAsync(provB(board), 32, 32, true, keep, pure, { band: 7 }, false, 1);
+        vn++;
+        if (!sameB(o1.imageData.data, o2.imageData.data) || !sameB(o1.imageData.data, o3.imageData.data)) vok = false;
+      }
+      check('bold: one-shot, banded + ultra-hd twin agree byte for byte', vok && vn === 3, vn + ' variants');
+    }
   }
 
+
+    /* the 1:1 streaming twin for true negative (660 dpi packer pages) */
+    {
+      const PSN = NC.printSaver;
+      const sameN = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+      const provN = (big) => (y0, rows) => ({ data: big.data.subarray(y0 * big.width * 4, (y0 + rows) * big.width * 4), width: big.width, height: rows });
+      const mkN = (W, H, fn) => {
+        const d = new Uint8ClampedArray(W * H * 4);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          const [r, g, b] = fn(x, y), o = (y * W + x) * 4;
+          d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255;
+        }
+        return { data: d, width: W, height: H };
+      };
+      // the (3,3) pixel has L = 90.815 (float) but 90 (int): the twin must count it exactly like the map
+      const darkN = mkN(64, 40, (x, y) => (x === 3 && y === 3) ? [90, 91, 92] : (x > 40 && y < 10) ? [240, 240, 240] : [8, 8, 10]);
+      const lightN = mkN(64, 40, (x, y) => (x < 20 && y > 25) ? [10, 10, 10] : [250, 250, 248]);
+      let negOk = true, negN = 0;
+      for (const auto of [false, true]) for (const pg of [darkN, lightN]) {
+        const n1 = PSN.negMap(pg, 64, 40, auto);
+        const n2 = await PSN.negMapDirectAsync(provN(pg), 64, 40, auto, { band: 7 });
+        negN++;
+        if (!sameN(n1.imageData.data, n2.imageData.data) || n1.darkFrac !== n2.darkFrac || n1.inverted !== n2.inverted) negOk = false;
+      }
+      check('ultra-hd: negMapDirectAsync is byte-identical to negMap at 1:1', negOk && negN === 4, negN + ' variants (dark/light \u00d7 auto)');
+      const asyncProvN = (big) => async (y0, rows) => {
+        await new Promise((r) => setTimeout(r, 0));
+        return { data: big.data.subarray(y0 * big.width * 4, (y0 + rows) * big.width * 4), width: big.width, height: rows };
+      };
+      const a1 = PSN.negMap(darkN, 64, 40, true);
+      const a2 = await PSN.negMapDirectAsync(asyncProvN(darkN), 64, 40, true, { band: 11 });
+      check('ultra-hd: the negative twin accepts an ASYNC provider too', sameN(a1.imageData.data, a2.imageData.data));
+      check('ultra-hd: the negative twin flips a dark page and keeps a light page on auto',
+        a2.inverted === true && (await PSN.negMapDirectAsync(provN(lightN), 64, 40, true, { band: 11 })).inverted === false);
+    }
   /* --- 4-up dotted separators --- */
   {
     const oBoth = NC.normalize({ perSheet: 4, sepLine: 'both' });
@@ -640,6 +749,73 @@ console.log('5e) hq-map:');
   big = mk([[0,0,0],[255,255,255],[0,0,0],[255,255,255]], 2, 2);
   r = NC.printSaver.negMap(big, 1, 1, false);
   check('negMap: area-average then flip (mixed block -> mid grey)', Math.abs(r.imageData.data[0] - 128) <= 2, `v=${r.imageData.data[0]}`);
+}
+
+/* ---------- vector Pure B&W: threshold without rasterising (sharp at 500%) ---------- */
+{
+  const { inflateSync } = await import('node:zlib');
+  const { PDFName, PDFArray, PDFRef } = await import('pdf-lib');
+  async function buildVecPDF() {
+    const { rgb, grayscale, cmyk, StandardFonts } = await import('pdf-lib');
+    const d = await PDFDocument.create();
+    const p1 = d.addPage([300, 300]);
+    p1.drawRectangle({ x: 0, y: 150, width: 300, height: 150, color: rgb(0.05, 0.08, 0.2) });
+    const f = await d.embedFont(StandardFonts.Helvetica);
+    p1.drawText('Thin 0.5pt', { x: 20, y: 200, size: 12, font: f, color: rgb(1, 1, 1) });
+    p1.drawLine({ start: { x: 10, y: 100 }, end: { x: 290, y: 100 }, thickness: 0.5, color: grayscale(0.5) });
+    p1.drawLine({ start: { x: 10, y: 50 }, end: { x: 290, y: 50 }, thickness: 1.5, color: cmyk(0, 0, 0, 1) });
+    const p2 = d.addPage([300, 300]);
+    p2.drawText('Light page', { x: 20, y: 200, size: 12, font: f, color: grayscale(0) });
+    return d.save({ useObjectStreams: true });
+  }
+  function readPageText(doc, i) {          // decoded content of page i (test-only inflate)
+    const pg = doc.getPages()[i];
+    let raw = pg.node.get(PDFName.of('Contents'));
+    const refs = (raw instanceof PDFArray) ? [...Array(raw.size()).keys()].map((k) => raw.get(k)) : [raw];
+    return refs.map((r) => {
+      const st = (r instanceof PDFRef) ? doc.context.lookup(r) : r;
+      let b = st.getContents();
+      if (String(st.dict.get(PDFName.of('Filter'))) === '/FlateDecode') b = inflateSync(Buffer.from(b));
+      return Buffer.from(b).toString('latin1');
+    }).join('\n');
+  }
+  const srcBytes = await buildVecPDF();
+  const srcDoc = await PDFDocument.load(srcBytes);
+
+  /* pure-string mapping rules first (no PDF IO) */
+  {
+    const r = NC.vectorPureBWContent('0.05 0.08 0.2 rg 0 0 300 150 re f 1 1 1 RG 0 G 0.5 g 0 0 0 1 k 0 0 0 0 k');
+    check('vectorPureBW: navy->white, white->black, black->white, grey->black, cmyk black->white, cmyk white->black',
+      r.changed && /1\n1\n1\nrg/.test(r.text) && /0\n0\n0\nRG/.test(r.text) && /1\nG/.test(r.text) && /0\ng/.test(r.text) &&
+      /0\n0\n0\n0\nk\n0\n0\n0\n1\nk/.test(r.text), r.text.slice(0, 60));
+  }
+  {
+    const r = NC.vectorPureBWContent('q /DeviceRGB CS 0.1 0.1 0.1 SC Q /P1 SCN 5 w BI /W 1 /H 1 /BPC 1 ID \x00\xff EI 0.9 g');
+    check('vectorPureBW: SC in DeviceRGB remaps, Pattern SCN + inline image pass through, q/Q restores space',
+      r.changed && /1\n1\n1\nSC/.test(r.text) && /\/P1 SCN/.test(r.text.replace(/\n/g, ' ')) &&
+      /BI/.test(r.text) && /EI/.test(r.text) && /0\ng/.test(r.text));
+  }
+
+  /* end to end: dark page remapped, light page byte-identical */
+  {
+    const v = await NC.vectorPureBW(srcBytes, [true, false]);
+    const out = await PDFDocument.load(v.bytes);
+    const t1 = readPageText(out, 0), t2 = readPageText(out, 1);
+    const s1 = readPageText(srcDoc, 0), s2 = readPageText(srcDoc, 1);
+    const colorOps = [...t1.matchAll(/([0-9.eE+-]+)\s+([0-9.eE+-]+\s+){0,3}(G|RG|K|g|rg|k|SC|SCN|sc|scn)(?![A-Za-z])/g)];
+    const vals = [];
+    colorOps.forEach((m) => m[0].trim().split(/\s+/).slice(0, -1).forEach((x) => vals.push(parseFloat(x))));
+    check('vectorPureBW: remapped count + sizes/pages unchanged',
+      v.remapped === 1 && v.passed === 1 && v.pages === 2 && out.getPageCount() === 2 &&
+      Math.abs(v.size.w - 300) < 0.01 && Math.abs(v.size.h - 300) < 0.01, `remapped ${v.remapped} passed ${v.passed}`);
+    check('vectorPureBW: every paint value is exactly 0 or 1 (no greys left)',
+      vals.length > 4 && vals.every((x) => x === 0 || x === 1), vals.length + ' values');
+    check('vectorPureBW: text + thin widths survive (selectable, sharp at 500%)',
+      /<5468696E20302E357074>\s*Tj/.test(t1.replace(/\n/g, ' ')) && /0\.5\s+w/.test(t1) && /1\.5\s+w/.test(t1));
+    check('vectorPureBW: light page byte-identical (same rule as raster pure)', t2 === s2 && s1 !== t1);
+    check('vectorPureBW: stays pure vector (no embedded raster images)',
+      !/\/Subtype\s*\/Image/.test(Buffer.from(v.bytes).toString('latin1')));
+  }
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');

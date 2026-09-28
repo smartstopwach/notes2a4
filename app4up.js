@@ -48,9 +48,9 @@
       numStart: parseInt(opt.numStart.value, 10) || 1, numSize: numSizeVal()
     });
   }
-  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), sInk: $('psInk'), sPure: $('psPure'), sKeep: $('psKeep'), sNeg: $('psNeg'), sWhite: $('psWhite') };
+  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), d660: $('dpi660'), sInk: $('psInk'), sPure: $('psPure'), sKeep: $('psKeep'), sNeg: $('psNeg'), sWhite: $('psWhite') };
   function printMode() { return !!(printEls.on && printEls.on.checked); }
-  function printDpi() { return printEls.d220 && printEls.d220.checked ? 220 : (printEls.d96 && printEls.d96.checked ? 96 : 150); }
+  function printDpi() { return printEls.d660 && printEls.d660.checked ? 660 : (printEls.d220 && printEls.d220.checked ? 220 : (printEls.d96 && printEls.d96.checked ? 96 : 150)); }
   function printAuto() { return printEls.auto.checked; }
   function printStyle() {
     if (printEls.sNeg && printEls.sNeg.checked) return 'neg';
@@ -70,7 +70,12 @@
      byte). */
   async function printMapAsync(provider, bw, bh, W, H, hooks) {
     var st = printStyle();
-    if (st === 'neg') return NotesConverter.printSaver.negMapAsync(provider, bw, bh, W, H, printAuto(), hooks);
+    var ultra = printDpi() >= 660 && bw === W && bh === H;   // 660 · ultra at 1:1: stream, never buffer
+    if (st === 'neg') {
+      if (ultra) return NotesConverter.printSaver.negMapDirectAsync(provider, W, H, printAuto(), hooks);
+      return NotesConverter.printSaver.negMapAsync(provider, bw, bh, W, H, printAuto(), hooks);
+    }
+    if (ultra) return NotesConverter.printSaver.hqMapDirectAsync(provider, W, H, printAuto(), st === 'keep', st === 'pure', hooks, st === 'white');
     return NotesConverter.printSaver.hqMapAsync(provider, bw, bh, W, H, printAuto(), st === 'keep', st === 'pure', hooks, st === 'white');
   }
   function refreshPrintBadge() {
@@ -484,7 +489,7 @@
   }
 
   /* Rasterise a page for print-saver with HQ quality:
-     - scans (cap>0): output at cap×tier px/pt (96dpi→1×, 150→2×, 220→3×),
+     - scans (cap>0): output at cap×tier px/pt (96dpi→1×, 150→2×, 220→3×, 660→3×+ultra),
        rendered at 2× that and area-averaged (SSAA) — smooth subpixel edges,
        no bilinear-mush upsampling, canvas kept within memory bounds
      - vector/text pages: full requested dpi, 2× supersampled when it fits
@@ -502,6 +507,8 @@
     var W = Math.max(2, Math.round(outW.width)), H = Math.max(2, Math.round(outW.height));
     var bw = Math.max(2, Math.round(vp1.width * outSc * ss));       // supersampled size
     var bh = Math.max(2, Math.round(vp1.height * outSc * ss));
+    if (dpi >= 660 && (W * H > 80000000 || W > 16000 || H > 16000))
+      throw new Error('This page is too large for 660 dpi (' + W + '×' + H + ' px) — 220 dpi handles any size.');
     /* Render the supersampled page in horizontal STRIPS instead of one giant
        canvas. A 220 dpi A4 page is 4762×6736 = 32 Mpx — drawing that in a single
        pdf.js call blocks the main thread for seconds, which is what produces the
@@ -525,7 +532,9 @@
     /* Off-thread first: the map over ~32 Mpx and the PNG encode are the heavy,
        block-the-tab parts. The worker gets the strips (transferred, never copied)
        and hands back the encoded page; the main thread only draws them. */
-    if (window.NotesRaster && NotesRaster.supported()) {
+    /* 660 · ultra stays on the main thread: the worker build of the map has no
+       streaming step, and a 42 Mpx page would not fit its buffers */
+    if (window.NotesRaster && NotesRaster.supported() && printDpi() < 660) {
       try {
         var wres = await NotesRaster.mapPage({
           kind: st === 'neg' ? 'neg' : 'hq', auto: printAuto(), keepColour: st === 'keep', pure: st === 'pure', white: st === 'white',
@@ -615,7 +624,7 @@
   function printListeners(schedule) {
     if (!printEls.on) return;
     printEls.on.addEventListener('change', function () { printEls.opts.hidden = !printEls.on.checked; schedule(); refreshPrintBadge(); });
-    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.sInk, printEls.sPure, printEls.sKeep, printEls.sNeg, printEls.sWhite].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
+    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.d660, printEls.sInk, printEls.sPure, printEls.sKeep, printEls.sNeg, printEls.sWhite].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
   }
   /* ---------- convert ---------- */
   goBtn.addEventListener('click', convert);

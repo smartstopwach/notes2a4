@@ -18,6 +18,9 @@
 
   var PDFDocument = PDFLib.PDFDocument;
   var StandardFonts = PDFLib.StandardFonts;
+  var PDFName = PDFLib.PDFName;
+  var PDFArray = PDFLib.PDFArray;
+  var PDFRef = PDFLib.PDFRef;
   var rgb = PDFLib.rgb;
   var LineCapStyle = PDFLib.LineCapStyle;
 
@@ -618,7 +621,56 @@
   function hqResult(acc, st) {
     return { imageData: { data: acc.out, width: acc.outW, height: acc.outH }, darkFrac: st.dark / acc.n, inverted: st.invert };
   }
-  function hqMap(big, outW, outH, auto, keepColour, pure, white) {
+  /* Bold strokes — the thin-pen fix: morphological ink dilation as a separable
+     min-filter over each channel, so dark ink grows `r` px into the paper in
+     every direction (+1 turns a 1 px hairline into a 3 px stroke). Paper —
+     bright everywhere in the window — is untouched, clamp-to-edge windows
+     never invent borders, and alpha is left alone. In-place with O(width)
+     scratch (one row plus a 2r+1 row ring), so an Ultra-HD page pays no extra
+     page-sized buffer. `r` clamps to 1..2: past that, neighbouring
+     handwriting strokes start to merge into each other. */
+  function hqBold(out, W, H, r) {
+    r = r | 0; if (r < 1) return out; if (r > 2) r = 2;
+    var W3 = W * 3, row = new Uint8Array(W3), ring = [], i, x, y, c;
+    for (i = 0; i < 2 * r + 1; i++) ring.push(new Uint8Array(W3));
+    for (y = 0; y < H; y++) {                            // horizontal pass, one scratch row
+      var o = y * W * 4;
+      for (x = 0; x < W; x++) { var q = o + x * 4; row[x * 3] = out[q]; row[x * 3 + 1] = out[q + 1]; row[x * 3 + 2] = out[q + 2]; }
+      for (x = 0; x < W; x++) {
+        var x0 = x - r < 0 ? 0 : x - r, x1 = x + r >= W ? W - 1 : x + r, q2 = o + x * 4;
+        for (c = 0; c < 3; c++) {
+          var m = 255;
+          for (var xx = x0; xx <= x1; xx++) { var v = row[xx * 3 + c]; if (v < m) m = v; }
+          out[q2 + c] = m;
+        }
+      }
+    }
+    for (i = 0; i < 2 * r + 1; i++) {                    // vertical pass: the ring holds the
+      var ry = i - r < 0 ? 0 : i - r;                    // post-pass-1 rows y-r..y+r (clamped)
+      if (ry >= H) ry = H - 1;
+      var ro = ry * W * 4, rb = ring[i];
+      for (x = 0; x < W; x++) { var qq = ro + x * 4; rb[x * 3] = out[qq]; rb[x * 3 + 1] = out[qq + 1]; rb[x * 3 + 2] = out[qq + 2]; }
+    }
+    for (y = 0; y < H; y++) {
+      var wo = y * W * 4;
+      for (x = 0; x < W; x++) {
+        var xb = x * 3, q3 = wo + x * 4;
+        for (c = 0; c < 3; c++) {
+          var m2 = 255;
+          for (i = 0; i < 2 * r + 1; i++) { var v2 = ring[i][xb + c]; if (v2 < m2) m2 = v2; }
+          out[q3 + c] = m2;
+        }
+      }
+      if (y + 1 < H) {                                  // advance: drop row y-r, read row y+r+1
+        var nr = y + r + 1; if (nr >= H) nr = H - 1;     // (still pass-1: rows past y are untouched)
+        var nb = ring.shift(), no = nr * W * 4;
+        for (x = 0; x < W; x++) { var nq = no + x * 4; nb[x * 3] = out[nq]; nb[x * 3 + 1] = out[nq + 1]; nb[x * 3 + 2] = out[nq + 2]; }
+        ring.push(nb);
+      }
+    }
+    return out;
+  }
+  function hqMap(big, outW, outH, auto, keepColour, pure, white, bold) {
     var bd = big.data, bw = big.width, bh = big.height;
     var acc = hqAcc(outW, outH);
     hqFeed(acc, bd, bw, 0, bh, bh);
@@ -627,6 +679,7 @@
     st.invert = auto ? st.dark / acc.n >= 0.5 : true;
     if (white && !st.invert) hqBoardMask(acc, st);       // dark areas of a light page
     hqFinishB(acc, 0, acc.outH, st, acc.out = new Uint8ClampedArray(acc.n * 4), keepColour, pure, white);
+    if (bold) hqBold(acc.out, acc.outW, acc.outH, bold);
     return hqResult(acc, st);
   }
   /**
@@ -635,7 +688,7 @@
    * and `hooks.progress(fraction, phase)` is awaited between bands — that await
    * is what keeps the tab interactive during a 33-page print-saver run.
    */
-  async function hqMapAsync(provider, bw, bh, outW, outH, auto, keepColour, pure, hooks, white) {
+  async function hqMapAsync(provider, bw, bh, outW, outH, auto, keepColour, pure, hooks, white, bold) {
     var acc = hqAcc(outW, outH);
     var band = (hooks && hooks.band) || 256;
     var step = hooks && hooks.progress ? hooks.progress : null;
@@ -660,7 +713,106 @@
       hqFinishB(acc, r2, r3, st, acc.out, keepColour, pure, white);
       if (step) await step(0.7 + (r3 / outH) * 0.3, 'render');
     }
+    if (bold) hqBold(acc.out, acc.outW, acc.outH, bold);
     return hqResult(acc, st);
+  }
+
+  /**
+   * 1:1 streaming twin of hqMapAsync for Ultra-HD pages (600 dpi): identical
+   * maths and identical bytes, but O(strip) memory instead of O(page) — the
+   * accumulator buffers of hqAcc would cost ~600 MB on a 34 Mpx page. Pass 1
+   * streams the strips once (dark count + per-pixel luma/chroma); pass 2 maps
+   * with the same rules as hqFinishB (mirrored below — the tests prove the two
+   * agree byte for byte). Pixels are re-read only when the rule needs the raw
+   * channels (keep-colour, or a light page passing through untouched).
+   */
+  async function hqMapDirectAsync(provider, W, H, auto, keepColour, pure, hooks, white, bold) {
+    var n = W * H;
+    var band = (hooks && hooks.band) || 256;
+    var step = hooks && hooks.progress ? hooks.progress : null;
+    var Ls = new Float32Array(n), maxC = new Uint8Array(n), dark = 0;
+    for (var y = 0; y < H; y += band) {
+      var y1 = Math.min(H, y + band), rows = y1 - y;
+      var px = provider(y, rows);
+      if (px && typeof px.then === 'function') px = await px;
+      var bd = px.data;
+      for (var yy = 0; yy < rows; yy++) {
+        var brow = yy * W, grow = (y + yy) * W;
+        for (var x = 0; x < W; x++) {
+          var i = (brow + x) * 4, q = grow + x;
+          var r = bd[i], g = bd[i + 1], b = bd[i + 2];
+          var L = (r * 299 + g * 587 + b * 114) / 1000 | 0;
+          Ls[q] = L;
+          maxC[q] = Math.max(r, g, b) - Math.min(r, g, b);
+          if (L <= PS_DARK_LUM) dark++;
+        }
+      }
+      if (step) await step((y1 / H) * 0.55, 'downsample');
+    }
+    var st = { Ls: Ls, dark: dark, invert: auto ? dark / n >= 0.5 : true };
+    if (white && !st.invert) hqBoardMask({ outW: W, outH: H }, st);   // needs the whole luma image
+    if (step) await step(0.7, 'measure');
+    var out = new Uint8ClampedArray(n * 4);
+    var T = PS_DARK_LUM, B = PS_BAND, lo = T - B, hi = T + B, invert = st.invert;
+    var needPx = keepColour || (!invert && !white);
+    for (var r2 = 0; r2 < H; r2 += band) {
+      var r3 = Math.min(H, r2 + band), rows2 = r3 - r2;
+      var px2 = null;
+      if (needPx) {
+        px2 = provider(r2, rows2);
+        if (px2 && typeof px2.then === 'function') px2 = await px2;
+        px2 = px2.data;
+      }
+      for (var yy2 = 0; yy2 < rows2; yy2++) {
+        var q0 = (r2 + yy2) * W, b0 = yy2 * W;
+        for (var x2 = 0; x2 < W; x2++) {
+          var q = q0 + x2, o = q * 4;
+          var L2 = Ls[q], mc = maxC[q], v;
+          if (!invert) {
+            if (white && hqBoardAt(st, q, W)) {
+              if (L2 <= lo) v = 255;
+              else if (mc > PS_CHROMA) v = 0;
+              else if (L2 >= hi) v = 0;
+              else { var tb = (L2 - lo) / (hi - lo); v = (Math.pow(1 - tb, PS_GAMMA) * 255) | 0; }
+              out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+              continue;
+            }
+            if (white) {
+              if (mc > PS_CHROMA) v = 0;
+              else if (L2 >= PS_WHITE_HI) v = 255;
+              else if (L2 <= PS_WHITE_LO) v = 0;
+              else { var aw = (L2 - PS_WHITE_LO) / (PS_WHITE_HI - PS_WHITE_LO); v = (Math.pow(aw, PS_GAMMA) * 255) | 0; }
+              out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+              continue;
+            }
+            var bi = (b0 + x2) * 4;
+            out[o] = px2[bi]; out[o + 1] = px2[bi + 1]; out[o + 2] = px2[bi + 2]; out[o + 3] = 255;
+            continue;
+          }
+          if (pure) {
+            v = L2 <= T ? 255 : 0;
+            out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+            continue;
+          }
+          if (L2 <= lo) v = 255;
+          else if (mc > PS_CHROMA) {
+            if (keepColour) {
+              var ki = (b0 + x2) * 4;
+              var kc = psKeepColour(px2[ki], px2[ki + 1], px2[ki + 2], L2);
+              out[o] = kc[0]; out[o + 1] = kc[1]; out[o + 2] = kc[2]; out[o + 3] = 255;
+              continue;
+            }
+            v = psColourInk(L2);
+          }
+          else if (L2 >= hi) v = 0;
+          else { var tt = (L2 - lo) / (hi - lo); v = (Math.pow(1 - tt, PS_GAMMA) * 255) | 0; }
+          out[o] = out[o + 1] = out[o + 2] = v; out[o + 3] = 255;
+        }
+      }
+      if (step) await step(0.7 + (r3 / H) * 0.3, 'render');
+    }
+    if (bold) hqBold(out, W, H, bold);
+    return { imageData: { data: out, width: W, height: H }, darkFrac: dark / n, inverted: invert };
   }
 
   /**
@@ -715,6 +867,47 @@
     return { imageData: { data: acc.out, width: outW, height: outH }, darkFrac: st.dark / acc.n, inverted: st.invert };
   }
   /** Banded twin of negMap — same pixels, but the tab stays alive. */
+  /* 1:1 streaming twin of negMapAsync for 660 dpi packer pages: identical maths
+     and identical bytes, but O(strip) memory instead of O(page) — pass 1 counts
+     the dark fraction strip by strip (nothing stored), pass 2 re-reads the
+     strips and flips (or passes through) each pixel. The provider is called
+     twice, so a 660 page renders its strips twice: slowest run, sharpest page. */
+  async function negMapDirectAsync(provider, W, H, auto, hooks) {
+    var n = W * H;
+    var band = (hooks && hooks.band) || 256;
+    var step = hooks && hooks.progress ? hooks.progress : null;
+    var dark = 0;
+    for (var y = 0; y < H; y += band) {
+      var y1 = Math.min(H, y + band), rows = y1 - y;
+      var px = provider(y, rows);
+      if (px && typeof px.then === 'function') px = await px;
+      var bd = px.data;
+      for (var i = 0, e = rows * W * 4; i < e; i += 4) {
+        if (((bd[i] * 299 + bd[i + 1] * 587 + bd[i + 2] * 114) / 1000 | 0) <= PS_DARK_LUM) dark++;
+      }
+      if (step) await step((y1 / H) * 0.5, 'downsample');
+    }
+    var invert = auto ? dark / n >= 0.5 : true;
+    if (step) await step(0.5, 'measure');
+    var out = new Uint8ClampedArray(n * 4);
+    for (var r2 = 0; r2 < H; r2 += band) {
+      var r3 = Math.min(H, r2 + band), rows2 = r3 - r2;
+      var px2 = provider(r2, rows2);
+      if (px2 && typeof px2.then === 'function') px2 = await px2;
+      var bd2 = px2.data;
+      for (var yy = 0; yy < rows2; yy++) {
+        var q0 = (r2 + yy) * W, b0 = yy * W;
+        for (var x = 0; x < W; x++) {
+          var q = q0 + x, o = q * 4, bi = (b0 + x) * 4;
+          var r = bd2[bi], g = bd2[bi + 1], b = bd2[bi + 2];
+          if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+          out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
+        }
+      }
+      if (step) await step(0.5 + (r3 / H) * 0.5, 'render');
+    }
+    return { imageData: { data: out, width: W, height: H }, darkFrac: dark / n, inverted: invert };
+  }
   async function negMapAsync(provider, bw, bh, outW, outH, auto, hooks) {
     var acc = negAcc(outW, outH);
     var band = (hooks && hooks.band) || 256;
@@ -892,6 +1085,247 @@
   }
 
   /**
+   * Vector Pure B&W — threshold every painted colour to solid black or paper
+   * white WITHOUT rasterising: text stays text (selectable), thin strokes stay
+   * razor-sharp at any zoom (500% included). Same luma rule as raster Pure B&W
+   * (PS_DARK_LUM): dark paint → white paper, everything else → black ink.
+   *
+   * Only colour operators are rewritten (DeviceGray/RGB/CMYK + SC/SCN while one
+   * of those spaces is current, q/Q tracked); paths, text, line widths,
+   * transforms, images, shadings and patterns pass through untouched.
+   * remap[i] === false (a light page — the caller applies the same >= 0.5 dark
+   * rule as the raster engine) leaves page i byte-identical, as do pages whose
+   * streams cannot be parsed (valid output first). Multi-stream pages are
+   * concatenated per the spec; Flate-decoded via the platform inflater.
+   * Returns { bytes, pages, size, remapped, passed }.
+   */
+  var VP_CS_ARITY = { DeviceGray: 1, DeviceRGB: 3, DeviceCMYK: 4 };
+  function vpLuma255(vals, arity) {
+    var r, g, b;
+    if (arity === 1) { r = g = b = vals[0]; }
+    else if (arity === 3) { r = vals[0]; g = vals[1]; b = vals[2]; }
+    else {
+      r = 1 - Math.min(1, vals[0] + vals[3]); g = 1 - Math.min(1, vals[1] + vals[3]); b = 1 - Math.min(1, vals[2] + vals[3]);
+    }
+    return (0.299 * r + 0.587 * g + 0.114 * b) * 255;
+  }
+  /* Tokenise a decoded content stream. Strings, hex strings, arrays and dicts
+     stay verbatim (no re-escaping can corrupt them); each inline image's bytes
+     (ID…EI) travel as one opaque blob so binary can never be misread as ops. */
+  function vpTokenize(src) {
+    var toks = [], i = 0, n = src.length, inImg = false;
+    function isWs(c) { return c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\0'; }
+    function pushWord() {
+      var w = i, c = src[i];
+      if (c === '/') { i++; while (i < n && /[A-Za-z0-9._#-]/.test(src[i])) i++; }
+      else if (/[0-9.+\-]/.test(c)) { while (i < n && /[0-9.eE+\-]/.test(src[i])) i++; }
+      else { while (i < n && /[A-Za-z0-9*_'"]/.test(src[i])) i++; }
+      var t = src.slice(w, i);
+      toks.push(t);
+      if (t === 'BI') inImg = true;
+      else if (t === 'ID' && inImg) {                       // raw image bytes until EI
+        if (i < n && isWs(src[i])) i++;                     // the single space after ID
+        var s = i;
+        while (i < n) {
+          if (isWs(src[i]) && src[i + 1] === 'E' && src[i + 2] === 'I' && (i + 3 >= n || isWs(src[i + 3]))) break;
+          i++;
+        }
+        toks.push({ blob: src.slice(s, i) });
+        inImg = false;
+      }
+    }
+    while (i < n) {
+      var c = src[i];
+      if (isWs(c)) { i++; continue; }
+      if (c === '%') { while (i < n && src[i] !== '\n') i++; continue; }
+      if (c === '(') {
+        var s = i, depth = 0;
+        do {
+          if (src[i] === '\\') { i += 2; continue; }
+          if (src[i] === '(') depth++;
+          else if (src[i] === ')') { depth--; if (!depth) { i++; break; } }
+          i++;
+        } while (i < n);
+        toks.push(src.slice(s, i)); continue;
+      }
+      if (c === '<' && src[i + 1] === '<') {
+        var d = i, dd = 0;
+        while (i < n) {
+          if (src[i] === '<' && src[i + 1] === '<') { dd++; i += 2; continue; }
+          if (src[i] === '>' && src[i + 1] === '>') { dd -= 1; i += 2; if (!dd) break; continue; }
+          i++;
+        }
+        toks.push(src.slice(d, i)); continue;
+      }
+      if (c === '<') {
+        var h = i;
+        while (i < n && src[i] !== '>') i++;
+        i++;
+        toks.push(src.slice(h, i)); continue;
+      }
+      if (c === '[') {
+        var a = i, ad = 0;
+        while (i < n) {
+          var ch = src[i];
+          if (ch === '[') ad++;
+          else if (ch === ']') { ad--; if (!ad) { i++; break; } }
+          else if (ch === '(') {
+            var q = i, qd = 0;
+            do {
+              if (src[q] === '\\') { q += 2; continue; }
+              if (src[q] === '(') qd++;
+              else if (src[q] === ')') { qd--; if (!qd) { q++; break; } }
+              q++;
+            } while (q < n);
+            i = q; continue;
+          }
+          i++;
+        }
+        toks.push(src.slice(a, i)); continue;
+      }
+      if (c === '/' || /[A-Za-z0-9.+\-*_'"]/.test(c)) { pushWord(); continue; }
+      i++;
+    }
+    return toks;
+  }
+  /* Rewrite only the paint colours of a decoded content stream.
+     Returns { text, changed }. Exported (as vectorPureBWContent) for tests. */
+  function vpRemapContent(src) {
+    var toks = vpTokenize(src);
+    var out = [], stack = [];
+    var csS = 'DeviceGray', csN = 'DeviceGray', saved = [];
+    var changed = false;
+    function isNum(t) { return typeof t === 'string' && /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t); }
+    function numVal(t) { var v = parseFloat(t); return v < 0 ? 0 : v > 1 ? 1 : v; }
+    function flush() { while (stack.length) out.push(stack.shift()); }
+    function allNums(list) { for (var k = 0; k < list.length; k++) if (!isNum(list[k])) return false; return true; }
+    function paintVals(list, arity) {                    // thresholded values, or null to pass through
+      if (list.length !== arity || !allNums(list)) return null;
+      var vals = list.map(numVal);
+      var w = vpLuma255(vals, arity) <= PS_DARK_LUM ? 1 : 0;   // dark → white paper, bright → black ink
+      var want = arity === 4 ? [0, 0, 0, w ? 0 : 1] : [w, w, w].slice(0, arity);
+      var same = true;
+      for (var k = 0; k < arity; k++) if (vals[k] !== want[k]) { same = false; break; }
+      return { vals: vals, want: want, same: same };
+    }
+    for (var ti = 0; ti < toks.length; ti++) {
+      var t = toks[ti];
+      if (typeof t !== 'string' || t[0] === '/' || t[0] === '(' || t[0] === '<' || t[0] === '[' || isNum(t)) {
+        stack.push(t); continue;                         // operand (or opaque blob) — emitted at the next op
+      }
+      if (t === 'q') { saved.push([csS, csN]); flush(); out.push(t); continue; }
+      if (t === 'Q') { var back = saved.pop(); if (back) { csS = back[0]; csN = back[1]; } flush(); out.push(t); continue; }
+      if (t === 'G' || t === 'g' || t === 'RG' || t === 'rg' || t === 'K' || t === 'k') {
+        var ar = (t === 'G' || t === 'g') ? 1 : (t === 'RG' || t === 'rg') ? 3 : 4;
+        var r = paintVals(stack, ar);
+        if (r && !r.same) { for (var k = 0; k < ar; k++) out.push(String(r.want[k])); stack = []; changed = true; }
+        else flush();
+        if (t === t.toUpperCase()) csS = ar === 1 ? 'DeviceGray' : ar === 3 ? 'DeviceRGB' : 'DeviceCMYK';
+        else csN = ar === 1 ? 'DeviceGray' : ar === 3 ? 'DeviceRGB' : 'DeviceCMYK';
+        out.push(t); continue;
+      }
+      if (t === 'CS' || t === 'cs') {                    // colourspace set — track, pass through
+        var sp = null;
+        if (stack.length === 1 && typeof stack[0] === 'string') {
+          if (stack[0][0] === '/') sp = stack[0].slice(1);
+          else if (stack[0][0] === '[') { var m = /^\[\s*\/([A-Za-z0-9._-]+)/.exec(stack[0]); if (m) sp = m[1]; }
+        }
+        if (sp) { if (t === 'CS') csS = sp; else csN = sp; }
+        flush(); out.push(t); continue;
+      }
+      if (t === 'SC' || t === 'SCN' || t === 'sc' || t === 'scn') {
+        var cur = (t === 'SC' || t === 'SCN') ? csS : csN;
+        var arity = VP_CS_ARITY[cur] || 0;
+        var hasName = false;
+        for (var ni = 0; ni < stack.length; ni++) if (typeof stack[ni] === 'string' && stack[ni][0] === '/') hasName = true;
+        var rr = (!hasName && arity) ? paintVals(stack, arity) : null;
+        if (rr && !rr.same) { for (var k2 = 0; k2 < arity; k2++) out.push(String(rr.want[k2])); stack = []; changed = true; }
+        else flush();
+        out.push(t); continue;
+      }
+      flush(); out.push(t);                              // every other op passes through verbatim
+    }
+    flush();
+    var parts = [];
+    for (var pi = 0; pi < out.length; pi++) parts.push(typeof out[pi] === 'string' ? out[pi] : out[pi].blob);
+    return { text: parts.join('\n'), changed: changed };
+  }
+  /* latin1 keeps every byte intact (inline images are binary — UTF-8 would mangle
+     them); the encoder is manual for the same reason, no TextEncoder anywhere. */
+  function vpLatin1Decode(u8) {
+    if (typeof TextDecoder !== 'undefined') {
+      try { return new TextDecoder('latin1').decode(u8); } catch (e) {}
+    }
+    var s = '';
+    for (var i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+    return s;
+  }
+  function vpLatin1Encode(s) {
+    var b = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) b[i] = s.charCodeAt(i) & 255;
+    return b;
+  }
+  async function vpInflate(u8) {                          // FlateDecode via the platform
+    var ds = new DecompressionStream('deflate');
+    var w = ds.writable.getWriter();
+    w.write(u8); w.close();
+    var chunks = [], total = 0, r = ds.readable.getReader();
+    for (;;) {
+      var step = await r.read();
+      if (step.done) break;
+      chunks.push(step.value); total += step.value.length;
+    }
+    var out = new Uint8Array(total), o = 0;
+    for (var ci = 0; ci < chunks.length; ci++) { out.set(chunks[ci], o); o += chunks[ci].length; }
+    return out;
+  }
+  /* Read a page's content (single stream or array — concatenated per the spec),
+     decoding Flate. Anything exotic throws and the page passes through. */
+  async function vpReadPageContents(doc, pg) {
+    var rawC = pg.node.get(PDFName.of('Contents'));
+    if (!rawC) return '';
+    var refs = [];
+    if (rawC instanceof PDFArray) { for (var ai = 0; ai < rawC.size(); ai++) refs.push(rawC.get(ai)); }
+    else refs.push(rawC);
+    var parts = [];
+    for (var ri = 0; ri < refs.length; ri++) {
+      var st = (refs[ri] instanceof PDFRef) ? doc.context.lookup(refs[ri]) : refs[ri];
+      if (!st || !st.dict || typeof st.getContents !== 'function') throw new Error('unreadable content stream');
+      var filter = st.dict.get(PDFName.of('Filter'));
+      var fname = filter ? String(filter) : null;
+      var bytes = st.getContents();
+      if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
+      if (fname === '/FlateDecode') {
+        if (typeof DecompressionStream === 'undefined') throw new Error('no inflate available');
+        bytes = await vpInflate(bytes);
+      } else if (fname) throw new Error('unsupported content filter ' + fname);
+      parts.push(vpLatin1Decode(bytes));
+    }
+    return parts.join('\n');
+  }
+  async function vectorPureBW(bytes, remap) {
+    var doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    var pages = doc.getPages();
+    if (!pages.length) throw new Error('This PDF has no pages');
+    var remapped = 0, passed = 0;
+    for (var i = 0; i < pages.length; i++) {
+      if (remap && remap[i] === false) { passed++; continue; }
+      try {
+        var pg = pages[i];
+        var r = vpRemapContent(await vpReadPageContents(doc, pg));
+        if (!r.changed) { passed++; continue; }
+        var ref = doc.context.nextRef();
+        doc.context.assign(ref, doc.context.stream(vpLatin1Encode(r.text), doc.context.obj({})));
+        pg.node.set(PDFName.of('Contents'), ref);
+        remapped++;
+      } catch (e) { passed++; }                          // unparseable pages stay valid, untouched
+    }
+    var saved = await doc.save({ useObjectStreams: true });
+    var first = pages[0].getMediaBox ? pages[0].getMediaBox() : { width: pages[0].getWidth(), height: pages[0].getHeight() };
+    return { bytes: saved, pages: pages.length, size: { w: first.width, h: first.height }, remapped: remapped, passed: passed };
+  }
+
+  /**
    * Pack pre-rendered page images (Print-Saver output) using the SAME layout engine.
    * items: array in page order — { bytes: Uint8Array (PNG), w, h } or null (blank).
    */
@@ -952,11 +1386,13 @@
     numText: numText,
     numPlace: numPlace,
     vectorNegative: vectorNegative,
+    vectorPureBW: vectorPureBW,
+    vectorPureBWContent: vpRemapContent,
     sepLines: sepLines,
     /* `pieces` is the raw map machinery, so worker-raster.js can run the
        identically-mathed map off-thread (and the tests can prove the two agree) */
     printSaver: {
-      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, negMap: negMap, negMapAsync: negMapAsync,
+      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, hqMapDirectAsync: hqMapDirectAsync, negMap: negMap, negMapAsync: negMapAsync, negMapDirectAsync: negMapDirectAsync, hqBold: hqBold,
       keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA,
       WHITE_HI: PS_WHITE_HI, WHITE_LO: PS_WHITE_LO,
       BOARD_FINE: PS_BOARD_FINE, BOARD_COARSE: PS_BOARD_COARSE, BOARD_SEED: PS_BOARD_SEED, BOARD_GROW: PS_BOARD_GROW,

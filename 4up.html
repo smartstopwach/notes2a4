@@ -6,7 +6,7 @@
 <title>Notes2A4 · 4-up Studio — four 16:9 note pages on one landscape A4 (400 → 100)</title>
 <meta name="description" content="Special mode: pack FOUR note slides onto one landscape A4 — pages 1·2 left column, 3·4 right, flush rows, a 43 mm white band in the middle for your notes. 400 pages become 100. 100% in-browser, no uploads.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='7' width='28' height='18' rx='3' fill='%23fff'/%3E%3Crect x='4' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='9' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='4' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3Crect x='17' y='17' width='11' height='6' rx='1' fill='%230d1321'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="styles.css?v=43">
+<link rel="stylesheet" href="styles.css?v=44">
 <link rel="stylesheet" href="fourup.css?v=43">
 <meta http-equiv="Cache-Control" content="no-cache">
 </head>
@@ -27,6 +27,7 @@
   <nav class="topnav" aria-label="Main">
     <a href="index.html">2-up tool</a>
     <a href="invert.html" class="nav-inv">Invert Lab</a>
+    <a href="rapper.html" class="nav-rp">The Rapper</a>
     <a href="#how4">How it works</a>
     <a href="#convert4">Convert</a>
     <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener" class="nav-gh">GitHub</a>
@@ -226,10 +227,11 @@
               <div class="seg" role="radiogroup" aria-label="Print DPI">
                 <label><input type="radio" name="psdpi" id="dpi96"><span>96 · 1×</span></label>
                 <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · 2×</span></label>
-                <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3× max</span></label>
+                <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3×</span></label>
+                <label><input type="radio" name="psdpi" id="dpi660"><span>660 · ultra</span></label>
               </div>
               <ul class="note-list">
-                <li><b>Resolution</b> — scans render at 1× / 2× / 3× their own native sharpness (96 / 150 / 220 dpi); vector pages use the same pick.</li>
+                <li><b>Resolution</b> — scans render at 1× / 2× / 3× their own native sharpness (96 / 150 / 220 dpi); 660 · ultra gives vector pages full 660 dpi.</li>
                 <li><b>Smooth edges</b> — 2× supersampling with area-averaging (SSAA), so curves stay smooth instead of jagged.</li>
                 <li><b>Ink-bias curve</b> — a γ=1.7 response gives inverted handwriting its full visual weight; thin strokes never break up.</li>
                 <li><b>Cost</b> — higher dpi = cleaner print but a bigger file and slower run. 150 is the balanced default.</li>
@@ -312,11 +314,11 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=43"></script>
-<script src="converter.js?v=43"></script>
+<script src="session.js?v=44"></script>
+<script src="converter.js?v=45"></script>
 <script src="raster-client.js?v=43"></script>
-<script src="enhance.js?v=43"></script>
-<script src="review.js?v=44"></script>
-<script src="app4up.js?v=43"></script>
+<script src="enhance.js?v=44"></script>
+<script src="review.js?v=45"></script>
+<script src="app4up.js?v=44"></script>
 </body>
 </html>

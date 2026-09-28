@@ -284,7 +284,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     const expect = {
       'index.html': { lists: 6, bullets: 18 },   // + White paper
       '4up.html': { lists: 6, bullets: 18 },
-      'invert.html': { lists: 3, bullets: 13 }
+      'invert.html': { lists: 5, bullets: 21 }   // + Overlays (ruled lines · separator · numbers) + band-keep + pure-b&w vector + 600dpi ultra
     };
     for (const h of htmls) {
       const src = readFileSync(new URL('../' + h, import.meta.url), 'utf8');
@@ -298,7 +298,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
         !/<small>Black ink flips/.test(src) && !/<small>Pages become full-page images/.test(src) &&
         !/<small><b>HQ engine v2:<\/b>/.test(src) && !/<small>0 = slides touch/.test(src) &&
         !/<small>0 = the demo look/.test(src));
-      const switchCount = { 'index.html': 4, '4up.html': 5, 'invert.html': 2 }[h];
+      const switchCount = { 'index.html': 4, '4up.html': 5, 'invert.html': 8 }[h];   // + 3 overlay toggles + 2 band toggles + bold strokes
       check('markup: ' + h + ' every switch (toggle) has its own explanation', (() => {
         const rows = [...src.matchAll(/<label class="sw[^"]*"[^>]*>[\s\S]*?<\/label>/g)].map((m) => m[0]);
         return rows.length === switchCount && rows.every((r) => /<em>/.test(r));
@@ -563,7 +563,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
     const inv = readFileSync(new URL('../app-invert.js', import.meta.url), 'utf8');
     check('white paper: app-invert.js resolves the style and carries the flag everywhere',
       /function whiteMode\(\)/.test(inv) && /white: whiteMode\(\)/.test(inv) &&
-      /pureMode\(\), hook, whiteMode\(\)\)/.test(inv) && /pureMode\(\),\n        \{ band: 192/.test(inv));
+      /pureMode\(\), hook, whiteMode\(\), boldAmt\(\)\)/.test(inv) && /pureMode\(\),\n        \{ band: 192/.test(inv));
     const wrk = readFileSync(new URL('../worker-raster.js', import.meta.url), 'utf8');
     const cli = readFileSync(new URL('../raster-client.js', import.meta.url), 'utf8');
     check('white paper: the worker and its client carry the flag (a dropped flag looks like "the mode does nothing")',

@@ -9,8 +9,8 @@
  */
 (function () {
   'use strict';
-  var BUILD = 2;
-  console.info('[Notes2A4] review.js build', BUILD, '· page review + delete');
+  var BUILD = 3;
+  console.info('[Notes2A4] review.js build', BUILD, '· page review + delete + keep');
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -40,6 +40,8 @@
       '.pr-btn.pr-danger:hover{background:#541618}',
       '.pr-btn.pr-apply{border-color:#15803d;background:#0f2e1c;color:#86efac}',
       '.pr-btn.pr-apply:hover{background:#154227}',
+      '.pr-btn.pr-keep{border-color:#15803d;color:#86efac;background:transparent}',
+      '.pr-btn.pr-keep:hover{background:#0f2e1c}',
       '.pr-stage{flex:1;display:flex;align-items:center;justify-content:center;gap:1rem;min-height:0;padding:0 1rem}',
       '.pr-nav{width:52px;height:92px;border-radius:14px;border:1px solid #3a4356;background:#161c2a;color:#cbd5e6;font-size:1.6rem;cursor:pointer;flex:none}',
       '.pr-nav:hover{background:#212a3d}.pr-nav:disabled{opacity:.25;cursor:default}',
@@ -49,6 +51,8 @@
       '.pr-x{position:absolute;inset:0;display:none;align-items:center;justify-content:center;pointer-events:none}',
       '.pr-frame.pr-removed .pr-x{display:flex}',
       '.pr-x span{background:#b91c1c;color:#fff;font:800 1rem/1 system-ui;padding:.7rem 1.2rem;border-radius:12px;letter-spacing:.04em;box-shadow:0 8px 30px rgba(0,0,0,.5)}',
+      '.pr-kept{position:absolute;left:50%;top:12px;transform:translateX(-50%) translateY(-8px);background:rgba(15,46,28,.94);border:1px solid #15803d;color:#86efac;font:700 .85rem/1 system-ui;padding:.5rem 1rem;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .18s ease,transform .18s ease;white-space:nowrap;z-index:2}',
+      '.pr-kept.show{opacity:1;transform:translateX(-50%) translateY(0)}',
       '.pr-bottom{display:flex;align-items:center;justify-content:center;gap:.9rem;padding:.75rem 1rem 1rem;flex-wrap:wrap}',
       '.pr-jump{width:70px;background:#141a28;border:1px solid #3a4356;color:#e8ecf5;border-radius:8px;padding:.45rem .5rem;font:600 .9rem system-ui;text-align:center}',
       '.pr-keys{color:#6c7891;font-size:.78rem}',
@@ -74,6 +78,7 @@
         '<span class="pr-count">page <b id="prCur">1</b> / <b id="prTotal">1</b></span>' +
         '<span class="pr-chip-del" id="prDelCount" hidden>0 removed</span>' +
         '<span class="sp"></span>' +
+        '<button class="pr-btn pr-keep" id="prKeepBtn" type="button">✓ Keep → <kbd style="opacity:.7">Enter</kbd></button>' +
         '<button class="pr-btn pr-danger" id="prRemove" type="button">🗑 Remove page <kbd style="opacity:.7">Del</kbd></button>' +
         '<button class="pr-btn pr-apply" id="prApply" type="button">✓ Apply — keep <span id="prKeep">all</span> <kbd style="opacity:.7">A</kbd></button>' +
         '<button class="pr-btn" id="prClose" type="button">✕ Close</button>' +
@@ -81,6 +86,7 @@
       '<div class="pr-stage">' +
         '<button class="pr-nav" id="prPrev" type="button" aria-label="Previous page">‹</button>' +
         '<div class="pr-frame" id="prFrame"><canvas id="prCanvas"></canvas>' +
+          '<div class="pr-kept" id="prKept">✓ kept</div>' +
           '<div class="pr-x"><span>REMOVED — Del restores · Enter keeps</span></div></div>' +
         '<button class="pr-nav" id="prNext" type="button" aria-label="Next page">›</button>' +
       '</div>' +
@@ -92,12 +98,14 @@
     ui = {
       ov: ov, name: $('prName'), cur: $('prCur'), total: $('prTotal'),
       delCount: $('prDelCount'), keep: $('prKeep'),
+      keepBtn: $('prKeepBtn'), kept: $('prKept'),
       remove: $('prRemove'), apply: $('prApply'), close: $('prClose'),
       prev: $('prPrev'), next: $('prNext'), frame: $('prFrame'),
       canvas: $('prCanvas'), jump: $('prJump')
     };
     ui.prev.addEventListener('click', function () { go(cur - 1); });
     ui.next.addEventListener('click', function () { go(cur + 1); });
+    ui.keepBtn.addEventListener('click', keepNext);
     ui.remove.addEventListener('click', toggleRemove);
     ui.close.addEventListener('click', close);
     ui.apply.addEventListener('click', apply);
@@ -111,7 +119,15 @@
 
   function onKey(e) {
     if (!ui || ui.ov.hidden) return;
-    if (e.target === ui.jump) { if (e.key === 'Escape') { ui.jump.blur(); e.preventDefault(); } return; }
+    if (e.target === ui.jump) {
+      if (e.key === 'Escape') { ui.jump.blur(); e.preventDefault(); }
+      else if (e.key === 'Enter') {                       // type a number, hit Enter → jump there
+        var v = parseInt(ui.jump.value, 10);
+        if (v >= 1 && v <= src.pages) go(v - 1);
+        e.preventDefault();
+      }
+      return;
+    }
     var k = e.key;
     if (k === 'ArrowRight' || k === 'PageDown') { go(cur + 1); }
     else if (k === 'ArrowLeft' || k === 'PageUp') { go(cur - 1); }
@@ -212,8 +228,17 @@
   /* Enter = "keep this page in the PDF" then hop to the next one. If the page was
      marked removed (e.g. by mistake) Enter un-marks it — the flow never blocks:
      you can mash Enter through the whole deck and only Del takes pages out. */
+  var keptTimer = null;
+  function flashKept(n) {                       // "✓ kept page N" — so the keep is SEEN, not just done
+    ui.kept.textContent = '✓ kept page ' + n;
+    ui.kept.classList.add('show');
+    if (keptTimer) clearTimeout(keptTimer);
+    keptTimer = setTimeout(function () { ui.kept.classList.remove('show'); }, 900);
+  }
   function keepNext() {
+    var kept = cur + 1;
     removed[cur] = 0;
+    flashKept(kept);
     if (cur < src.pages - 1) { go(cur + 1); return; }
     refreshHUD();
     // last page kept — nudge towards Apply so the decision actually lands
