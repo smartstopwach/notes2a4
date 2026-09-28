@@ -571,6 +571,19 @@ console.log('\n=== session.js: reload-proof storage ===\n');
       /white, trackBlank/.test(wrk));
   }
 
+
+  /* bold previews never overstate: every preview scales the radius to its size */
+  {
+    const { readFileSync: readB } = await import('node:fs');
+    const invB = readB(new URL('../app-invert.js', import.meta.url), 'utf8');
+    check('preview: Invert Lab scales bold to the preview size',
+      /previewBold\(boldAmt\(\), c2\.width, outW\)/.test(invB) && /bPrev > 0 && NotesConverter\.printSaver\.hqBold/.test(invB));
+    for (const f of ['app.js', 'app4up.js']) {
+      const srcB = readB(new URL('../' + f, import.meta.url), 'utf8');
+      check('preview: ' + f + ' scales bold to the preview size',
+        /previewBold\(printBold\(\), W, fullW\)/.test(srcB) && /Math\.round\(vw \* printDpi\(\) \/ 72\)/.test(srcB));
+    }
+  }
   const wrkSrc = readFileSync(new URL('../worker-raster.js', import.meta.url), 'utf8');
   check('wait: worker progress reports the page height, not the message (the NaN bug)',
     /total: job\.o\.bh/.test(wrkSrc) && !/progress', id: m\.id, done: job\.fed, total: m\.bh/.test(wrkSrc));

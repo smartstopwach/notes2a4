@@ -670,6 +670,17 @@
     }
     return out;
   }
+  /* Preview-bold scaling: a preview renders the page smaller than the output,
+     so an absolute +1/+2 px would look many times bolder than the file. Scale the
+     radius by preview/output width (capped at 1 — the preview never overstates),
+     rounding to the nearest whole pixel; sub-pixel results become 0 (no bold),
+     which is the honest answer at thumbnail sizes. */
+  function previewBold(r, prevW, outW) {
+    r = r | 0; if (r < 1) return 0;
+    if (!(prevW > 0) || !(outW > 0)) return 0;
+    var s = prevW / outW; if (s > 1) s = 1;
+    return Math.round(r * s);
+  }
   function hqMap(big, outW, outH, auto, keepColour, pure, white, bold) {
     var bd = big.data, bw = big.width, bh = big.height;
     var acc = hqAcc(outW, outH);
@@ -1392,7 +1403,7 @@
     /* `pieces` is the raw map machinery, so worker-raster.js can run the
        identically-mathed map off-thread (and the tests can prove the two agree) */
     printSaver: {
-      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, hqMapDirectAsync: hqMapDirectAsync, negMap: negMap, negMapAsync: negMapAsync, negMapDirectAsync: negMapDirectAsync, hqBold: hqBold,
+      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, hqMapDirectAsync: hqMapDirectAsync, negMap: negMap, negMapAsync: negMapAsync, negMapDirectAsync: negMapDirectAsync, hqBold: hqBold, previewBold: previewBold,
       keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA,
       WHITE_HI: PS_WHITE_HI, WHITE_LO: PS_WHITE_LO,
       BOARD_FINE: PS_BOARD_FINE, BOARD_COARSE: PS_BOARD_COARSE, BOARD_SEED: PS_BOARD_SEED, BOARD_GROW: PS_BOARD_GROW,

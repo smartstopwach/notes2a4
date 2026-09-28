@@ -79,10 +79,10 @@
      while a 33-page print-saver run is binarising pages. Same maths, same output
      (the Node tests compare the banded result with the one-shot result byte for
      byte). */
-  async function printMapAsync(provider, bw, bh, W, H, hooks) {
+  async function printMapAsync(provider, bw, bh, W, H, hooks, fullW) {
     var st = printStyle();
     var ultra = printDpi() >= 660 && bw === W && bh === H;   // 660 · ultra at 1:1: stream, never buffer
-    var bd = printBold();
+    var bd = fullW ? NotesConverter.printSaver.previewBold(printBold(), W, fullW) : printBold();
     if (st === 'neg') {
       var nm = ultra
         ? await NotesConverter.printSaver.negMapDirectAsync(provider, W, H, printAuto(), hooks)
@@ -396,10 +396,11 @@
       pdfPage.cleanup();
       if (printMode()) {
         var octx = off.getContext('2d');
+        var fullW = Math.max(1, Math.round(vw * printDpi() / 72));   // output width at this dpi — bold scales to it
         var hmP = await printMapAsync(
           function (y0, rows) { return octx.getImageData(0, y0, off.width, rows); },
           off.width, off.height, off.width, off.height,
-          { band: 192, progress: function () { return NotesFX.uiPaint(); } });
+          { band: 192, progress: function () { return NotesFX.uiPaint(); } }, fullW);
         octx.putImageData(new ImageData(hmP.imageData.data, off.width, off.height), 0, 0);
       }
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';

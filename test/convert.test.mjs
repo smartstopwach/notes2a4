@@ -631,6 +631,20 @@ console.log('5e) hq-map:');
       check('ultra-hd: the negative twin flips a dark page and keeps a light page on auto',
         a2.inverted === true && (await PSN.negMapDirectAsync(provN(lightN), 64, 40, true, { band: 11 })).inverted === false);
     }
+
+    /* preview-bold scaling: the radius follows preview/output size */
+    {
+      const PSP = NC.printSaver;
+      check('preview-bold: a small preview shrinks +1 to nothing (honest, not blobby)',
+        PSP.previewBold(1, 700, 1819) === 0 && PSP.previewBold(1, 168, 1819) === 0);
+      check('preview-bold: a large preview keeps a rounded radius',
+        PSP.previewBold(2, 1200, 1819) === 1 && PSP.previewBold(1, 1200, 1819) === 1);
+      check('preview-bold: never overstates (caps at the export radius)',
+        PSP.previewBold(2, 3600, 1819) === 2 && PSP.previewBold(1, 5457, 5457) === 1);
+      check('preview-bold: off stays off', PSP.previewBold(0, 1200, 1819) === 0);
+      check('preview-bold: degenerate sizes are safe',
+        PSP.previewBold(2, 0, 1819) === 0 && PSP.previewBold(2, 1200, 0) === 0 && PSP.previewBold(2, -5, 1819) === 0);
+    }
   /* --- 4-up dotted separators --- */
   {
     const oBoth = NC.normalize({ perSheet: 4, sepLine: 'both' });

@@ -356,6 +356,8 @@
     var vp = (await state.doc.getPage(pageNum)).getViewport({ scale: 1 });
     await renderPageScaled(pageNum, previewPx(c1, cssWOverride) / Math.max(1, vp.width), c1);
     c2.width = c1.width; c2.height = c1.height;
+    var outW = Math.max(1, Math.round(vp.width * dpi() / 72));   // full output width at this Sharpness
+    var bPrev = NotesConverter.printSaver.previewBold(boldAmt(), c2.width, outW);   // previews are smaller: shrink bold to match
     var x2 = c2.getContext('2d', { willReadFrequently: true });
     x2.imageSmoothingEnabled = true; x2.imageSmoothingQuality = 'high';
     x2.drawImage(c1, 0, 0);
@@ -375,7 +377,7 @@
       var hm = await NotesConverter.printSaver.hqMapAsync(
         function (y0, rows) { return x2.getImageData(0, y0, c2.width, rows); },
         c2.width, c2.height, c2.width, c2.height, true, keepColour(), pureMode(),
-        { band: 192, progress: function () { return NotesFX.uiPaint(); } }, whiteMode(), boldAmt());   // banded: previews stay snappy too
+        { band: 192, progress: function () { return NotesFX.uiPaint(); } }, whiteMode(), bPrev);   // banded: previews stay snappy too
       if (psk && OV.whitenBand) OV.whitenBand(hm.imageData.data, c2.width, c2.height, psk);
       x2.putImageData(new ImageData(hm.imageData.data, c2.width, c2.height), 0, 0);
     } else if (pureVecMode()) {              // pure b&w vector: threshold like the output (dark → paper,
@@ -385,7 +387,7 @@
     } else {
       var id = x2.getImageData(0, 0, c2.width, c2.height);
       invertPixels(id, true, psk);
-      if (boldOn() && NotesConverter.printSaver.hqBold) NotesConverter.printSaver.hqBold(id.data, c2.width, c2.height, boldAmt());
+      if (bPrev > 0 && NotesConverter.printSaver.hqBold) NotesConverter.printSaver.hqBold(id.data, c2.width, c2.height, bPrev);
       x2.putImageData(id, 0, 0);
     }
     if (OV && OV.drawPreview) {                        // overlays show live in the preview too
