@@ -31,7 +31,7 @@
   var goBtn = $('goBtn'), pBox = $('progressBox'), pFill = $('pfill'), pStatus = $('pstatus'),
       pEta = $('pEta');
   var opt = {
-    dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'), dpi600: $('dpi600'),
+    dpi96: $('dpi96'), dpi150: $('dpi150'), dpi220: $('dpi220'), dpi660: $('dpi660'),
     fmtJpg: $('fmtJpg'), fmtPng: $('fmtPng'), skip: $('optSkip'),
     styleNeg: $('styleNeg'), styleInk: $('styleInk'), stylePure: $('stylePure'), styleVec: $('styleVec'), styleWhite: $('styleWhite'), stylePureVec: $('stylePureVec'),
     dpiFld: $('dpiFld'), fmtFld: $('fmtFld'), skipRow: $('skipRow'),
@@ -90,7 +90,7 @@
     return 'white band kept on ' + kept + '/' + n + ' pages' + (miss ? ' (' + miss + ' had no band)' : '') + ' · ';
   }
 
-  function dpi() { return (opt.dpi600 && opt.dpi600.checked) ? 600 : (opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96)); }
+  function dpi() { return (opt.dpi660 && opt.dpi660.checked) ? 660 : (opt.dpi220.checked ? 220 : (opt.dpi150.checked ? 150 : 96)); }
   function fmt() { return opt.fmtPng.checked ? 'png' : 'jpeg'; }
   function inkMode() { return (opt.styleInk.checked || (opt.stylePure && opt.stylePure.checked) || (opt.styleWhite && opt.styleWhite.checked)) && window.NotesConverter && NotesConverter.printSaver; }
   function pureMode() { return !!(opt.stylePure && opt.stylePure.checked); }
@@ -519,12 +519,12 @@
                   // win over small files, always)
     var W = Math.max(2, Math.round(vp1.width * outSc)), H = Math.max(2, Math.round(vp1.height * outSc));
     var bw = Math.max(2, Math.round(vp1.width * outSc * ss)), bh = Math.max(2, Math.round(vp1.height * outSc * ss));
-    /* Ultra HD (600 dpi): the ink engine switches to its 1:1 streaming twin, whose
+    /* Ultra HD (660 dpi): the ink engine switches to its 1:1 streaming twin, whose
        memory is O(strip) instead of O(page). Absurd page sizes are refused with a
        plain sentence instead of a frozen tab. */
-    var ultra = dpi() >= 600;
+    var ultra = dpi() >= 660;
     if (ultra && (W * H > 80000000 || W > 16000 || H > 16000))
-      throw new Error('This page is too large for 600 dpi (' + W + '×' + H + ' px) — 220 dpi handles any size.');
+      throw new Error('This page is too large for 660 dpi (' + W + '×' + H + ' px) — 220 dpi handles any size.');
     /* band-keep: the white band(s) in output px for every path (ss = 1, so the
        negative and ink coordinates are identical; the ink engine maps white to
        ink on dark pages, so the band is painted back to paper white afterwards) */
@@ -1016,7 +1016,7 @@
   }
 
   /* ---------- options + reset ---------- */
-  [opt.dpi96, opt.dpi150, opt.dpi220, opt.dpi600, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec, opt.keepColour, opt.boldTgl, opt.boldAmt].forEach(function (el) {
+  [opt.dpi96, opt.dpi150, opt.dpi220, opt.dpi660, opt.fmtJpg, opt.fmtPng, opt.skip, opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec, opt.keepColour, opt.boldTgl, opt.boldAmt].forEach(function (el) {
     if (el) el.addEventListener('change', schedulePreview);
   });
   [opt.styleNeg, opt.styleInk, opt.stylePure, opt.styleVec, opt.styleWhite, opt.stylePureVec].forEach(function (el) {

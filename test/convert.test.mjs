@@ -522,7 +522,7 @@ console.log('5e) hq-map:');
     check('banded maps: yield between bands (progress hook fires for every band)',
       yields >= 8 && phases.has('downsample') && phases.has('render'), yields + ' yields · ' + [...phases].join(','));
 
-    /* the 1:1 streaming twin (600 dpi) must agree byte for byte with the one-shot map */
+    /* the 1:1 streaming twin (660 dpi) must agree byte for byte with the one-shot map */
     {
       let v2 = 0, e2 = 0;
       for (const [W, H] of [[64, 9], [300, 200]]) {
@@ -596,6 +596,41 @@ console.log('5e) hq-map:');
     }
   }
 
+
+    /* the 1:1 streaming twin for true negative (660 dpi packer pages) */
+    {
+      const PSN = NC.printSaver;
+      const sameN = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+      const provN = (big) => (y0, rows) => ({ data: big.data.subarray(y0 * big.width * 4, (y0 + rows) * big.width * 4), width: big.width, height: rows });
+      const mkN = (W, H, fn) => {
+        const d = new Uint8ClampedArray(W * H * 4);
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          const [r, g, b] = fn(x, y), o = (y * W + x) * 4;
+          d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = 255;
+        }
+        return { data: d, width: W, height: H };
+      };
+      // the (3,3) pixel has L = 90.815 (float) but 90 (int): the twin must count it exactly like the map
+      const darkN = mkN(64, 40, (x, y) => (x === 3 && y === 3) ? [90, 91, 92] : (x > 40 && y < 10) ? [240, 240, 240] : [8, 8, 10]);
+      const lightN = mkN(64, 40, (x, y) => (x < 20 && y > 25) ? [10, 10, 10] : [250, 250, 248]);
+      let negOk = true, negN = 0;
+      for (const auto of [false, true]) for (const pg of [darkN, lightN]) {
+        const n1 = PSN.negMap(pg, 64, 40, auto);
+        const n2 = await PSN.negMapDirectAsync(provN(pg), 64, 40, auto, { band: 7 });
+        negN++;
+        if (!sameN(n1.imageData.data, n2.imageData.data) || n1.darkFrac !== n2.darkFrac || n1.inverted !== n2.inverted) negOk = false;
+      }
+      check('ultra-hd: negMapDirectAsync is byte-identical to negMap at 1:1', negOk && negN === 4, negN + ' variants (dark/light \u00d7 auto)');
+      const asyncProvN = (big) => async (y0, rows) => {
+        await new Promise((r) => setTimeout(r, 0));
+        return { data: big.data.subarray(y0 * big.width * 4, (y0 + rows) * big.width * 4), width: big.width, height: rows };
+      };
+      const a1 = PSN.negMap(darkN, 64, 40, true);
+      const a2 = await PSN.negMapDirectAsync(asyncProvN(darkN), 64, 40, true, { band: 11 });
+      check('ultra-hd: the negative twin accepts an ASYNC provider too', sameN(a1.imageData.data, a2.imageData.data));
+      check('ultra-hd: the negative twin flips a dark page and keeps a light page on auto',
+        a2.inverted === true && (await PSN.negMapDirectAsync(provN(lightN), 64, 40, true, { band: 11 })).inverted === false);
+    }
   /* --- 4-up dotted separators --- */
   {
     const oBoth = NC.normalize({ perSheet: 4, sepLine: 'both' });

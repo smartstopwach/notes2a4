@@ -867,6 +867,47 @@
     return { imageData: { data: acc.out, width: outW, height: outH }, darkFrac: st.dark / acc.n, inverted: st.invert };
   }
   /** Banded twin of negMap — same pixels, but the tab stays alive. */
+  /* 1:1 streaming twin of negMapAsync for 660 dpi packer pages: identical maths
+     and identical bytes, but O(strip) memory instead of O(page) — pass 1 counts
+     the dark fraction strip by strip (nothing stored), pass 2 re-reads the
+     strips and flips (or passes through) each pixel. The provider is called
+     twice, so a 660 page renders its strips twice: slowest run, sharpest page. */
+  async function negMapDirectAsync(provider, W, H, auto, hooks) {
+    var n = W * H;
+    var band = (hooks && hooks.band) || 256;
+    var step = hooks && hooks.progress ? hooks.progress : null;
+    var dark = 0;
+    for (var y = 0; y < H; y += band) {
+      var y1 = Math.min(H, y + band), rows = y1 - y;
+      var px = provider(y, rows);
+      if (px && typeof px.then === 'function') px = await px;
+      var bd = px.data;
+      for (var i = 0, e = rows * W * 4; i < e; i += 4) {
+        if (((bd[i] * 299 + bd[i + 1] * 587 + bd[i + 2] * 114) / 1000 | 0) <= PS_DARK_LUM) dark++;
+      }
+      if (step) await step((y1 / H) * 0.5, 'downsample');
+    }
+    var invert = auto ? dark / n >= 0.5 : true;
+    if (step) await step(0.5, 'measure');
+    var out = new Uint8ClampedArray(n * 4);
+    for (var r2 = 0; r2 < H; r2 += band) {
+      var r3 = Math.min(H, r2 + band), rows2 = r3 - r2;
+      var px2 = provider(r2, rows2);
+      if (px2 && typeof px2.then === 'function') px2 = await px2;
+      var bd2 = px2.data;
+      for (var yy = 0; yy < rows2; yy++) {
+        var q0 = (r2 + yy) * W, b0 = yy * W;
+        for (var x = 0; x < W; x++) {
+          var q = q0 + x, o = q * 4, bi = (b0 + x) * 4;
+          var r = bd2[bi], g = bd2[bi + 1], b = bd2[bi + 2];
+          if (invert) { r = 255 - r; g = 255 - g; b = 255 - b; }
+          out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
+        }
+      }
+      if (step) await step(0.5 + (r3 / H) * 0.5, 'render');
+    }
+    return { imageData: { data: out, width: W, height: H }, darkFrac: dark / n, inverted: invert };
+  }
   async function negMapAsync(provider, bw, bh, outW, outH, auto, hooks) {
     var acc = negAcc(outW, outH);
     var band = (hooks && hooks.band) || 256;
@@ -1351,7 +1392,7 @@
     /* `pieces` is the raw map machinery, so worker-raster.js can run the
        identically-mathed map off-thread (and the tests can prove the two agree) */
     printSaver: {
-      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, hqMapDirectAsync: hqMapDirectAsync, negMap: negMap, negMapAsync: negMapAsync, hqBold: hqBold,
+      process: psProcess, hqMap: hqMap, hqMapAsync: hqMapAsync, hqMapDirectAsync: hqMapDirectAsync, negMap: negMap, negMapAsync: negMapAsync, negMapDirectAsync: negMapDirectAsync, hqBold: hqBold,
       keepColour: psKeepColour, DARK_LUM: PS_DARK_LUM, BAND: PS_BAND, GAMMA: PS_GAMMA, CHROMA: PS_CHROMA,
       WHITE_HI: PS_WHITE_HI, WHITE_LO: PS_WHITE_LO,
       BOARD_FINE: PS_BOARD_FINE, BOARD_COARSE: PS_BOARD_COARSE, BOARD_SEED: PS_BOARD_SEED, BOARD_GROW: PS_BOARD_GROW,

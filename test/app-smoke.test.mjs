@@ -402,7 +402,7 @@ async function finishRun(document, bytes, name, pages, setOptions, pdfStub, opts
   /* set the option elements before the file arrives, then fire the same change
      events a user's click would fire (the apps reveal panels on those) */
   setOptions((id) => document.getElementById(id));
-  for (const id of ['optSep', 'styleVec', 'styleNeg', 'styleInk', 'stylePure', 'optPrint', 'psPure', 'psKeep', 'psInk', 'psNeg', 'dpi150', 'dpi96', 'dpi220', 'dpi600', 'optNums', 'optLines', 'optKeepColour', 'optSkip', 'fmtJpg', 'fmtPng', 'gapAuto', 'gapFixed', 'psWhite', 'styleWhite']) {
+  for (const id of ['optSep', 'styleVec', 'styleNeg', 'styleInk', 'stylePure', 'optPrint', 'psPure', 'psKeep', 'psInk', 'psNeg', 'dpi150', 'dpi96', 'dpi220', 'dpi660', 'optNums', 'optLines', 'optKeepColour', 'optSkip', 'fmtJpg', 'fmtPng', 'gapAuto', 'gapFixed', 'psWhite', 'styleWhite']) {
     document.getElementById(id).fire('change');
   }
   document.getElementById('optMargin').fire('input');
@@ -1067,11 +1067,11 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
 }
 {
   const r = await runApp('invert crisp 600', 'app-invert.js', 'invert.html', {
-    setOptions: (el) => { el('styleNeg').checked = true; el('dpi600').checked = true; el('dpi220').checked = false; el('dpi150').checked = false; el('dpi96').checked = false; }
+    setOptions: (el) => { el('styleNeg').checked = true; el('dpi660').checked = true; el('dpi220').checked = false; el('dpi150').checked = false; el('dpi96').checked = false; }
   });
   const maxW = Math.max(0, ...r.calls.map((c) => c.w));
-  check('invert · crisp: 600 dpi ultra-HD renders at 4961 px wide (direct, no supersample)',
-    r.status === 'done' && maxW >= 4960 && maxW <= 4962, 'status ' + r.status + ' · max render ' + maxW + ' px');
+  check('invert · crisp: 660 dpi ultra-HD renders at 5457 px wide (direct, no supersample)',
+    r.status === 'done' && maxW >= 5456 && maxW <= 5458, 'status ' + r.status + ' · max render ' + maxW + ' px');
 }
 
 
@@ -1084,6 +1084,27 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
     !!r.document.getElementById('boldTgl') && !!r.document.getElementById('boldAmt') && !!r.document.getElementById('boldRow'));
   check('invert \u00b7 bold strokes: no runtime error', !/^failed/.test(r.status), r.status);
   check('invert \u00b7 bold strokes: result names the weight', /bold \+1/.test(r.printed), r.printed.slice(0, 120));
+}
+
+
+/* ---------- 2-up: 660 dpi ultra print-saver ---------- */
+{
+  const r = await runApp('2up 660', 'app.js', 'index.html', {
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi660').checked = true; el('psInk').checked = true; }
+  });
+  check('2-up \u00b7 660 ultra: the radio exists', !!r.document.getElementById('dpi660'));
+  check('2-up \u00b7 660 ultra: no runtime error', !/^failed/.test(r.status), r.status);
+  check('2-up \u00b7 660 ultra: reports 660 dpi', /660 dpi/.test(r.printed), r.printed.slice(0, 100));
+}
+
+/* ---------- 4-up: 660 dpi ultra print-saver ---------- */
+{
+  const r = await runApp('4up 660', 'app4up.js', '4up.html', {
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi660').checked = true; el('psInk').checked = true; }
+  });
+  check('4-up \u00b7 660 ultra: the radio exists', !!r.document.getElementById('dpi660'));
+  check('4-up \u00b7 660 ultra: no runtime error', !/^failed/.test(r.status), r.status);
+  check('4-up \u00b7 660 ultra: reports 660 dpi', /660 dpi/.test(r.printed), r.printed.slice(0, 100));
 }
 
 console.log('\n' + (fail === 0 ? 'ALL APP SMOKE CHECKS PASSED' : fail + ' APP SMOKE CHECK(S) FAILED') + '  (' + pass + ' passed)\n');

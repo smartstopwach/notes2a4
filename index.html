@@ -262,10 +262,11 @@
               <div class="seg" role="radiogroup" aria-label="Print DPI">
                 <label><input type="radio" name="psdpi" id="dpi96"><span>96 · 1×</span></label>
                 <label><input type="radio" name="psdpi" id="dpi150" checked><span>150 · 2×</span></label>
-                <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3× max</span></label>
+                <label><input type="radio" name="psdpi" id="dpi220"><span>220 · 3×</span></label>
+                <label><input type="radio" name="psdpi" id="dpi660"><span>660 · ultra</span></label>
               </div>
               <ul class="note-list">
-                <li><b>Resolution</b> — scans render at 1× / 2× / 3× their own native sharpness (96 / 150 / 220 dpi); vector pages use the same pick.</li>
+                <li><b>Resolution</b> — scans render at 1× / 2× / 3× their own native sharpness (96 / 150 / 220 dpi); 660 · ultra gives vector pages full 660 dpi.</li>
                 <li><b>Smooth edges</b> — 2× supersampling with area-averaging (SSAA), so curves stay smooth instead of jagged.</li>
                 <li><b>Ink-bias curve</b> — a γ=1.7 response gives inverted handwriting its full visual weight; thin strokes never break up.</li>
                 <li><b>Cost</b> — higher dpi = cleaner print but a bigger file and slower run. 150 is the balanced default.</li>
@@ -359,12 +360,12 @@
 
 <script src="vendor/pdf.min.js"></script>
 <script src="vendor/pdf-lib.min.js"></script>
-<script src="session.js?v=43"></script>
-<script src="converter.js?v=44"></script>
+<script src="session.js?v=44"></script>
+<script src="converter.js?v=45"></script>
 <script src="raster-client.js?v=43"></script>
 <script src="enhance.js?v=44"></script>
 <script src="review.js?v=45"></script>
-<script src="app.js?v=43"></script>
+<script src="app.js?v=44"></script>
 <noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
 </body>
 </html>
