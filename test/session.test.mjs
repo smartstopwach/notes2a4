@@ -298,7 +298,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
         !/<small>Black ink flips/.test(src) && !/<small>Pages become full-page images/.test(src) &&
         !/<small><b>HQ engine v2:<\/b>/.test(src) && !/<small>0 = slides touch/.test(src) &&
         !/<small>0 = the demo look/.test(src));
-      const switchCount = { 'index.html': 4, '4up.html': 5, 'invert.html': 8 }[h];   // + 3 overlay toggles + 2 band toggles + bold strokes
+      const switchCount = { 'index.html': 5, '4up.html': 6, 'invert.html': 8 }[h];   // invert: + 3 overlay toggles + 2 band toggles; every tool: + bold strokes
       check('markup: ' + h + ' every switch (toggle) has its own explanation', (() => {
         const rows = [...src.matchAll(/<label class="sw[^"]*"[^>]*>[\s\S]*?<\/label>/g)].map((m) => m[0]);
         return rows.length === switchCount && rows.every((r) => /<em>/.test(r));
@@ -558,7 +558,7 @@ console.log('\n=== session.js: reload-proof storage ===\n');
       check('white paper: ' + f + ' passes the style to the map and to the worker',
         /sWhite: \$\('psWhite'\)/.test(src) && /st === 'white'/.test(src) &&
         /pure: st === 'pure', white: st === 'white'/.test(src) &&
-        /hqMapAsync\(provider, bw, bh, W, H, printAuto\(\), st === 'keep', st === 'pure', hooks, st === 'white'\)/.test(src));
+        /hqMapAsync\(provider, bw, bh, W, H, printAuto\(\), st === 'keep', st === 'pure', hooks, st === 'white', bd\)/.test(src));
     }
     const inv = readFileSync(new URL('../app-invert.js', import.meta.url), 'utf8');
     check('white paper: app-invert.js resolves the style and carries the flag everywhere',

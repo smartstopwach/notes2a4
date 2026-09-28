@@ -1107,5 +1107,26 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   check('4-up \u00b7 660 ultra: reports 660 dpi', /660 dpi/.test(r.printed), r.printed.slice(0, 100));
 }
 
+
+/* ---------- 2-up: bold strokes (thin-pen fix) ---------- */
+{
+  const r = await runApp('2up bold', 'app.js', 'index.html', {
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi150').checked = true; el('psInk').checked = true; el('boldTgl').checked = true; }
+  });
+  check('2-up \u00b7 bold strokes: toggle + slider exist', !!r.document.getElementById('boldTgl') && !!r.document.getElementById('boldAmt'));
+  check('2-up \u00b7 bold strokes: no runtime error', !/^failed/.test(r.status), r.status);
+  check('2-up \u00b7 bold strokes: result names the weight', /bold \+1/.test(r.printed), r.printed.slice(0, 100));
+}
+
+/* ---------- 4-up: bold strokes (thin-pen fix) ---------- */
+{
+  const r = await runApp('4up bold', 'app4up.js', '4up.html', {
+    setOptions: (el) => { el('optPrint').checked = true; el('dpi150').checked = true; el('psInk').checked = true; el('boldTgl').checked = true; }
+  });
+  check('4-up \u00b7 bold strokes: toggle + slider exist', !!r.document.getElementById('boldTgl') && !!r.document.getElementById('boldAmt'));
+  check('4-up \u00b7 bold strokes: no runtime error', !/^failed/.test(r.status), r.status);
+  check('4-up \u00b7 bold strokes: result names the weight', /bold \+1/.test(r.printed), r.printed.slice(0, 100));
+}
+
 console.log('\n' + (fail === 0 ? 'ALL APP SMOKE CHECKS PASSED' : fail + ' APP SMOKE CHECK(S) FAILED') + '  (' + pass + ' passed)\n');
 process.exit(fail ? 1 : 0);

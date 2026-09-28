@@ -95,9 +95,3 @@
 
 /* option copy spacing inside this page's option card */
 #convertInv .fld small b{white-space:nowrap}
-
-/* bold strokes (thin-pen fix): weight slider under the toggle, lined up with the switch text */
-.boldAmt{display:flex;align-items:center;gap:.6rem;margin:.55rem 0 .1rem 3rem;font-size:.82rem;color:var(--dim)}
-.boldAmt input[type=range]{flex:1;accent-color:#3ee6a8;min-width:0}
-.boldAmt b{color:var(--ink);min-width:3.4em;text-align:right;font-size:.82rem}
-.boldAmt input[type=range]:disabled{opacity:.35}

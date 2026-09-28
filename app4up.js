@@ -48,7 +48,7 @@
       numStart: parseInt(opt.numStart.value, 10) || 1, numSize: numSizeVal()
     });
   }
-  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), d660: $('dpi660'), sInk: $('psInk'), sPure: $('psPure'), sKeep: $('psKeep'), sNeg: $('psNeg'), sWhite: $('psWhite') };
+  var printEls = { on: $('optPrint'), auto: $('optAutoInv'), opts: $('psOpts'), d96: $('dpi96'), d150: $('dpi150'), d220: $('dpi220'), d660: $('dpi660'), sInk: $('psInk'), sPure: $('psPure'), sKeep: $('psKeep'), sNeg: $('psNeg'), sWhite: $('psWhite'), bTgl: $('boldTgl'), bAmt: $('boldAmt'), bRow: $('boldRow'), bVal: $('boldVal') };
   function printMode() { return !!(printEls.on && printEls.on.checked); }
   function printDpi() { return printEls.d660 && printEls.d660.checked ? 660 : (printEls.d220 && printEls.d220.checked ? 220 : (printEls.d96 && printEls.d96.checked ? 96 : 150)); }
   function printAuto() { return printEls.auto.checked; }
@@ -62,6 +62,17 @@
   /* Keep-colours checkbox — part of the run signature, so an interrupted
      Print-Saver run is only resumed when the colour rule is unchanged too. */
   function printKeepColour() { return !!(printEls.sKeep && printEls.sKeep.checked); }
+  /* Bold strokes (thin-pen fix): toggle + weight slider for print-saver output. */
+  function printBoldOn() { return !!(printEls.bTgl && printEls.bTgl.checked); }
+  function printBold() {
+    if (!printBoldOn()) return 0;
+    var v = printEls.bAmt ? (+printEls.bAmt.value || 0) : 0;
+    return v < 1 ? 1 : v > 2 ? 2 : v;
+  }
+  function syncBoldVal() {
+    if (printEls.bAmt) printEls.bAmt.disabled = !(printEls.bTgl && printEls.bTgl.checked);
+    if (printEls.bVal) printEls.bVal.textContent = '+' + (printEls.bAmt ? (+printEls.bAmt.value || 1) : 1) + ' px';
+  }
   /* One entry point for all three colour styles: ink / keep / neg (true negative). */
   /* The map is fed one band of the supersampled canvas at a time, and every band
      hands control back to the browser — this is what keeps the tab responsive
@@ -71,12 +82,16 @@
   async function printMapAsync(provider, bw, bh, W, H, hooks) {
     var st = printStyle();
     var ultra = printDpi() >= 660 && bw === W && bh === H;   // 660 · ultra at 1:1: stream, never buffer
+    var bd = printBold();
     if (st === 'neg') {
-      if (ultra) return NotesConverter.printSaver.negMapDirectAsync(provider, W, H, printAuto(), hooks);
-      return NotesConverter.printSaver.negMapAsync(provider, bw, bh, W, H, printAuto(), hooks);
+      var nm = ultra
+        ? await NotesConverter.printSaver.negMapDirectAsync(provider, W, H, printAuto(), hooks)
+        : await NotesConverter.printSaver.negMapAsync(provider, bw, bh, W, H, printAuto(), hooks);
+      if (bd) NotesConverter.printSaver.hqBold(nm.imageData.data, W, H, bd);
+      return nm;
     }
-    if (ultra) return NotesConverter.printSaver.hqMapDirectAsync(provider, W, H, printAuto(), st === 'keep', st === 'pure', hooks, st === 'white');
-    return NotesConverter.printSaver.hqMapAsync(provider, bw, bh, W, H, printAuto(), st === 'keep', st === 'pure', hooks, st === 'white');
+    if (ultra) return NotesConverter.printSaver.hqMapDirectAsync(provider, W, H, printAuto(), st === 'keep', st === 'pure', hooks, st === 'white', bd);
+    return NotesConverter.printSaver.hqMapAsync(provider, bw, bh, W, H, printAuto(), st === 'keep', st === 'pure', hooks, st === 'white', bd);
   }
   function refreshPrintBadge() {
     var el = $('fbOut'); if (!el) return;
@@ -103,11 +118,12 @@
     if (sessBar) sessBar.hidden = true;
   }
   function printSig() {
-    return [printDpi(), printStyle(), printAuto() ? 1 : 0, printKeepColour() ? 1 : 0].join('|');
+    return [printDpi(), printStyle(), printAuto() ? 1 : 0, printKeepColour() ? 1 : 0, 'b' + printBold()].join('|');
   }
   function syncAfterRestore() {
     if (opt.gap) opt.gap.disabled = opt.gapAuto.checked;
     if (printEls.opts && printEls.on) printEls.opts.hidden = !printEls.on.checked;
+    syncBoldVal();
     if (opt.numOpts && opt.nums) opt.numOpts.hidden = !opt.nums.checked;
     if (opt.margin) opt.margin.dispatchEvent(new Event('input'));
   }
@@ -533,8 +549,8 @@
        block-the-tab parts. The worker gets the strips (transferred, never copied)
        and hands back the encoded page; the main thread only draws them. */
     /* 660 · ultra stays on the main thread: the worker build of the map has no
-       streaming step, and a 42 Mpx page would not fit its buffers */
-    if (window.NotesRaster && NotesRaster.supported() && printDpi() < 660) {
+       streaming step or a bold step, and a 42 Mpx page would not fit its buffers */
+    if (window.NotesRaster && NotesRaster.supported() && printDpi() < 660 && !printBold()) {
       try {
         var wres = await NotesRaster.mapPage({
           kind: st === 'neg' ? 'neg' : 'hq', auto: printAuto(), keepColour: st === 'keep', pure: st === 'pure', white: st === 'white',
@@ -624,7 +640,12 @@
   function printListeners(schedule) {
     if (!printEls.on) return;
     printEls.on.addEventListener('change', function () { printEls.opts.hidden = !printEls.on.checked; schedule(); refreshPrintBadge(); });
-    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.d660, printEls.sInk, printEls.sPure, printEls.sKeep, printEls.sNeg, printEls.sWhite].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
+    [printEls.auto, printEls.d96, printEls.d150, printEls.d220, printEls.d660, printEls.sInk, printEls.sPure, printEls.sKeep, printEls.sNeg, printEls.sWhite, printEls.bTgl, printEls.bAmt].forEach(function (el) { if (el) el.addEventListener('change', schedule); });
+  if (printEls.bTgl) printEls.bTgl.addEventListener('change', syncBoldVal);
+  if (printEls.bAmt) {
+    printEls.bAmt.addEventListener('change', syncBoldVal);
+    printEls.bAmt.addEventListener('input', function () { syncBoldVal(); schedule(); });
+  }
   }
   /* ---------- convert ---------- */
   goBtn.addEventListener('click', convert);
@@ -733,7 +754,7 @@
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed 4-per-sheet into ' + res.sheets + ' ' +
         NotesConverter.PAPERS[opt.paper.value].label.split(' (')[0] + ' landscape sheet' + (res.sheets === 1 ? '' : 's') + ' · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
-        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative', white:'white kept'})[printStyle()] : '') +
+        ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device' + (printMode() ? ' · ◐ print-saver ' + printDpi() + ' dpi ' + ({ink:'b&w', pure:'pure b&w', keep:'kept colours', neg:'true negative', white:'white kept'})[printStyle()] + (printBold() ? ' · bold +' + printBold() : '') : '') +
         (sepLineVal() === 'off' ? '' : ' · dotted middle separator');
       /* the sheets are ready — show the result card and the Download button
          immediately, then fill in previews and the reload-proof save behind it */
@@ -819,6 +840,7 @@
     if (sessGo) sessGo.addEventListener('click', function () { sessGo.hidden = true; convert(); });
     var forget = $('sessForget');
     if (forget) forget.addEventListener('click', function () { sessKill(); if (window.NotesFX) NotesFX.toast('This browser no longer keeps anything'); });
+    syncBoldVal();
     NotesSession.autoSaveOpts($('workbench'), SESS_SEL);
     var savedOpts = await NotesSession.loadOpts();
     if (savedOpts && NotesSession.apply(savedOpts, NotesSession.collect(SESS_SEL))) syncAfterRestore();
