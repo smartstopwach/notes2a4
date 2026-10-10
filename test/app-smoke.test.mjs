@@ -1140,6 +1140,31 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
     manualHtml.includes('id="workbench" class="workbench"') &&
     !manualHtml.includes('id="workbench" class="workbench" hidden') &&
     manualHtml.includes('No file yet'));
+  check('manual \u00b7 free-edit controls present (+add, delete, focusable canvas)',
+    manualHtml.includes('id="tplAdd"') && manualHtml.includes('id="tplDel"') &&
+    manualHtml.includes('tabindex="0"'));
+  const rA = await runApp('manual free-add', 'app-manual.js', 'manual.html', {
+    beforeRun: (document) => { document.getElementById('tplAdd').fire('click'); }
+  });
+  check('manual \u00b7 +add grows the template (3 slots over 2 pages)',
+    /2 pages packed into 1 A4 sheet \(3 slots, portrait\)/.test(rA.printed) && !/^failed/.test(rA.status),
+    rA.printed.slice(0, 90));
+  const rF = await runApp('manual free-draw', 'app-manual.js', 'manual.html', {
+    beforeRun: (document) => {
+      const cv = document.getElementById('tplCanvas');
+      cv.fire('pointerdown', { clientX: 150, clientY: 50, pointerId: 7 });   // select the top box
+      cv.fire('pointerup', { pointerId: 7 });
+      document._ev.keydown.forEach((fn) => fn({ type: 'keydown', key: 'Delete', target: { tagName: 'BODY' } }));
+      cv.fire('pointerdown', { clientX: 150, clientY: 20, pointerId: 8 });   // draw where it was
+      cv.fire('pointermove', { clientX: 260, clientY: 120, pointerId: 8 });
+      cv.fire('pointerup', { pointerId: 8 });
+    }
+  });
+  check('manual \u00b7 keyboard-delete + draw-new keeps a working custom template',
+    /2 pages packed into 1 A4 sheet \(2 slots, portrait\)/.test(rF.printed) && !/^failed/.test(rF.status),
+    rF.printed.slice(0, 90));
+  check('manual \u00b7 custom template unchecks the starter presets',
+    rF.document.getElementById('slot2').checked === false, 'slot2.checked=false');
   const r = await runApp('manual default', 'app-manual.js', 'manual.html');
   check('manual \u00b7 default 2-slot pack runs clean', !/^failed/.test(r.status) && r.revealMs !== null, r.status);
   check('manual \u00b7 result names pages and sheets',

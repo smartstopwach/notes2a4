@@ -28,17 +28,33 @@
   var ui = {
     oriP: $('oriP'), oriL: $('oriL'),
     slot2: $('slot2'), slot3: $('slot3'), slot4: $('slot4'),
-    tplReset: $('tplReset')
+    tplReset: $('tplReset'),
+    tplAdd: $('tplAdd'), tplDel: $('tplDel')
   };
 
   /* ---------- helpers ---------- */
   function fmtMB(b) { return (b / 1048576).toFixed(2) + ' MB'; }
   function showError(msg) { fileErr.hidden = false; fileErr.textContent = msg; }
   function clearError() { fileErr.hidden = true; }
-  function slotCount() {
+  function segChecked() {
     if (ui.slot4.checked) return 4;
     if (ui.slot3.checked) return 3;
-    return 2;
+    if (ui.slot2.checked) return 2;
+    return 0;   // none: the user drew their own (custom) template
+  }
+  function slotCount() {
+    return tpl.boxes ? tpl.boxes.length : (segChecked() || 2);
+  }
+  function retile(n) {   // a starter preset: even tiles, always 2/3/4
+    tpl.orient = orient();
+    tpl.boxes = NC.defaultTile(n, tpl.orient);
+    selected = -1;
+    saveTpl();
+    updateCounts();
+    refreshRunState();
+    refreshDel();
+    ensureThumbs(n);
+    fitCanvas();
   }
   function orient() { return ui.oriL.checked ? 'landscape' : 'portrait'; }
 
@@ -67,24 +83,20 @@
     try {
       var t = JSON.parse(localStorage.getItem(TPL_KEY) || 'null');
       if (t && (t.orient === 'portrait' || t.orient === 'landscape') &&
-          Array.isArray(t.boxes) && t.boxes.length >= 2 && t.boxes.length <= 4 &&
+          Array.isArray(t.boxes) && t.boxes.length >= 1 && t.boxes.length <= 50 &&
           t.boxes.every(function (b) {
             return b && isFinite(b.x) && isFinite(b.y) && isFinite(b.w) && isFinite(b.h);
           })) {
         (t.orient === 'landscape' ? ui.oriL : ui.oriP).checked = true;
         var n = t.boxes.length;
-        (n === 4 ? ui.slot4 : n === 3 ? ui.slot3 : ui.slot2).checked = true;
+        if (n >= 2 && n <= 4) (n === 4 ? ui.slot4 : n === 3 ? ui.slot3 : ui.slot2).checked = true;
+        else { ui.slot2.checked = ui.slot3.checked = ui.slot4.checked = false; }
         tpl.orient = t.orient;
         tpl.boxes = t.boxes.map(function (b) { return NC.clampBox(b); });
         return true;
       }
     } catch (e) { /* corrupted entry: fall through to defaults */ }
     return false;
-  }
-  function resetTpl() {
-    tpl.orient = orient();
-    tpl.boxes = NC.defaultTile(slotCount(), tpl.orient);
-    saveTpl();
   }
 
   /* ---------- intake ---------- */
@@ -131,7 +143,7 @@
 
   function updateCounts() {
     var n = state.pages, k = slotCount();
-    if (!n) {
+    if (!n || !k) {
       $('fbOut').textContent = '\u2192 \u2014 sheets';
       $('fbOdd').hidden = true;
       $('goIn').textContent = '\u2013'; $('goOut').textContent = '\u2013';
@@ -151,7 +163,8 @@
     $('fbPages').textContent = n + (n === 1 ? ' page' : ' pages');
     $('resetBtn').hidden = false;
     updateCounts();
-    goBtn.disabled = false;
+    refreshRunState();
+    refreshDel();
     fitCanvas();
     ensureThumbs(slotCount());
     wb.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -244,7 +257,7 @@
         ctx.drawImage(tc, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
       }
       ctx.restore();
-      var sel = (drag && drag.bi === bi);
+      var sel = (bi === selected) || (!!(drag && drag.bi === bi));
       ctx.strokeStyle = sel ? '#10b981' : '#34d399';
       ctx.lineWidth = sel ? 2.5 : 2;
       ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
@@ -278,6 +291,15 @@
         ctx.stroke();
       });
     });
+    if (drag && drag.mode === 'draw' && drag.rect) {   // the slot being drawn right now
+      var pr = toPx(drag.rect);
+      ctx.save();
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(pr.x + 1, pr.y + 1, pr.w - 2, pr.h - 2);
+      ctx.restore();
+    }
   }
 
   /* ---------- drag: move inside, resize on corners ---------- */
@@ -301,17 +323,72 @@
     return null;
   }
   function cursorFor(hit) {
-    if (!hit) return 'default';
+    if (!hit) return 'crosshair';   // empty sheet: drag to draw a slot
     if (hit.mode === 'move') return 'move';
     return (hit.mode === 'nw' || hit.mode === 'se') ? 'nwse-resize' : 'nesw-resize';
   }
+  /* ---------- free editing: draw, select, delete (no slot limit) ---------- */
+  var selected = -1;
+  function markCustom() {
+    ui.slot2.checked = ui.slot3.checked = ui.slot4.checked = false;   // no preset describes this any more
+    saveTpl();
+  }
+  function refreshDel() { ui.tplDel.disabled = selected < 0 || !tpl.boxes[selected]; }
+  function refreshRunState() { goBtn.disabled = !state.bytes || !tpl.boxes || !tpl.boxes.length; }
+  function afterEdit() {
+    markCustom();
+    updateCounts();
+    refreshRunState();
+    refreshDel();
+    ensureThumbs(slotCount());
+    draw();
+  }
+  function deleteSelected() {
+    if (selected < 0 || !tpl.boxes[selected]) return false;
+    tpl.boxes.splice(selected, 1);
+    selected = -1;
+    afterEdit();
+    return true;
+  }
+  ui.tplAdd.addEventListener('click', function () {
+    if (state.running || !tpl.boxes) return;
+    tpl.boxes.push(NC.clampBox({ x: 0.35, y: 0.35, w: 0.3, h: 0.3 }));
+    selected = tpl.boxes.length - 1;
+    afterEdit();
+  });
+  ui.tplDel.addEventListener('click', function () { if (!state.running) deleteSelected(); });
+  document.addEventListener('keydown', function (e) {
+    e = e || {};
+    var tag = (e.target && e.target.tagName) || '';
+    if (/INPUT|TEXTAREA|SELECT/.test(tag) || e.isComposing) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selected < 0 || state.running) return;
+      if (e.preventDefault) e.preventDefault();   // Backspace must not go back in history
+      deleteSelected();
+    } else if (e.key === 'Escape') {
+      if (selected < 0) return;
+      selected = -1;
+      refreshDel();
+      draw();
+    }
+  });
   canvas.addEventListener('pointerdown', function (e) {
     if (!tpl.boxes || state.running) return;
-    var hit = hitTest(evtPos(e));
-    if (!hit) return;
-    e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
-    drag = { bi: hit.bi, mode: hit.mode, last: evtPos(e) };
+    if (e.preventDefault) e.preventDefault();
+    if (canvas.setPointerCapture) { try { canvas.setPointerCapture(e.pointerId); } catch (err) {} }
+    var p = evtPos(e);
+    var hit = hitTest(p);
+    if (!hit) {   // empty space: start drawing a brand-new slot
+      var dpr0 = Math.min(window.devicePixelRatio || 1, 2);
+      drag = { bi: -1, mode: 'draw', ax: p.x / (canvas.width / dpr0), ay: p.y / (canvas.height / dpr0), rect: null };
+      selected = -1;
+      refreshDel();
+      draw();
+      return;
+    }
+    selected = hit.bi;
+    refreshDel();
+    drag = { bi: hit.bi, mode: hit.mode, last: p };
     canvas.style.cursor = cursorFor(hit);
     draw();
   });
@@ -321,6 +398,13 @@
     if (!drag) { canvas.style.cursor = cursorFor(hitTest(p)); return; }
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
     var W = canvas.width / dpr, H = canvas.height / dpr;
+    if (drag.mode === 'draw') {
+      var nx = Math.min(Math.max(p.x / W, 0), 1), ny = Math.min(Math.max(p.y / H, 0), 1);
+      drag.rect = { x: Math.min(drag.ax, nx), y: Math.min(drag.ay, ny),
+        w: Math.abs(nx - drag.ax), h: Math.abs(ny - drag.ay) };
+      draw();
+      return;
+    }
     var dx = (p.x - drag.last.x) / W, dy = (p.y - drag.last.y) / H;
     drag.last = p;
     var b = tpl.boxes[drag.bi];
@@ -331,8 +415,21 @@
   });
   function endDrag() {
     if (!drag) return;
+    var d = drag;
     drag = null;
     canvas.style.cursor = 'default';
+    if (d.mode === 'draw') {   // a real drag draws a slot, a bare click just deselects
+      if (d.rect && d.rect.w >= 0.02 && d.rect.h >= 0.02) {
+        tpl.boxes.push(NC.clampBox(d.rect));
+        selected = tpl.boxes.length - 1;
+        afterEdit();
+      } else {
+        selected = -1;
+        refreshDel();
+        draw();
+      }
+      return;
+    }
     saveTpl();
     draw();
   }
@@ -348,23 +445,19 @@
       fitCanvas();
     });
   });
-  [ui.slot2, ui.slot3, ui.slot4].forEach(function (r) {
-    r.addEventListener('change', function () {
-      resetTpl();            // a new slot count starts from even tiles
-      updateCounts();
-      ensureThumbs(slotCount());
-      fitCanvas();
-    });
+  [[ui.slot2, 2], [ui.slot3, 3], [ui.slot4, 4]].forEach(function (pair) {
+    pair[0].addEventListener('change', function () { retile(pair[1]); });
   });
   ui.tplReset.addEventListener('click', function () {
-    resetTpl();
-    ensureThumbs(slotCount());
-    fitCanvas();
+    retile(segChecked() || 2);   // back to even tiles (custom boxes go away)
   });
   function syncAfterRestore() {
-    if (!tpl.boxes || tpl.boxes.length !== slotCount()) resetTpl();
+    var seg = segChecked();
+    if (!tpl.boxes || (seg && tpl.boxes.length !== seg)) retile(seg || 2);
     else { tpl.orient = orient(); saveTpl(); }
     updateCounts();
+    refreshRunState();
+    refreshDel();
     ensureThumbs(slotCount());
     fitCanvas();
   }
@@ -373,6 +466,12 @@
   async function convert() {
     if (!state.bytes || goBtn.disabled || state.running) return;
     if (!NC.manualPack) { showError('Converter failed to load — reload the page and try again.'); return; }
+    if (!tpl.boxes.length) {
+      pBox.hidden = false; pFill.style.width = '0%';
+      pStatus.textContent = 'Draw at least one slot first — there is nothing to pack into.';
+      goBtn.disabled = false; state.running = false;
+      return;
+    }
     goBtn.disabled = true; result.hidden = true; state.running = true;
     pBox.hidden = false;
     var t0 = performance.now();
@@ -403,7 +502,7 @@
       $('rsMeta').textContent =
         res.sourcePages + (res.sourcePages === 1 ? ' page' : ' pages') + ' packed into ' +
         res.sheets + ' A4 sheet' + (res.sheets === 1 ? '' : 's') +
-        ' (' + slotCount() + ' slots, ' + orient() + ') · ' +
+        ' (' + slotCount() + (slotCount() === 1 ? ' slot, ' : ' slots, ') + orient() + ') · ' +
         fmtMB(state.bytes.length) + ' → ' + fmtMB(res.bytes.length) + ' · ' +
         ((performance.now() - t0) / 1000).toFixed(1) + 's · 100% on-device';
       result.hidden = false;
@@ -424,7 +523,7 @@
       console.error(err);
     }
     state.running = false;
-    goBtn.disabled = false;
+    refreshRunState();
   }
   goBtn.addEventListener('click', convert);
 
@@ -489,8 +588,8 @@
   $('againBtn').addEventListener('click', resetAll);
 
   /* ---------- boot ---------- */
-  if (!loadTpl()) resetTpl();
-  fitCanvas();   // paint the empty numbered slots at once — the page is never bare
+  if (!loadTpl()) retile(segChecked() || 2);
+  else fitCanvas();   // a saved template paints at once — the page is never bare
   (async function bootSession() {
     if (!window.NotesSession) return;
     try { await NotesSession.init(); } catch (e) { return; }

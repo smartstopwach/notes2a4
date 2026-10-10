@@ -87,7 +87,7 @@
               </div>
             </div>
             <div class="fld">
-              <span class="lbl">Slots</span>
+              <span class="lbl">Start with</span>
               <div class="seg" role="radiogroup" aria-label="Slot count">
                 <label><input type="radio" name="mnslots" id="slot2" checked><span>2</span></label>
                 <label><input type="radio" name="mnslots" id="slot3"><span>3</span></label>
@@ -96,13 +96,20 @@
             </div>
             <div class="fld">
               <span class="lbl">&nbsp;</span>
-              <button type="button" class="btn btn-tiny" id="tplReset">↺ even tiles</button>
+              <button type="button" class="btn btn-tiny" id="tplReset" title="Back to even tiles (custom boxes go away)">↺ even tiles</button>
+            </div>
+            <div class="fld">
+              <span class="lbl">Free edit</span>
+              <span class="tpl-free">
+                <button type="button" class="btn btn-tiny" id="tplAdd">＋ add slot</button>
+                <button type="button" class="btn btn-tiny" id="tplDel" disabled>✕ delete selected</button>
+              </span>
             </div>
           </div>
           <div class="tpl-stage">
-            <canvas id="tplCanvas" aria-label="Template canvas — drag boxes to move, drag corners to resize"></canvas>
+            <canvas id="tplCanvas" tabindex="0" aria-label="Template canvas — drag boxes to move, drag corners to resize"></canvas>
           </div>
-          <p class="tpl-hint"><b>Drag</b> a box to move it · <b>drag a corner</b> to resize · numbers show reading order (slot ① gets page 1, ② page 2 …). Flipping portrait ⇄ landscape keeps your boxes.</p>
+          <p class="tpl-hint"><b>Drag</b> a box to move it · <b>drag a corner</b> to resize · numbers show reading order (slot ① gets page 1, ② page 2 …). <b>Draw</b> on empty space for a new slot · <b>Delete</b> key removes the selected slot · no limits — 1 slot or 12, portrait or landscape.</p>
         </div>
         <div class="card mn-go">
           <h3>Pack it</h3>
