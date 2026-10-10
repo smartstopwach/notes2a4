@@ -136,8 +136,8 @@
       }
       thumbs.doc = doc; thumbs.cache = []; thumbs.gen++;   // new file ⇒ fresh renders
       pBox.hidden = true;
+      if (window.PageReview) PageReview.setSource(buf, file.name);   // first: review must never depend on UI paint
       afterLoad();
-      if (window.PageReview) PageReview.setSource(buf, file.name);
       if (sessReady() && !restoring) {
         NotesSession.saveFiles([{ name: state.name, bytes: state.bytes }]);
         sessNote('Saved in this browser — reload, close or crash, this file and your template stay.');

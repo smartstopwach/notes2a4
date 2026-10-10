@@ -1168,6 +1168,10 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   const appManualSrc = readFileSync(new URL('../app-manual.js', import.meta.url), 'utf8');
   check('manual \u00b7 review wired (script tag + setSource call)',
     manualHtml.includes('review.js?v=') && appManualSrc.includes('PageReview.setSource'));
+  const reviewSrc = readFileSync(new URL('../review.js', import.meta.url), 'utf8');
+  check('manual \u00b7 review errors visible without NotesFX (overlay fallback)',
+    reviewSrc.includes('function warn(msg)') && reviewSrc.includes("warn('Could not open PDF for review')") &&
+    reviewSrc.includes("warn('Rebuild failed: '"));
   check('manual \u00b7 review mount points exist (.filebar, resetBtn, fileInput)',
     manualHtml.includes('class="filebar"') && manualHtml.includes('id="resetBtn"') &&
     manualHtml.includes('id="fileInput"'));

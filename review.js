@@ -9,7 +9,7 @@
  */
 (function () {
   'use strict';
-  var BUILD = 3;
+  var BUILD = 4;
   console.info('[Notes2A4] review.js build', BUILD, '· page review + delete + keep');
 
   var $ = function (id) { return document.getElementById(id); };
@@ -248,6 +248,15 @@
     }
   }
 
+  /* Errors must be SEEN even where NotesFX (enhance.js) is not loaded — Manual
+     mode has no toast system, so the overlay's own title line turns red. */
+  function warn(msg) {
+    if (window.NotesFX) { try { NotesFX.toast(msg); } catch (e) {} return; }
+    ui.name.textContent = '\u26a0 ' + msg;
+    ui.name.style.color = '#f87171';
+    ui.name.title = msg;
+  }
+
   /* ---------- open / close / apply ---------- */
   async function open() {
     if (!src.bytes) return;
@@ -257,13 +266,15 @@
         src.doc = await window.pdfjsLib.getDocument({ data: src.bytes.slice(0) }).promise;
         src.pages = src.doc.numPages;
       } catch (e) {
-        if (window.NotesFX) NotesFX.toast('Could not open PDF for review');
+        warn('Could not open PDF for review');
         return;
       }
     }
     if (!removed || removed.length !== src.pages) removed = new Uint8Array(src.pages);
     cache = {}; cacheOrder = [];
     ui.name.textContent = src.name;
+    ui.name.style.color = '';
+    ui.name.title = '';
     ui.ov.hidden = false;
     document.body.style.overflow = 'hidden';
     go(Math.min(cur, src.pages - 1));
@@ -303,7 +314,7 @@
       if (window.NotesFX) NotesFX.toast(delN + (delN === 1 ? ' page' : ' pages') + ' removed · ' + kept.length + ' kept');
     } catch (err) {
       console.error(err);
-      if (window.NotesFX) NotesFX.toast('Rebuild failed: ' + (err && err.message || err));
+      warn('Rebuild failed: ' + (err && err.message || err));
       ui.apply.disabled = false;
       refreshHUD();
     }
