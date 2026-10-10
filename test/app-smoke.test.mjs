@@ -1165,6 +1165,52 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
     rF.printed.slice(0, 90));
   check('manual \u00b7 custom template unchecks the starter presets',
     rF.document.getElementById('slot2').checked === false, 'slot2.checked=false');
+  const appManualSrc = readFileSync(new URL('../app-manual.js', import.meta.url), 'utf8');
+  check('manual \u00b7 review wired (script tag + setSource call)',
+    manualHtml.includes('review.js?v=') && appManualSrc.includes('PageReview.setSource'));
+  check('manual \u00b7 review mount points exist (.filebar, resetBtn, fileInput)',
+    manualHtml.includes('class="filebar"') && manualHtml.includes('id="resetBtn"') &&
+    manualHtml.includes('id="fileInput"'));
+  /* real review.js, really driven: open, page over, delete a page, apply —
+     then pack and prove the trimmed bytes (not the stub's page count) land */
+  {
+    const b2 = await boot('app-manual.js', { pages: 2, html: 'manual.html' });
+    try {
+      vm.runInThisContext(readFileSync(new URL('../review.js', import.meta.url), 'utf8'), { filename: 'review.js' });
+      globalThis.PageReview.setSource(PDF_2P, 'notes-2p.pdf');
+      globalThis.PageReview.open();
+      await new Promise((r) => setTimeout(r, 80));
+      const key = (k) => (b2.document._ev.keydown || []).forEach((fn) =>
+        fn({ type: 'keydown', key: k, target: b2.document.body, preventDefault() {}, stopPropagation() {} }));
+      check('manual \u00b7 review overlay opens on page 1',
+        String(b2.document.getElementById('prCur').textContent) === '1');
+      key('ArrowRight');
+      await new Promise((r) => setTimeout(r, 40));
+      check('manual \u00b7 review arrow moves to page 2',
+        String(b2.document.getElementById('prCur').textContent) === '2',
+        'prCur=' + b2.document.getElementById('prCur').textContent);
+      key('Delete');
+      check('manual \u00b7 review Delete marks the page removed',
+        b2.document.getElementById('prDelCount').hidden === false &&
+        /1 removed/.test(b2.document.getElementById('prDelCount').textContent));
+      globalThis.DataTransfer = class {
+        constructor() { this.files = []; this.items = { add: (f) => { this.files.push(f); } }; }
+      };
+      b2.document.getElementById('prApply').fire('click');
+      for (let i = 0; i < 200 && b2.document.getElementById('fbName').textContent !== 'notes-2p.pdf'; i++)
+        await new Promise((r) => setTimeout(r, 10));
+      b2.document.getElementById('goBtn').fire('click');
+      for (let i = 0; i < 400 && b2.document.getElementById('result').hidden !== false; i++)
+        await new Promise((r) => setTimeout(r, 10));
+      const trimmed = b2.document.getElementById('rsMeta').textContent;
+      check('manual \u00b7 review apply trims the pack to 1 page',
+        /1 page packed into 1 A4 sheet/.test(trimmed), trimmed.slice(0, 80));
+    } finally {
+      delete globalThis.DataTransfer;
+      delete globalThis.PageReview;
+      b2.restore();
+    }
+  }
   const r = await runApp('manual default', 'app-manual.js', 'manual.html');
   check('manual \u00b7 default 2-slot pack runs clean', !/^failed/.test(r.status) && r.revealMs !== null, r.status);
   check('manual \u00b7 result names pages and sheets',

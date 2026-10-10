@@ -72,6 +72,12 @@
     if (sessReady()) NotesSession.clearAll();
     if (sessBar) sessBar.hidden = true;
   }
+  /* Review lives in review.js (its own overlay); its filebar button is dead
+     weight until a file arrives, so it stays hidden on the empty filebar. */
+  function refreshReviewBtn() {
+    var b = $('reviewBtn');
+    if (b) b.hidden = !state.bytes;
+  }
 
   /* ---------- template store ---------- */
   function saveTpl() {
@@ -131,6 +137,7 @@
       thumbs.doc = doc; thumbs.cache = []; thumbs.gen++;   // new file ⇒ fresh renders
       pBox.hidden = true;
       afterLoad();
+      if (window.PageReview) PageReview.setSource(buf, file.name);
       if (sessReady() && !restoring) {
         NotesSession.saveFiles([{ name: state.name, bytes: state.bytes }]);
         sessNote('Saved in this browser — reload, close or crash, this file and your template stay.');
@@ -162,6 +169,7 @@
     var n = state.pages;
     $('fbPages').textContent = n + (n === 1 ? ' page' : ' pages');
     $('resetBtn').hidden = false;
+    refreshReviewBtn();
     updateCounts();
     refreshRunState();
     refreshDel();
@@ -579,6 +587,7 @@
     $('fbName').textContent = 'No file yet \u2014 pick a PDF above';
     $('fbPages').textContent = '\u2014';
     $('resetBtn').hidden = true;
+    refreshReviewBtn();
     goBtn.disabled = true;
     updateCounts();
     draw();
@@ -590,6 +599,7 @@
   /* ---------- boot ---------- */
   if (!loadTpl()) retile(segChecked() || 2);
   else fitCanvas();   // a saved template paints at once — the page is never bare
+  refreshReviewBtn();
   (async function bootSession() {
     if (!window.NotesSession) return;
     try { await NotesSession.init(); } catch (e) { return; }
