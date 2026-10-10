@@ -131,6 +131,12 @@
 
   function updateCounts() {
     var n = state.pages, k = slotCount();
+    if (!n) {
+      $('fbOut').textContent = '\u2192 \u2014 sheets';
+      $('fbOdd').hidden = true;
+      $('goIn').textContent = '\u2013'; $('goOut').textContent = '\u2013';
+      return;
+    }
     var sheets = Math.ceil(n / k);
     $('fbOut').textContent = '→ ' + sheets + ' sheet' + (sheets === 1 ? '' : 's') +
       ' (−' + Math.round((1 - sheets / n) * 100) + '%)';
@@ -143,6 +149,7 @@
     $('fbName').textContent = state.name;
     var n = state.pages;
     $('fbPages').textContent = n + (n === 1 ? ' page' : ' pages');
+    $('resetBtn').hidden = false;
     updateCounts();
     goBtn.disabled = false;
     fitCanvas();
@@ -465,10 +472,17 @@
     if (state.out.url && !sessReady()) URL.revokeObjectURL(state.out.url);
     if (sessReady()) { NotesSession.clearFiles(); NotesSession.clearResult(); }
     if (sessBar) sessBar.hidden = true;
-    state.bytes = null; state.out = { bytes: null, url: '' };
+    state.bytes = null; state.name = ''; state.doc = null; state.pages = 0; state.sizes = [];
+    state.out = { bytes: null, url: '' };
     thumbs.cache = []; thumbs.gen++;
     fileInput.value = '';
-    wb.hidden = true; dz.hidden = false; result.hidden = true; pBox.hidden = true; clearError();
+    dz.hidden = false; result.hidden = true; pBox.hidden = true; clearError();
+    $('fbName').textContent = 'No file yet \u2014 pick a PDF above';
+    $('fbPages').textContent = '\u2014';
+    $('resetBtn').hidden = true;
+    goBtn.disabled = true;
+    updateCounts();
+    draw();
     dz.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   $('resetBtn').addEventListener('click', resetAll);
@@ -476,6 +490,7 @@
 
   /* ---------- boot ---------- */
   if (!loadTpl()) resetTpl();
+  fitCanvas();   // paint the empty numbered slots at once — the page is never bare
   (async function bootSession() {
     if (!window.NotesSession) return;
     try { await NotesSession.init(); } catch (e) { return; }

@@ -1136,6 +1136,10 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
       .every((s) => manualHtml.includes(s)));
   check('manual \u00b7 page loads its own app + css',
     manualHtml.includes('app-manual.js?v=') && manualHtml.includes('manual.css?v='));
+  check('manual \u00b7 workbench visible before upload (page never looks empty)',
+    manualHtml.includes('id="workbench" class="workbench"') &&
+    !manualHtml.includes('id="workbench" class="workbench" hidden') &&
+    manualHtml.includes('No file yet'));
   const r = await runApp('manual default', 'app-manual.js', 'manual.html');
   check('manual \u00b7 default 2-slot pack runs clean', !/^failed/.test(r.status) && r.revealMs !== null, r.status);
   check('manual \u00b7 result names pages and sheets',
