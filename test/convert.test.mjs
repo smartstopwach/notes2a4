@@ -832,5 +832,80 @@ console.log('5e) hq-map:');
   }
 }
 
+/* ---------- manual mode: user-drawn template slots ---------- */
+console.log('manual) template geometry + pack:');
+{
+  const t2p = NC.defaultTile(2, 'portrait');
+  check('manual \u00b7 2-slot portrait = stacked halves',
+    t2p.length === 2 && t2p[0].x === 0 && t2p[0].y === 0 && t2p[0].w === 1 && t2p[0].h === 0.5 &&
+    t2p[1].x === 0 && t2p[1].y === 0.5 && t2p[1].w === 1 && t2p[1].h === 0.5);
+  const t2l = NC.defaultTile(2, 'landscape');
+  check('manual \u00b7 2-slot landscape = side columns',
+    t2l.length === 2 && t2l[0].x === 0 && t2l[0].w === 0.5 && t2l[0].h === 1 &&
+    t2l[1].x === 0.5 && t2l[1].w === 0.5 && t2l[1].h === 1);
+  const t3 = NC.defaultTile(3, 'landscape');
+  check('manual \u00b7 3-slot landscape = 3 columns',
+    t3.length === 3 && t3.every((b) => b.y === 0 && b.h === 1) && near(t3[2].x + t3[2].w, 1, 1e-9));
+  const t4 = NC.defaultTile(4, 'portrait');
+  check('manual \u00b7 4-slot = 2x2 grid',
+    t4.length === 4 && t4.every((b) => b.w === 0.5 && b.h === 0.5));
+  check('manual \u00b7 slotOrder reads left-to-right',
+    NC.slotOrder([{ x: .5, y: 0, w: .5, h: 1 }, { x: 0, y: 0, w: .5, h: 1 }]).join() === '1,0');
+  check('manual \u00b7 slotOrder grid + 5% row wobble',
+    NC.slotOrder([{ x: .5, y: .51, w: .5, h: .49 }, { x: 0, y: .49, w: .5, h: .51 },
+      { x: .5, y: 0, w: .5, h: .5 }, { x: 0, y: 0, w: .5, h: .5 }]).join() === '3,2,1,0');
+  const cb = NC.clampBox({ x: -.2, y: .9, w: 2, h: .01 });
+  check('manual \u00b7 clampBox pins edges + 5% minimum',
+    cb.x === 0 && cb.y === 0.9 && cb.w === 1 && cb.h === 0.05, JSON.stringify(cb));
+  const mv = NC.boxMove({ x: .4, y: .4, w: .3, h: .3 }, .5, .5);
+  check('manual \u00b7 boxMove keeps size, clamps inside',
+    near(mv.x, .7, 1e-9) && near(mv.y, .7, 1e-9) && mv.w === .3 && mv.h === .3, JSON.stringify(mv));
+  const rs = NC.boxResize({ x: .1, y: .1, w: .3, h: .3 }, 'se', .1, .2);
+  check('manual \u00b7 boxResize se-grows from pinned nw',
+    rs.x === .1 && rs.y === .1 && near(rs.w, .4, 1e-9) && near(rs.h, .5, 1e-9), JSON.stringify(rs));
+  const rn = NC.boxResize({ x: .1, y: .1, w: .3, h: .3 }, 'nw', .9, .9);
+  check('manual \u00b7 boxResize honours 5% minimum, pins far edge',
+    near(rn.w, .05, 1e-9) && near(rn.h, .05, 1e-9) &&
+    near(rn.x + rn.w, .4, 1e-9) && near(rn.y + rn.h, .4, 1e-9), JSON.stringify(rn));
+  const fr = NC.fitRect({ x: 0, y: 0, w: 1, h: .5 }, { w: 595.28, h: 841.89 }, { w: 595.28, h: 841.89 });
+  check('manual \u00b7 fitRect centres A4 in top half (PDF y-flip)',
+    near(fr.x, 148.82, .01) && near(fr.y, 420.945, .01) &&
+    near(fr.width, 297.64, .01) && near(fr.height, 420.945, .01), JSON.stringify(fr));
+  check('manual \u00b7 engine helpers exported',
+    ['manualPack', 'manualSheet', 'clampBox', 'boxMove', 'boxResize', 'slotOrder', 'defaultTile', 'fitRect']
+      .every((k) => typeof NC[k] === 'function'));
+  const mp = await NC.manualPack(src4, { orient: 'portrait', boxes: NC.defaultTile(3, 'portrait') });
+  check('manual \u00b7 4 pages / 3 slots = 2 portrait A4 sheets',
+    mp.sheets === 2 && mp.sourcePages === 4 && mp.slots === 3 &&
+    near(mp.pageWH.w, 595.28, .01) && near(mp.pageWH.h, 841.89, .01),
+    `${mp.sheets} sheets ${mp.pageWH.w.toFixed(1)}x${mp.pageWH.h.toFixed(1)}`);
+  const { PDFName: MPN, PDFRef: MPR, PDFDict: MPD } = await import('pdf-lib');
+  const mpDoc = await PDFDocument.load(mp.bytes);
+  const forms = (i) => {
+    const r = mpDoc.getPage(i).node.get(MPN.of('Resources'));
+    const rd = (r instanceof MPR) ? mpDoc.context.lookup(r) : r;
+    const xo = rd.get(MPN.of('XObject'));
+    if (!xo) return 0;
+    const xd = (xo instanceof MPR) ? mpDoc.context.lookup(xo) : xo;
+    return (xd instanceof MPD) ? Array.from(xd.keys()).length : 0;
+  };
+  check('manual \u00b7 full sheet draws 3 forms, remainder draws 1',
+    forms(0) === 3 && forms(1) === 1, `${forms(0)}/${forms(1)} forms`);
+  check('manual \u00b7 manual output is pure vector (no embedded images)',
+    !/\/Subtype\s*\/Image/.test(Buffer.from(mp.bytes).toString('latin1')));
+  const mLand = await NC.manualPack(src4, { orient: 'landscape', boxes: NC.defaultTile(2, 'landscape') });
+  check('manual \u00b7 landscape sheets are A4-rotated',
+    mLand.sheets === 2 && near(mLand.pageWH.w, 841.89, .01) && near(mLand.pageWH.h, 595.28, .01),
+    `${mLand.pageWH.w.toFixed(1)}x${mLand.pageWH.h.toFixed(1)}`);
+  let mThrew = '';
+  try { await NC.manualPack(src4, { boxes: [] }); } catch (e) { mThrew = e.message; }
+  check('manual \u00b7 empty template throws a plain-words error',
+    /no slots/i.test(mThrew), mThrew.slice(0, 50));
+  const mProg = [];
+  await NC.manualPack(src4, { boxes: [{ x: 0, y: 0, w: 1, h: 1 }] }, (d, t) => mProg.push(d + '/' + t));
+  check('manual \u00b7 progress callback reports final sheet (every-4th + last, like build)',
+    mProg.join(',') === '4/4', mProg.join(','));
+}
+
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');
 process.exit(failures ? 1 : 0);

@@ -1128,5 +1128,26 @@ console.warn = (...a) => { if (!/raster worker/.test(String(a[0]))) realWarn(...
   check('4-up \u00b7 bold strokes: result names the weight', /bold \+1/.test(r.printed), r.printed.slice(0, 100));
 }
 
+/* ---------- manual mode: template builder + pack ---------- */
+{
+  const manualHtml = readFileSync(new URL('../manual.html', import.meta.url), 'utf8');
+  check('manual \u00b7 builder markup present (canvas, orientation, 2/3/4 slots, reset)',
+    ['id="tplCanvas"', 'id="oriP"', 'id="oriL"', 'id="slot2"', 'id="slot3"', 'id="slot4"', 'id="tplReset"']
+      .every((s) => manualHtml.includes(s)));
+  check('manual \u00b7 page loads its own app + css',
+    manualHtml.includes('app-manual.js?v=') && manualHtml.includes('manual.css?v='));
+  const r = await runApp('manual default', 'app-manual.js', 'manual.html');
+  check('manual \u00b7 default 2-slot pack runs clean', !/^failed/.test(r.status) && r.revealMs !== null, r.status);
+  check('manual \u00b7 result names pages and sheets',
+    /2 pages packed into 1 A4 sheet \(2 slots, portrait\)/.test(r.printed), r.printed.slice(0, 110));
+  check('manual \u00b7 download filename carries -manual-A4', r.dl === 'notes-2p-manual-A4.pdf', r.dl);
+  const r3 = await runApp('manual 3-slot', 'app-manual.js', 'manual.html', {
+    setOptions: (el) => { el('slot3').checked = true; el('slot3').fire('change'); }
+  });
+  check('manual \u00b7 3 slots over 2 pages packs a partial sheet',
+    /2 pages packed into 1 A4 sheet \(3 slots, portrait\)/.test(r3.printed) && !/^failed/.test(r3.status),
+    r3.printed.slice(0, 110));
+}
+
 console.log('\n' + (fail === 0 ? 'ALL APP SMOKE CHECKS PASSED' : fail + ' APP SMOKE CHECK(S) FAILED') + '  (' + pass + ' passed)\n');
 process.exit(fail ? 1 : 0);

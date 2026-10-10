@@ -294,6 +294,121 @@
     return { bytes: saved, sheets: nSheets, sourcePages: n, pageWH: { w: page.w, h: page.h } };
   }
 
+  /* ================= Manual template packer =================
+     Free-form N-up: the user draws the sheet template (slot boxes in 0..1
+     sheet space, top-left origin like the builder canvas) and every source
+     page flows through the slots in reading order. Boxes are stored
+     normalized, so flipping portrait/landscape never loses the layout. */
+  var MBOX_MIN = 0.05;   // a slot narrower than 5% of the sheet is a sliver, not a slot
+  function manualSheet(orient) {
+    var a4 = PAPERS.a4;
+    return orient === 'landscape' ? { w: a4.h, h: a4.w } : { w: a4.w, h: a4.h };
+  }
+  function clampBox(b) {
+    b = b || {};
+    var w = Math.min(1, Math.max(MBOX_MIN, +b.w || 0));
+    var h = Math.min(1, Math.max(MBOX_MIN, +b.h || 0));
+    return {
+      x: Math.min(Math.max(0, +b.x || 0), Math.max(0, 1 - w)),
+      y: Math.min(Math.max(0, +b.y || 0), Math.max(0, 1 - h)),
+      w: w, h: h
+    };
+  }
+  function boxMove(b, dx, dy) {
+    return clampBox({ x: b.x + dx, y: b.y + dy, w: b.w, h: b.h });
+  }
+  function boxResize(b, handle, dx, dy) {
+    handle = (handle === 'nw' || handle === 'ne' || handle === 'sw' || handle === 'se') ? handle : 'se';
+    var x = b.x, y = b.y, w = b.w, h = b.h;
+    if (handle.indexOf('e') >= 0) w += dx; else { x += dx; w -= dx; }
+    if (handle.indexOf('s') >= 0) h += dy; else { y += dy; h -= dy; }
+    if (w < MBOX_MIN) { if (handle.indexOf('e') < 0) x -= (MBOX_MIN - w); w = MBOX_MIN; }
+    if (h < MBOX_MIN) { if (handle.indexOf('s') < 0) y -= (MBOX_MIN - h); h = MBOX_MIN; }
+    return clampBox({ x: x, y: y, w: w, h: h });
+  }
+  function slotOrder(boxes) {
+    return boxes.map(function (b, i) { return i; }).sort(function (a, c) {
+      var A = boxes[a], B = boxes[c];
+      var ra = Math.round((A.y + A.h / 2) * 20), rb = Math.round((B.y + B.h / 2) * 20);
+      if (ra !== rb) return ra - rb;
+      var ca = Math.round((A.x + A.w / 2) * 20), cb = Math.round((B.x + B.w / 2) * 20);
+      if (ca !== cb) return ca - cb;
+      return a - c;
+    });
+  }
+  function defaultTile(n, orient) {
+    n = (n === 3) ? 3 : (n === 4) ? 4 : 2;
+    if (n === 4) return [
+      { x: 0, y: 0, w: 0.5, h: 0.5 }, { x: 0.5, y: 0, w: 0.5, h: 0.5 },
+      { x: 0, y: 0.5, w: 0.5, h: 0.5 }, { x: 0.5, y: 0.5, w: 0.5, h: 0.5 }
+    ];
+    if (orient === 'landscape') {
+      return (n === 3)
+        ? [{ x: 0, y: 0, w: 1 / 3, h: 1 }, { x: 1 / 3, y: 0, w: 1 / 3, h: 1 }, { x: 2 / 3, y: 0, w: 1 / 3, h: 1 }]
+        : [{ x: 0, y: 0, w: 0.5, h: 1 }, { x: 0.5, y: 0, w: 0.5, h: 1 }];
+    }
+    return (n === 3)
+      ? [{ x: 0, y: 0, w: 1, h: 1 / 3 }, { x: 0, y: 1 / 3, w: 1, h: 1 / 3 }, { x: 0, y: 2 / 3, w: 1, h: 1 / 3 }]
+      : [{ x: 0, y: 0, w: 1, h: 0.5 }, { x: 0, y: 0.5, w: 1, h: 0.5 }];
+  }
+  /* Contain-fit a source page (size {w,h} in pt) into a normalized slot on a
+     sheet (page {w,h} in pt): uniform scale, centered, y flipped to PDF
+     bottom-origin for drawPage. */
+  function fitRect(slot, page, size) {
+    var sx = slot.x * page.w, sy = slot.y * page.h, sw = slot.w * page.w, sh = slot.h * page.h;
+    var sc = Math.min(sw / size.w, sh / size.h);
+    var dw = size.w * sc, dh = size.h * sc;
+    return {
+      x: sx + (sw - dw) / 2,
+      y: page.h - (sy + (sh - dh) / 2) - dh,
+      width: dw, height: dh
+    };
+  }
+  async function manualPack(srcBytes, template, onProgress) {
+    var t = template || {};
+    var page = manualSheet(t.orient);
+    var boxes = (t.boxes || []).map(clampBox);
+    if (!boxes.length) throw new Error('The template has no slots — draw at least one box.');
+    var order = slotOrder(boxes);
+    var src = await PDFDocument.load(srcBytes);
+    var srcPages = src.getPages();
+    var n = srcPages.length;
+    if (!n) throw new Error('The PDF has no pages');
+    var sizes = [];
+    var embedIdx = [];   // pages with a Contents stream (pdf-lib can't embed empty ones)
+    for (var i = 0; i < n; i++) {
+      sizes.push({ w: srcPages[i].getWidth(), h: srcPages[i].getHeight() });
+      var hasContents = true;
+      try { hasContents = !!(srcPages[i].node.Contents && srcPages[i].node.Contents()); } catch (e) {}
+      if (hasContents) embedIdx.push(i);
+    }
+    var out = await PDFDocument.create();
+    out.setProducer('Notes2A4 · manual template packer');
+    var embedded = new Array(n).fill(null);
+    try {
+      var batch = await out.embedPdf(srcBytes, embedIdx);
+      for (var bi = 0; bi < embedIdx.length; bi++) embedded[embedIdx[bi]] = batch[bi];
+    } catch (eBatch) {
+      for (var e1 = 0; e1 < embedIdx.length; e1++) {
+        var idx = embedIdx[e1];
+        try { embedded[idx] = (await out.embedPdf(srcBytes, [idx]))[0]; }
+        catch (eOne) { embedded[idx] = null; }
+      }
+    }
+    var per = boxes.length, nSheets = Math.ceil(n / per);
+    for (var s = 0; s < nSheets; s++) {
+      var base = s * per;
+      var pg = out.addPage([page.w, page.h]);
+      for (var k = 0; k < per; k++) {
+        var gi = base + k;
+        if (gi >= n || !embedded[gi]) continue;
+        pg.drawPage(embedded[gi], fitRect(boxes[order[k]], page, sizes[gi]));
+      }
+      if (onProgress && (s % 4 === 3 || s === nSheets - 1)) await onProgress(s + 1, nSheets);
+    }
+    var saved = await out.save({ useObjectStreams: true });
+    return { bytes: saved, sheets: nSheets, sourcePages: n, slots: per, pageWH: { w: page.w, h: page.h } };
+  }
   /* ================= Print-Saver inversion =================
    * Converts dark "blackboard" notes to printer-friendly high-contrast ink:
    *   near-black pixels  → white (the paper)
@@ -1394,6 +1509,8 @@
     layoutForSheet: layoutForSheet,
     build: build,
     buildFromImages: buildFromImages,
+    manualSheet: manualSheet, manualPack: manualPack, defaultTile: defaultTile, slotOrder: slotOrder,
+    clampBox: clampBox, boxMove: boxMove, boxResize: boxResize, fitRect: fitRect,
     numText: numText,
     numPlace: numPlace,
     vectorNegative: vectorNegative,

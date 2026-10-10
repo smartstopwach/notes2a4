@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Notes2A4 Manual — build your own print template (2/3/4 slots)</title>
+<meta name="description" content="Free in-browser tool: draw your own 2/3/4-slot A4 template with drag &amp; resize, then pack the whole PDF into it. No uploads — everything runs locally.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='2' width='20' height='28' rx='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3Crect x='9' y='19' width='14' height='8' rx='1.5' fill='%230d1321'/%3E%3C/svg%3E">
+<meta http-equiv="Cache-Control" content="no-cache">
+<link rel="stylesheet" href="styles.css?v=46">
+<link rel="stylesheet" href="manual.css?v=1">
+</head>
+<body id="top">
+
+<header class="topbar">
+  <a class="brand" href="index.html" aria-label="Notes2A4 home">
+    <svg viewBox="0 0 32 32" class="brand-mark" aria-hidden="true">
+      <rect x="6" y="2" width="20" height="28" rx="3" class="bm-sheet"/>
+      <rect x="9" y="5"  width="14" height="8" rx="1.5" class="bm-slide"/>
+      <rect x="9" y="19" width="14" height="8" rx="1.5" class="bm-slide"/>
+      <line x1="9.5" y1="16" x2="22.5" y2="16" class="bm-gap"/>
+    </svg>
+    <span class="brand-name">Notes<strong>2A4</strong></span>
+    <span class="brand-sub">manual — you draw the template</span>
+  </a>
+  <nav class="topnav" aria-label="Main">
+    <a href="index.html">2-up tool</a>
+    <a href="4up.html">4-up Studio ✦</a>
+    <a href="invert.html" class="nav-inv">Invert Lab</a>
+    <a href="rapper.html" class="nav-rp">The Rapper</a>
+    <a href="manual.html" class="nav-mn" aria-current="page">Manual ✎</a>
+    <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener" class="nav-gh">GitHub</a>
+  </nav>
+</header>
+
+<main>
+  <section class="hero hero-slim">
+    <h1>Manual mode — <em>you</em> draw the template</h1>
+    <p class="sub">Upload your PDF, drag the 2 / 3 / 4 slots where you want them, hit pack — the whole file flows into your layout.</p>
+    <p><span class="privacy-chip"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6z"/></svg><span><b>100% on-device.</b> The PDF never leaves this tab.</span></span></p>
+  </section>
+
+  <section id="convertMn" class="convert">
+    <div class="convert-head reveal">
+      <h2>The template builder</h2>
+      <p class="sub">Upload → arrange slots → download. Everything below happens inside this tab.</p>
+    </div>
+    <!-- dropzone -->
+    <div id="dropzone" class="panel dropzone reveal" role="button" tabindex="0" aria-label="Upload a PDF file">
+      <svg viewBox="0 0 64 64" class="dz-icon" aria-hidden="true">
+        <path d="M32 42 V18 m0 0 -9 9 m9 -9 9 9" class="dz-arrow"/>
+        <path d="M14 40 v8 a6 6 0 0 0 6 6 h24 a6 6 0 0 0 6-6 v-8" class="dz-tray"/>
+      </svg>
+      <p class="dz-title">Drop your notes PDF here</p>
+      <p class="dz-hint">any length — every page flows into your template · or</p>
+      <button type="button" class="btn btn-primary" id="chooseBtn">Choose PDF</button>
+      <p class="dz-fine">No server, no account, no upload. Close the tab and everything is gone.</p>
+      <input type="file" id="fileInput" accept="application/pdf,.pdf" hidden>
+      <p class="dz-error" id="fileError" role="alert" hidden></p>
+    </div>
+    <!-- workbench -->
+    <div id="sessBar" class="sess-bar" hidden>
+      <span class="sess-dot" aria-hidden="true"></span>
+      <span class="sess-msg" id="sessMsg">Saved in this browser</span>
+      <span class="sess-actions">
+        <button type="button" class="sess-btn sess-go" id="sessGo" hidden>&#9654; Continue</button>
+        <button type="button" class="sess-btn" id="sessForget">Forget</button>
+      </span>
+    </div>
+    <div id="workbench" class="workbench" hidden>
+      <div class="filebar">
+        <span class="fb-name" id="fbName">file.pdf</span>
+        <span class="chip" id="fbPages">— pages</span>
+        <span class="chip chip-arrow" id="fbOut">→ — sheets</span>
+        <span class="chip chip-warn" id="fbOdd" hidden>last sheet partly empty</span>
+        <button class="btn btn-tiny" id="resetBtn" type="button">✕ remove</button>
+      </div>
+      <div class="cols-mn">
+        <div class="card builder">
+          <h3>Your template</h3>
+          <div class="tpl-bar">
+            <div class="fld">
+              <span class="lbl">Sheet</span>
+              <div class="seg" role="radiogroup" aria-label="Sheet orientation">
+                <label><input type="radio" name="mnori" id="oriP" checked><span>▯ Portrait</span></label>
+                <label><input type="radio" name="mnori" id="oriL"><span>▭ Landscape</span></label>
+              </div>
+            </div>
+            <div class="fld">
+              <span class="lbl">Slots</span>
+              <div class="seg" role="radiogroup" aria-label="Slot count">
+                <label><input type="radio" name="mnslots" id="slot2" checked><span>2</span></label>
+                <label><input type="radio" name="mnslots" id="slot3"><span>3</span></label>
+                <label><input type="radio" name="mnslots" id="slot4"><span>4</span></label>
+              </div>
+            </div>
+            <div class="fld">
+              <span class="lbl">&nbsp;</span>
+              <button type="button" class="btn btn-tiny" id="tplReset">↺ even tiles</button>
+            </div>
+          </div>
+          <div class="tpl-stage">
+            <canvas id="tplCanvas" aria-label="Template canvas — drag boxes to move, drag corners to resize"></canvas>
+          </div>
+          <p class="tpl-hint"><b>Drag</b> a box to move it · <b>drag a corner</b> to resize · numbers show reading order (slot ① gets page 1, ② page 2 …). Flipping portrait ⇄ landscape keeps your boxes.</p>
+        </div>
+        <div class="card mn-go">
+          <h3>Pack it</h3>
+          <div class="mn-counts">
+            <span class="chip" id="goInChip"><b id="goIn">–</b>&nbsp;pages in</span>
+            <span class="chip chip-arrow">→&nbsp;<b id="goOut">–</b>&nbsp;sheets out</span>
+          </div>
+          <ul class="mn-facts">
+            <li>Pages flow into slots in <b>reading order</b> — top row first, then left → right.</li>
+            <li>Every page is embedded as a <b>vector</b> — text stays selectable, prints razor-sharp.</li>
+            <li>A half-empty last sheet is fine — it just means fewer pages than slots.</li>
+          </ul>
+          <button type="button" class="btn btn-primary btn-big" id="goBtn" disabled>Pack my PDF →</button>
+          <div class="progress" id="progressBox" hidden>
+            <div class="p-track"><div class="p-fill" id="pfill"></div></div>
+            <div class="p-row"><span id="pstatus">working…</span><span class="p-eta" id="pEta"></span></div>
+          </div>
+          <p class="mn-note">Your template auto-saves in this browser — come back tomorrow and your layout is still here.</p>
+        </div>
+      </div>
+      <!-- result -->
+      <div id="result" class="card result" hidden>
+        <h3>Done ✓</h3>
+        <p class="rs-line"><b id="rsIn">–</b> pages → <b id="rsOut">–</b> sheets</p>
+        <p class="rs-meta" id="rsMeta">—</p>
+        <p class="rs-actions">
+          <a class="btn btn-primary" id="dlBtn" href="#" download>⬇ Download PDF</a>
+          <a class="btn" id="openBtn" href="#" target="_blank" rel="noopener">Open in tab</a>
+          <button type="button" class="btn btn-ghost" id="againBtn">Pack another file</button>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section id="faqMn" class="faq">
+    <h2>Manual-mode notes</h2>
+    <details><summary>Which page lands in which slot?</summary><p>Reading order: the app numbers your boxes top row first, left to right — slot ① takes page 1, ② takes page 2, and so on, sheet after sheet. Move a box and its number follows the new position.</p></details>
+    <details><summary>Does flipping portrait / landscape erase my layout?</summary><p>No. Your boxes are stored as sheet-relative positions, so flipping the sheet keeps every box exactly where you put it — they just land on the rotated page.</p></details>
+    <details><summary>My pages aren't the same size — will they stretch?</summary><p>Never. Each page is fitted <i>inside</i> its slot keeping its own aspect ratio, centred with white margins. Nothing is cropped or squashed.</p></details>
+  </section>
+</main>
+
+<div class="toast-wrap" id="toasts" aria-live="polite"></div>
+
+<footer class="foot">
+  <p>Notes2A4 — built for 400-page notebook doom. <a href="https://github.com/smartstopwach/notes2a4" target="_blank" rel="noopener">View source on GitHub</a> · MIT licence.</p>
+  <p class="foot-dim">Made with vector geometry · <span class="hin">paper bachao, padhai badhao</span></p>
+</footer>
+
+<script src="vendor/pdf.min.js"></script>
+<script src="vendor/pdf-lib.min.js"></script>
+<script src="session.js?v=46"></script>
+<script src="converter.js?v=46"></script>
+<script src="app-manual.js?v=1"></script>
+<noscript><p style="text-align:center;padding:2rem">This tool needs JavaScript — everything runs locally, that's the whole point.</p></noscript>
+</body>
+</html>
