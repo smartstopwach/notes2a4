@@ -905,6 +905,66 @@ console.log('manual) template geometry + pack:');
   await NC.manualPack(src4, { boxes: [{ x: 0, y: 0, w: 1, h: 1 }] }, (d, t) => mProg.push(d + '/' + t));
   check('manual \u00b7 progress callback reports final sheet (every-4th + last, like build)',
     mProg.join(',') === '4/4', mProg.join(','));
+  const frS = NC.fitRect({ x: 0, y: 0, w: 1, h: .5 }, { w: 595.28, h: 841.89 }, { w: 595.28, h: 841.89 }, 'stretch');
+  check('manual \u00b7 fitRect stretch fills the slot exactly',
+    near(frS.x, 0, .01) && near(frS.y, 420.945, .01) &&
+    near(frS.width, 595.28, .01) && near(frS.height, 420.945, .01), JSON.stringify(frS));
+  const frTL = NC.fitRect({ x: 0, y: 0, w: 1, h: .5 }, { w: 595.28, h: 841.89 }, { w: 595.28, h: 841.89 }, 'contain', 'tl');
+  check('manual \u00b7 fitRect anchor tl pins the page top-left',
+    near(frTL.x, 0, .01) && near(frTL.y, 420.945, .01), JSON.stringify(frTL));
+  const frBR = NC.fitRect({ x: 0, y: 0, w: 1, h: .5 }, { w: 595.28, h: 841.89 }, { w: 595.28, h: 841.89 }, 'contain', 'br');
+  check('manual \u00b7 fitRect anchor br pins the page bottom-right',
+    near(frBR.x, 297.64, .01) && near(frBR.y, 420.945, .01), JSON.stringify(frBR));
+  const { inflateSync: infS } = await import('node:zlib');
+  const { PDFArray: MPArr } = await import('pdf-lib');
+  async function manualSheetText(bytes, sheet) {   // decoded content stream: placement matrices live here
+    const d = await PDFDocument.load(bytes);
+    let raw = d.getPage(sheet).node.get(MPN.of('Contents'));
+    const refs = (raw instanceof MPArr) ? [...Array(raw.size()).keys()].map((k) => raw.get(k)) : [raw];
+    return refs.map((r) => {
+      const st = (r instanceof MPR) ? d.context.lookup(r) : r;
+      let b = st.getContents();
+      if (String(st.dict.get(MPN.of('Filter'))) === '/FlateDecode') b = infS(Buffer.from(b));
+      return Buffer.from(b).toString('latin1');
+    }).join('');
+  }
+  /* pdf-lib draws an embedded page as: translate TX,TY / identity / scale SX,SY /
+     identity / Do — one q..Q block per slot, so parse per block, not per line */
+  const srcDoc4 = await PDFDocument.load(src4);
+  const SW4 = srcDoc4.getPage(0).getWidth(), SH4 = srcDoc4.getPage(0).getHeight();
+  const drawsOf = (t) => t.split('Q').map((blk) => {
+    const cms = [...blk.matchAll(/([\d.]+) 0 0 ([\d.]+) ([\d.]+) ([\d.]+) cm/g)].map((m) => m.slice(1).map(Number));
+    if (cms.length < 3) return null;
+    return { tx: cms[0][2], ty: cms[0][3], sx: cms[2][0], sy: cms[2][1] };
+  }).filter(Boolean);
+  const mpC0 = drawsOf(await manualSheetText(mp.bytes, 0));
+  const expS = Math.min(595.28 / SW4, 280.63 / SH4);
+  check('manual \u00b7 E2E contain lands centered (stream = unit math)',
+    mpC0.length === 3 && mpC0.every((d) => near(d.sx, d.sy, 1e-9) && near(d.sx, expS, .001) &&
+      near(d.tx, (595.28 - SW4 * d.sx) / 2, .05)),
+    mpC0.length + ' draws, x=' + (mpC0[0] ? mpC0[0].tx.toFixed(2) : '?'));
+  const mpS = await NC.manualPack(src4, { orient: 'portrait', boxes: NC.defaultTile(3, 'portrait'), fit: 'stretch' });
+  const mpS0 = drawsOf(await manualSheetText(mpS.bytes, 0));
+  check('manual \u00b7 E2E global stretch fills every slot exactly (non-uniform scale)',
+    mpS.sheets === 2 && mpS0.length === 3 &&
+    mpS0.every((d) => near(d.tx, 0, .01) && near(d.sx, 595.28 / SW4, .001) &&
+      near(d.sy, 280.63 / SH4, .001) && Math.abs(d.sx - d.sy) > 0.05),
+    'sx=' + (mpS0[0] ? mpS0[0].sx.toFixed(4) : '?'));
+  const mpA = await NC.manualPack(src4, { orient: 'portrait', boxes: NC.defaultTile(3, 'portrait'), anchor: 'tl' });
+  const mpA0 = drawsOf(await manualSheetText(mpA.bytes, 0));
+  check('manual \u00b7 E2E global anchor tl pins every page left',
+    mpA.sheets === 2 && mpA0.length === 3 &&
+    mpA0.every((d) => near(d.tx, 0, .01) && near(d.sx, d.sy, 1e-9) && near(d.sx, expS, .001)),
+    'x=' + (mpA0[0] ? mpA0[0].tx.toFixed(2) : '?'));
+  const perBox = NC.defaultTile(3, 'portrait');
+  perBox[0] = Object.assign({}, perBox[0], { fit: 'stretch' });
+  const mpP = await NC.manualPack(src4, { orient: 'portrait', boxes: perBox });
+  const mpP0 = drawsOf(await manualSheetText(mpP.bytes, 0));
+  check('manual \u00b7 E2E per-slot fit override: one stretched, two contained',
+    mpP.sheets === 2 && mpP0.length === 3 &&
+    mpP0.filter((d) => Math.abs(d.sx - d.sy) > 0.05).length === 1 &&
+    mpP0.filter((d) => near(d.sx, d.sy, 1e-9)).length === 2,
+    mpP0.map((d) => d.sx.toFixed(3) + '/' + d.sy.toFixed(3)).join(' '));
 }
 
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL CHECKS PASSED');

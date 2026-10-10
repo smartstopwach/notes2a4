@@ -351,23 +351,33 @@
       ? [{ x: 0, y: 0, w: 1, h: 1 / 3 }, { x: 0, y: 1 / 3, w: 1, h: 1 / 3 }, { x: 0, y: 2 / 3, w: 1, h: 1 / 3 }]
       : [{ x: 0, y: 0, w: 1, h: 0.5 }, { x: 0, y: 0.5, w: 1, h: 0.5 }];
   }
-  /* Contain-fit a source page (size {w,h} in pt) into a normalized slot on a
-     sheet (page {w,h} in pt): uniform scale, centered, y flipped to PDF
-     bottom-origin for drawPage. */
-  function fitRect(slot, page, size) {
+  /* Fit a source page (size {w,h} in pt) into a normalized slot on a sheet
+     (page {w,h} in pt), y flipped to PDF bottom-origin for drawPage.
+     fit: 'contain' (default — whole page visible, uniform scale, letterboxed)
+          'stretch' (slot filled exactly — the page distorts, like a photo frame).
+     anchor: 9-point 'tl tc tr cl cc cr bl bc br' (default 'cc') — where the page
+     sits when contain leaves free space. Unknown values fall back to
+     contain-centered, so old templates keep working. */
+  function fitRect(slot, page, size, fit, anchor) {
     var sx = slot.x * page.w, sy = slot.y * page.h, sw = slot.w * page.w, sh = slot.h * page.h;
+    if (fit === 'stretch') return { x: sx, y: page.h - sy - sh, width: sw, height: sh };
     var sc = Math.min(sw / size.w, sh / size.h);
     var dw = size.w * sc, dh = size.h * sc;
-    return {
-      x: sx + (sw - dw) / 2,
-      y: page.h - (sy + (sh - dh) / 2) - dh,
-      width: dw, height: dh
-    };
+    var a = anchor || 'cc';
+    var fx = (a === 'tl' || a === 'cl' || a === 'bl') ? 0 : (a === 'tr' || a === 'cr' || a === 'br') ? 1 : 0.5;
+    var fy = (a === 'tl' || a === 'tc' || a === 'tr') ? 0 : (a === 'bl' || a === 'bc' || a === 'br') ? 1 : 0.5;
+    var ox = sx + (sw - dw) * fx, oy = sy + (sh - dh) * fy;
+    return { x: ox, y: page.h - oy - dh, width: dw, height: dh };
   }
   async function manualPack(srcBytes, template, onProgress) {
     var t = template || {};
     var page = manualSheet(t.orient);
-    var boxes = (t.boxes || []).map(clampBox);
+    var boxes = (t.boxes || []).map(function (b) {   // clamp keeps geometry; fit/anchor ride along
+      var c = clampBox(b);
+      if (b && b.fit) c.fit = b.fit;
+      if (b && b.anchor) c.anchor = b.anchor;
+      return c;
+    });
     if (!boxes.length) throw new Error('The template has no slots — draw at least one box.');
     var order = slotOrder(boxes);
     var src = await PDFDocument.load(srcBytes);
@@ -402,7 +412,8 @@
       for (var k = 0; k < per; k++) {
         var gi = base + k;
         if (gi >= n || !embedded[gi]) continue;
-        pg.drawPage(embedded[gi], fitRect(boxes[order[k]], page, sizes[gi]));
+        var slot = boxes[order[k]];
+        pg.drawPage(embedded[gi], fitRect(slot, page, sizes[gi], slot.fit || t.fit, slot.anchor || t.anchor));
       }
       if (onProgress && (s % 4 === 3 || s === nSheets - 1)) await onProgress(s + 1, nSheets);
     }
